@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, PageHeader, Section } from "@/components/shared/ui";
+import { Card, Notice, PageHeader, Section } from "@/components/shared/ui";
 import { getAgencySettings } from "@/features/operations/queries";
 import { SettingsForm } from "@/features/settings/SettingsForm";
 import { SettingsNav } from "@/features/settings/SettingsNav";
@@ -21,12 +21,16 @@ export default function SettingsPage() {
 }
 
 async function Settings() {
-  const { agency } = await getAgencySettings();
+  const { agency, canManage } = await getAgencySettings();
   return (
     <Section title="Agence">
-      <Card>
-        <SettingsForm agency={agency} />
-      </Card>
+      {canManage ? (
+        <Card>
+          <SettingsForm agency={agency} />
+        </Card>
+      ) : (
+        <Notice>Seuls le propriétaire et les administrateurs peuvent modifier les paramètres de l&apos;agence.</Notice>
+      )}
     </Section>
   );
 }

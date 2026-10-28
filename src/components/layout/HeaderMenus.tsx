@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { startTransition, useState } from "react";
 import Link from "next/link";
 import { ChevronDown, FolderPlus, ListPlus, LogOut, Menu, Plus, Settings, UserPlus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Logo } from "@/components/brand/Logo";
+import { signOutAction } from "@/features/auth/actions";
 import { SidebarNav } from "./SidebarNav";
 
 export function MobileMenu() {
@@ -104,12 +105,9 @@ export function UserMenu({ fullName, roleLabel, initials }: { fullName: string; 
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled className="min-h-10 flex-col items-start gap-0.5 text-sm">
-          <span className="flex items-center gap-1.5">
-            <LogOut aria-hidden />
-            Se déconnecter
-          </span>
-          <span className="text-xs text-muted-foreground">Disponible avec la connexion sécurisée (Phase 6)</span>
+        <DropdownMenuItem className="min-h-10 text-sm" onSelect={() => startTransition(() => signOutAction())}>
+          <LogOut aria-hidden />
+          Se déconnecter
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

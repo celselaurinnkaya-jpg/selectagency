@@ -72,20 +72,6 @@ export function ClientForm({
   });
 
   useEffect(() => {
-    if (client) {
-      setIsSelfResponsible(client.isSelfResponsible ?? true);
-      if (client.nationality) {
-        const inList = countries.some((c) => c.label === client.nationality || c.value === client.nationality);
-        setNatSelect(inList ? client.nationality : "__OTHER__");
-      }
-      if (client.residenceCountry) {
-        const inList = countries.some((c) => c.value === client.residenceCountry);
-        setResidenceSelect(inList ? client.residenceCountry : "__OTHER__");
-      }
-    }
-  }, [client, countries]);
-
-  useEffect(() => {
     if (state.ok && state.redirectTo) {
       router.push(state.redirectTo);
     }

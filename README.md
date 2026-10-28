@@ -3,22 +3,36 @@
 **La gestion intelligente des agences de voyages.** Logiciel de gestion (SaaS) pour les agences qui accompagnent
 des clients dans leurs projets de visa, d'études à l'étranger, de voyage et de démarches administratives.
 
-> **État actuel : prototype d'interface sur données fictives (Phase 3 du plan, début de Phase 4).**
-> Il n'y a encore ni base de données, ni authentification, ni stockage de fichiers. Les données de
-> démonstration vivent en mémoire sur le serveur local et sont perdues à chaque redémarrage.
-> **Ne jamais déployer cette version en production** et n'y saisir aucune donnée réelle.
+> **État actuel : application connectée à Supabase (Phases 5 et 6 du plan), en préparation du pilote.**
+> Comptes, agences, rôles, données et pièces des clients sont enregistrés dans Supabase, cloisonnés
+> par agence (RLS). Avant toute donnée réelle : projet Supabase de production (formule Pro, sauvegardes),
+> e-mails personnalisés (SMTP) et politique de confidentialité validée.
 
 Le plan complet est dans [docs/PLAN_IMPLEMENTATION.md](docs/PLAN_IMPLEMENTATION.md), la charte dans
 [docs/design/DESIGN_SYSTEM.md](docs/design/DESIGN_SYSTEM.md).
 
 ## Démarrer
 
-Prérequis : Node.js 24 (LTS) et npm.
+Prérequis : Node.js 24 (LTS), npm et un projet Supabase (le plan gratuit suffit pour le développement).
+Docker n'est pas nécessaire.
 
-```bash
-npm install
-npm run dev        # http://localhost:3000
-```
+1. **Créer le projet** sur [supabase.com](https://supabase.com) (région conseillée : Paris, eu-west-3).
+2. **Configurer l'application** : copier `.env.example` en `.env.local`, puis renseigner l'URL du projet et
+   la clé publique (*Project Settings → API Keys*). La clé secrète n'est pas nécessaire.
+3. **Adresses autorisées** : dans *Authentication → URL Configuration*, indiquer `http://localhost:3000` comme
+   *Site URL* et ajouter `http://localhost:3000/**` aux *Redirect URLs*.
+4. **Créer les tables** (le mot de passe de la base est demandé par la deuxième commande) :
+
+   ```bash
+   npm install
+   npm run db:login                          # ouvre le navigateur
+   npm run db:link -- --project-ref <identifiant-du-projet>
+   npm run db:push                           # applique supabase/migrations
+   npm run dev                               # http://localhost:3000
+   ```
+
+5. Ouvrir l'application, **créer un compte**, confirmer l'adresse e-mail, puis créer son agence (ou essayer
+   l'agence de démonstration si `DEMO_DATA_ENABLED=true`).
 
 | Commande | Rôle |
 |---|---|
@@ -26,51 +40,58 @@ npm run dev        # http://localhost:3000
 | `npm run build` | Compilation de production (vérifie aussi les règles de rendu de Next.js) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Vérification TypeScript (mode strict) |
-| `npm test` | Tests unitaires (Vitest) |
-
-Le bouton **« Réinitialiser les données »** du bandeau jaune remet la démonstration dans son état d'origine.
+| `npm test` | Tous les tests : règles métier et base de données |
+| `npm run db:test` | Tests de la base seule : migrations, RLS, fonctions (PGlite, sans Docker) |
+| `npm run db:push` | Applique les nouvelles migrations au projet Supabase lié |
 
 ## Ce qui fonctionne
 
-- Tableau de bord calculé à partir des données (aucun chiffre écrit en dur), avec filtre de période.
-- Clients : liste, recherche, filtres, fiche détaillée, création avec validation du téléphone selon le pays
-  et alerte de doublon (jamais de fusion automatique).
-- Dossiers : création (copie du modèle d'étapes et de la checklist), liste, vue « par responsable »,
-  fiche à 8 onglets, changement d'étape avec niveau de preuve obligatoire pour les étapes externes
-  (« déclaré » avec source, ou « confirmé » avec référence du justificatif), retour en arrière motivé,
-  clôture avec contrôle du solde.
-- Documents : vérification interne (« vérifié par l'agence » ou « à corriger » avec commentaire), ajout
-  de pièces à la liste, alertes d'expiration.
-- Tâches : création, case à cocher, retards, filtre « mes tâches ».
-- Finance : synthèse par devise (frais de l'agence séparés des fonds destinés à des tiers), paiements,
-  dépenses, reçus imprimables.
-- Message WhatsApp préparé à partir d'un modèle : l'agent l'envoie lui-même, et l'historique le note
-  « préparé, envoi manuel ».
-- Rapports, équipe et rôles, paramètres de l'agence, modèles d'étapes et checklists (consultation).
+- **Comptes** : inscription avec confirmation de l'adresse e-mail, connexion, mot de passe oublié,
+  déconnexion. Les pages de l'espace de travail sont réservées aux personnes connectées.
+- **Agences** : création de l'agence à la première connexion (la personne devient propriétaire) ;
+  agence de démonstration remplie de données fictives, que l'on peut quitter à tout moment.
+- **Équipe** : invitation par lien personnel (valable 7 jours, à transmettre par e-mail ou WhatsApp),
+  rôles propriétaire, administrateur, agent, comptable et lecture seule, appliqués par la base.
+- **Clients** : liste, recherche, fiche, création et modification, alerte de doublon, suppression réservée
+  aux responsables (impossible si le client a des dossiers). Le numéro complet de la pièce d'identité est
+  stocké à part, lisible par les responsables et les agents seulement.
+- **Dossiers** : création (copie du modèle d'étapes et de la checklist, numéro attribué par la base),
+  changement d'étape avec niveau de preuve, protection contre deux modifications simultanées.
+- **Documents** : envoi des fichiers (PDF ou photo, 10 Mo au maximum) dans un stockage privé, ouverture
+  par lien temporaire, vérification interne (« vérifié par l'agence » ou « à corriger »).
+- **Finance** : prestations convenues, encaissements (espèces, Mobile Money, virement) répartis sur les
+  prestations, numéro de reçu unique et sans trou, reçus imprimables. Le rôle « lecture seule » ne voit
+  aucun montant.
+- Tâches, tableau de bord, rapports, recherche, paramètres de l'agence, message WhatsApp préparé
+  (envoi manuel, noté « préparé » dans l'historique).
 
 ## Ce qui n'est pas encore disponible
 
-Ces actions sont visibles mais désactivées, avec la raison affichée :
-
-- enregistrer un paiement, une dépense ou un rendez-vous (Phase 4) ;
-- téléverser des fichiers (stockage sécurisé, Phase 5) ;
-- exporter en CSV (Phase 5) ;
-- inviter un collaborateur, se connecter ou se déconnecter (Phase 6) ;
-- envoyer des e-mails (un fournisseur reste à configurer).
+- enregistrer une dépense ou un rendez-vous, exporter en CSV (actions visibles, désactivées) ;
+- annuler un paiement ;
+- envoyer des e-mails depuis l'application (seuls les e-mails de compte partent, par Supabase) ;
+- abonnements payants des agences, WhatsApp IA.
 
 ## Organisation du code
 
 ```
+supabase/
+├─ migrations/         Tables, RLS, fonctions et stockage (à appliquer avec npm run db:push)
+└─ tests/              Tests de la base avec PGlite (reproduction minimale de Supabase)
 src/
-├─ app/(app)/          Pages de l'espace de travail (cadre commun : en-tête, menu, bandeau démo)
-├─ app/page.tsx        Page d'accueil publique provisoire
-├─ components/         brand/ (logo), layout/ (cadre), shared/ (composants communs), ui/ (shadcn/ui)
+├─ app/(auth)/         Connexion, inscription, mot de passe, création d'agence, invitation
+├─ app/(app)/          Espace de travail (en-tête, menu, bandeau de démonstration)
+├─ app/auth/confirm/   Liens reçus par e-mail
+├─ proxy.ts            Rafraîchit la session et protège l'espace de travail (Next.js 16)
 ├─ features/<module>/  Lectures (queries.ts), écritures (actions.ts), règles métier et formulaires
-└─ lib/                Types métier, libellés, mise en forme, périodes, données de démonstration
+└─ lib/                auth/ (session, droits), data/ (lecture Supabase, colonnes), supabase/ (clients)
 ```
 
-Les écrans ne lisent les données qu'au travers des `queries.ts` et `actions.ts` de chaque module. En
-Phase 5, seules ces fonctions changeront pour lire et écrire dans Supabase.
+Règles à respecter :
 
-Le projet utilise Next.js 16 avec Cache Components : toute lecture de données passe par `readDb()`
-(qui appelle `connection()`), et chaque page enveloppe son contenu dans un `<Suspense>`.
+- toute lecture passe par `readAgency()` ou `getAgencyContext()` (src/lib), qui vérifient la session côté
+  serveur ; chaque page enveloppe son contenu dans un `<Suspense>` (Cache Components) ;
+- toute écriture de plusieurs tables passe par une fonction SQL (une seule transaction) ;
+- une modification du schéma se fait par une **nouvelle** migration (`npx supabase migration new <nom>`),
+  jamais en modifiant une migration déjà appliquée ;
+- les listes de colonnes lues sont dans `src/lib/data/rows.ts` : le test de la base vérifie qu'elles existent.

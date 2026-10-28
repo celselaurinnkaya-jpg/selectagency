@@ -1,5 +1,6 @@
 import "server-only";
-import { readDb } from "@/lib/demo/store";
+import { can } from "@/lib/auth/permissions";
+import { loadTables, readAgency } from "@/lib/data/agency";
 import type { CaseCategory, CaseStatus, StepKind } from "@/lib/domain/types";
 import { chargeProgress } from "@/features/finance/calculations";
 import { backOptions, forwardOptions, requiresConfirmation } from "@/features/workflows/rules";
@@ -16,7 +17,7 @@ export interface CaseFilters {
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export async function listCases(filters: CaseFilters) {
-  const { data, now } = await readDb();
+  const { data, now } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true });
   const query = filters.q ? normalize(filters.q.trim()) : "";
   const status = filters.status ?? "active";
 
@@ -51,14 +52,28 @@ export async function listCases(filters: CaseFilters) {
 }
 
 export async function getCaseDetail(id: string) {
-  const { data, now } = await readDb();
-  const travelCase = data.cases.find((c) => c.id === id);
+  // Un identifiant mal formé ne doit pas provoquer d'erreur SQL : c'est simplement « introuvable ».
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
+  const { data, now, ctx } = await readAgency({
+    cases: (q) => q.eq("id", id),
+    steps: (q) => q.eq("case_id", id),
+    requirements: (q) => q.eq("case_id", id),
+    appointments: (q) => q.eq("case_id", id),
+    tasks: (q) => q.eq("case_id", id),
+    charges: (q) => q.eq("case_id", id),
+    payments: (q) => q.eq("case_id", id),
+    expenses: (q) => q.eq("case_id", id),
+    events: (q) => q.eq("case_id", id),
+    communications: (q) => q.eq("case_id", id),
+  });
+  const travelCase = data.cases[0];
   if (!travelCase) return null;
+  const { clients = [] } = await loadTables(ctx, { clients: (q) => q.eq("id", travelCase.clientId) });
+  data.clients = clients;
 
   const summary = summarizeCase(data, travelCase, now);
-  const steps = data.steps.filter((s) => s.caseId === id).sort((a, b) => a.position - b.position);
-  const charges = data.charges.filter((c) => c.caseId === id);
-  const payments = data.payments.filter((p) => p.caseId === id).sort((a, b) => a.paidAt.localeCompare(b.paidAt));
+  const steps = [...data.steps].sort((a, b) => a.position - b.position);
+  const payments = [...data.payments].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
   const current = summary.current;
 
   return {
@@ -66,6 +81,13 @@ export async function getCaseDetail(id: string) {
     agency: data.agency,
     now,
     members: data.members,
+    permissions: {
+      write: can(ctx.member.role, "operations.write"),
+      financeRead: can(ctx.member.role, "finance.read"),
+      financeWrite: can(ctx.member.role, "finance.write"),
+      documentsRead: can(ctx.member.role, "documents.read"),
+    },
+    organizationId: ctx.organizationId,
     steps,
     transitions: current
       ? {
@@ -75,19 +97,19 @@ export async function getCaseDetail(id: string) {
           needsConfirmation: requiresConfirmation(current),
         }
       : null,
-    requirements: data.requirements.filter((r) => r.caseId === id),
-    appointments: data.appointments.filter((a) => a.caseId === id).sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
-    tasks: data.tasks.filter((t) => t.caseId === id).sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
-    charges: chargeProgress(charges, payments),
+    requirements: data.requirements,
+    appointments: [...data.appointments].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    tasks: [...data.tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
+    charges: chargeProgress(data.charges, payments),
     payments,
-    expenses: data.expenses.filter((e) => e.caseId === id),
-    events: data.events.filter((e) => e.caseId === id).sort((a, b) => b.at.localeCompare(a.at)),
-    communications: data.communications.filter((c) => c.caseId === id).sort((a, b) => b.at.localeCompare(a.at)),
+    expenses: data.expenses,
+    events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
+    communications: [...data.communications].sort((a, b) => b.at.localeCompare(a.at)),
   };
 }
 
 export async function getCaseFormOptions(clientId?: string) {
-  const { data } = await readDb();
+  const { data } = await readAgency({ clients: true });
   return {
     clients: data.clients
       .filter((c) => !c.archivedAt)

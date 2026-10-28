@@ -8,6 +8,7 @@ import type { ExpenseType } from "@/lib/domain/types";
 import type { LabelSpec } from "@/lib/domain/labels";
 import { formatDate, formatMoney } from "@/lib/format";
 import { listExpenses } from "@/features/finance/queries";
+import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
 
 export const metadata: Metadata = { title: "Dépenses" };
@@ -33,8 +34,9 @@ export default function ExpensesPage() {
 }
 
 async function Expenses() {
-  const { rows, agency } = await listExpenses();
+  const { rows, agency, canSeeFinance } = await listExpenses();
   const tz = agency.timezone;
+  if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
   return (
     <>
       <FinanceTabs />

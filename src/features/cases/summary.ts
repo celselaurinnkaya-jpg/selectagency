@@ -1,4 +1,4 @@
-import type { DemoDatabase } from "@/lib/demo/fixtures";
+import type { AgencyData } from "@/lib/domain/types";
 import type { CaseStep, Client, Member, StepKind, TravelCase } from "@/lib/domain/types";
 import { caseFinance, type CaseFinance } from "@/features/finance/calculations";
 import { currentStep } from "@/features/workflows/rules";
@@ -19,7 +19,7 @@ export interface CaseSummary {
   isOverdue: boolean;
 }
 
-export function summarizeCase(data: DemoDatabase, travelCase: TravelCase, now: Date): CaseSummary {
+export function summarizeCase(data: Pick<AgencyData, "clients" | "steps" | "requirements" | "members" | "charges" | "payments">, travelCase: TravelCase, now: Date): CaseSummary {
   const client = data.clients.find((c) => c.id === travelCase.clientId);
   if (!client) throw new Error(`Client introuvable pour le dossier ${travelCase.reference}`);
   const steps = data.steps.filter((s) => s.caseId === travelCase.id);

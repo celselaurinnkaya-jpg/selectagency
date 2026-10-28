@@ -1,5 +1,7 @@
 import "server-only";
-import { readDb } from "@/lib/demo/store";
+import { can } from "@/lib/auth/permissions";
+import { readAgency } from "@/lib/data/agency";
+import { EVENT, toEvent } from "@/lib/data/rows";
 import { dayKey } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { agencyFinance } from "@/features/finance/calculations";
@@ -16,7 +18,21 @@ export interface ToHandleItem {
 }
 
 export async function getDashboard(periodKey?: string) {
-  const { data, now } = await readDb();
+  const { data, now, ctx } = await readAgency({
+    cases: true,
+    clients: true,
+    steps: true,
+    requirements: true,
+    tasks: true,
+    appointments: true,
+    charges: true,
+    payments: true,
+    expenses: true,
+  });
+  // Activité récente : les six derniers événements seulement, sans relire tout l'historique.
+  const { data: recentEvents, error } = await ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(6);
+  if (error) throw new Error(`Lecture impossible (activity_events) : ${error.message}`);
+  data.events = ((recentEvents ?? []) as unknown as Record<string, unknown>[]).map(toEvent);
   const tz = data.agency.timezone;
   const period = resolvePeriod(periodKey, now, tz);
   const inPeriod = (iso: string) => !period.from || new Date(iso).getTime() >= period.from.getTime();
@@ -92,7 +108,8 @@ export async function getDashboard(periodKey?: string) {
 
   return {
     agency: data.agency,
-    member: data.members.find((m) => m.id === data.currentMemberId)!,
+    member: ctx.member,
+    canSeeFinance: can(ctx.member.role, "finance.read"),
     now,
     period,
     isEmpty: data.clients.length === 0,

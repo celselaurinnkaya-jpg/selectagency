@@ -1,5 +1,8 @@
 import "server-only";
-import { readDb } from "@/lib/demo/store";
+import { getAgencyContext } from "@/lib/auth/context";
+import { can } from "@/lib/auth/permissions";
+import { fetchRows, readAgency } from "@/lib/data/agency";
+import { INVITATION_COLUMNS, toInvitation } from "@/features/team/invitations";
 import { dayKey } from "@/lib/format";
 import { monthParts, shiftMonth } from "@/lib/period";
 import type { DocumentRequirement } from "@/lib/domain/types";
@@ -12,7 +15,7 @@ export type DocumentView = "a-examiner" | "manquants" | "a-corriger" | "expirati
 const EXPIRY_WARNING_DAYS = 90;
 
 export async function listDocumentQueue(view: DocumentView) {
-  const { data, now } = await readDb();
+  const { data, now } = await readAgency({ cases: true, clients: true, requirements: true });
   const activeCases = new Map(data.cases.filter((c) => c.status === "active").map((c) => [c.id, c]));
   const limit = now.getTime() + EXPIRY_WARNING_DAYS * 24 * 3600 * 1000;
 
@@ -44,7 +47,7 @@ export async function listDocumentQueue(view: DocumentView) {
 }
 
 export async function listAppointments(monthParam?: string) {
-  const { data, now } = await readDb();
+  const { data, now } = await readAgency({ appointments: true, clients: true, cases: true });
   const tz = data.agency.timezone;
   const parsed = monthParam?.match(/^(\d{4})-(\d{2})$/);
   const { year, month } = parsed ? { year: Number(parsed[1]), month: Number(parsed[2]) } : monthParts(now, tz);
@@ -78,7 +81,7 @@ export async function listAppointments(monthParam?: string) {
 export type TaskScope = "a-faire" | "en-retard" | "terminees" | "toutes";
 
 export async function listTasks(scope: TaskScope, onlyMine = false) {
-  const { data, now } = await readDb();
+  const { data, now, ctx } = await readAgency({ tasks: true, clients: true, cases: true });
   const memberId = onlyMine ? data.currentMemberId : undefined;
   const open = (status: string) => status === "todo" || status === "in_progress";
   const all = data.tasks.filter((t) => !memberId || t.assignedTo === memberId);
@@ -107,16 +110,25 @@ export async function listTasks(scope: TaskScope, onlyMine = false) {
     now,
     members: data.members,
     currentMemberId: data.currentMemberId,
+    canWrite: can(ctx.member.role, "operations.write"),
     cases: data.cases.filter((c) => c.status === "active").map((c) => ({ id: c.id, label: `${c.reference} — ${c.title}` })),
     counts: Object.fromEntries((Object.keys(matches) as TaskScope[]).map((key) => [key, all.filter(matches[key]).length])) as Record<TaskScope, number>,
   };
 }
 
 export async function getTeam() {
-  const { data, now } = await readDb();
+  const { data, now, ctx } = await readAgency({ tasks: true, cases: true });
+  const canManage = can(ctx.member.role, "team.manage");
+  // Les invitations ne sont lisibles que par les responsables (RLS) : inutile de les demander sinon.
+  const invitations = canManage
+    ? (await fetchRows(ctx, "invitations", INVITATION_COLUMNS, (q) => q.is("accepted_at", null).is("revoked_at", null))).map(toInvitation)
+    : [];
   return {
     agency: data.agency,
     currentMemberId: data.currentMemberId,
+    currentRole: ctx.member.role,
+    canManage,
+    invitations: invitations.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     members: data.members.map((member) => {
       const openTasks = data.tasks.filter((t) => t.assignedTo === member.id && (t.status === "todo" || t.status === "in_progress"));
       return {
@@ -130,19 +142,19 @@ export async function getTeam() {
 }
 
 export async function getAgencySettings() {
-  const { data } = await readDb();
-  return { agency: data.agency };
+  const ctx = await getAgencyContext();
+  return { agency: ctx.agency, canManage: can(ctx.member.role, "settings.manage") };
 }
 
 export async function getShell() {
-  const { data } = await readDb();
-  return { agency: data.agency, member: data.members.find((m) => m.id === data.currentMemberId)! };
+  const ctx = await getAgencyContext();
+  return { agency: ctx.agency, member: ctx.member, isDemo: ctx.isDemo };
 }
 
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export async function search(q: string) {
-  const { data } = await readDb();
+  const { data } = await readAgency({ clients: true, cases: true });
   const query = normalize(q.trim());
   const digits = q.replace(/\D/g, "");
   if (query.length < 2) return { query: q, clients: [], cases: [] };

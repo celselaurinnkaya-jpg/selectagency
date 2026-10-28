@@ -15,7 +15,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         Aller au contenu
       </a>
       <AppHeader />
-      <DemoBanner />
+      <Suspense fallback={null}>
+        <DemoBanner />
+      </Suspense>
       <div className="flex">
         <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-surface px-3 py-4 lg:block print:hidden">
           <p className="mb-4 flex items-center justify-center gap-2 text-xl font-semibold text-navy-800">

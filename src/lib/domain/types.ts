@@ -1,5 +1,5 @@
-// Types métier partagés. Ils reprennent le modèle de données du plan (docs/PLAN_IMPLEMENTATION.md §6)
-// pour que le remplacement des données de démonstration par Supabase (Phase 5) ne touche pas aux écrans.
+// Types métier partagés. Ils reprennent le modèle de données du plan (docs/PLAN_IMPLEMENTATION.md §6) ;
+// la correspondance avec les colonnes Supabase est dans src/lib/data/rows.ts.
 
 export type MemberRole = "owner" | "admin" | "agent" | "accountant" | "viewer";
 
@@ -138,6 +138,8 @@ export interface TravelCase {
   openedAt: string;
   closedAt?: string;
   templateKey: string;
+  /** Verrou optimiste : incrémenté par la base à chaque changement d'étape. */
+  version?: number;
 }
 
 export interface StepTransitionOption {
@@ -173,6 +175,8 @@ export interface DocumentRequirement {
   isRequired: boolean;
   status: RequirementStatus;
   fileName?: string;
+  /** Emplacement du fichier dans Supabase Storage (bucket privé « documents »). */
+  storagePath?: string;
   receivedAt?: string;
   expiresAt?: string;
   reviewComment?: string;
@@ -270,4 +274,22 @@ export interface CommunicationLog {
   status: "prepared_manual" | "logged";
   summary: string;
   actorId: string;
+}
+
+/** Données d'une agence telles que les écrans les calculent (chargées depuis Supabase, ou fictives). */
+export interface AgencyData {
+  agency: Agency;
+  currentMemberId: string;
+  members: Member[];
+  clients: Client[];
+  cases: TravelCase[];
+  steps: CaseStep[];
+  requirements: DocumentRequirement[];
+  appointments: Appointment[];
+  tasks: Task[];
+  charges: Charge[];
+  payments: Payment[];
+  expenses: Expense[];
+  events: ActivityEvent[];
+  communications: CommunicationLog[];
 }

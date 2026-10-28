@@ -21,6 +21,7 @@ type Mode = "advance" | "skip" | "back";
 
 export function StepTransitionForm({
   caseId,
+  version,
   currentLabel,
   forward,
   back,
@@ -29,6 +30,8 @@ export function StepTransitionForm({
   balanceDue,
 }: {
   caseId: string;
+  /** Version du dossier lue à l'affichage (verrou optimiste). */
+  version: number;
   currentLabel: string;
   forward: StepTransitionOption[];
   back: StepTransitionOption[];
@@ -69,6 +72,7 @@ export function StepTransitionForm({
       }}
     >
       <input type="hidden" name="caseId" value={caseId} />
+      <input type="hidden" name="version" value={version} />
       <input type="hidden" name="mode" value={mode} />
       {mode !== "skip" && <input type="hidden" name="to" value={to} />}
       {mode === "advance" && needsConfirmation && confirmation && <input type="hidden" name="confirmation" value={confirmation} />}

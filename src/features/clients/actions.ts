@@ -4,26 +4,30 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { z } from "zod";
-import { db, reference } from "@/lib/demo/store";
+import { getAgencyContext } from "@/lib/auth/context";
+import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { readAgency } from "@/lib/data/agency";
+import { dbMessage } from "@/lib/data/errors";
+import { clientToRow } from "@/lib/data/rows";
 import { formValues, type FormState } from "@/lib/form-state";
 import type { Client } from "@/lib/domain/types";
 import { findDuplicates } from "./duplicates";
 
 // Validation côté serveur : une Server Action est un point d'accès public, on ne fait jamais
-// confiance aux contrôles du navigateur. (L'authentification et les rôles arrivent en Phase 6.)
+// confiance aux contrôles du navigateur. La session et le rôle sont revérifiés ici, puis par la RLS.
 
 const clientSchema = z.object({
   clientId: z.string().optional(),
   firstName: z.string().trim().min(1, "Indiquez le prénom.").max(80),
   lastName: z.string().trim().min(1, "Indiquez le nom.").max(80),
   clientType: z.enum(["individual", "student", "professional", "company"], { error: "Choisissez un type de client." }),
-  gender: z.string().optional(),
-  birthDate: z.string().optional(),
+  gender: z.string().max(20).optional(),
+  birthDate: z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide.")]).optional(),
   nationality: z.string().trim().max(80).optional(),
-  maritalStatus: z.string().optional(),
-  idDocType: z.string().optional(),
+  maritalStatus: z.string().max(30).optional(),
+  idDocType: z.string().max(30).optional(),
   idDocNumber: z.string().trim().max(50).optional(),
-  serviceMotive: z.string().optional(),
+  serviceMotive: z.string().max(40).optional(),
 
   residenceCountry: z.string().trim().min(1, "Choisissez ou indiquez le pays de résidence.").max(80),
   city: z.string().trim().min(1, "Indiquez la ville.").max(80),
@@ -31,7 +35,7 @@ const clientSchema = z.object({
   phone: z.string().trim().min(6, "Indiquez le numéro de téléphone."),
   whatsapp: z.string().trim().optional(),
   email: z.union([z.literal(""), z.string().trim().email("Adresse e-mail invalide.")]).optional(),
-  preferredLanguage: z.string().min(1, "Choisissez la langue de communication."),
+  preferredLanguage: z.string().min(1, "Choisissez la langue de communication.").max(10),
 
   // Responsables
   isSelfResponsible: z.string().optional(),
@@ -42,12 +46,13 @@ const clientSchema = z.object({
   guardian2Phone: z.string().trim().max(40).optional(),
   guardian2Whatsapp: z.string().trim().max(40).optional(),
 
-  // Suivi par l'agence (inchangé)
+  // Suivi par l'agence
   assignedTo: z.string().min(1, "Choisissez le conseiller."),
   notes: z.string().trim().max(2000).optional(),
   confirmDuplicate: z.literal("1").optional(),
 });
 
+/** Numéro au format international (+237…). Sans validation possible, on garde les seuls chiffres. */
 function toE164(raw: string | undefined, country: string): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -57,10 +62,8 @@ function toE164(raw: string | undefined, country: string): string | null {
   }
   const parsedDirect = parsePhoneNumberFromString(trimmed.startsWith("+") ? trimmed : `+${trimmed}`);
   if (parsedDirect?.isValid()) return parsedDirect.number;
-  if (trimmed.replace(/\D/g, "").length >= 6) {
-    return trimmed.startsWith("+") ? trimmed : `+${trimmed}`;
-  }
-  return null;
+  const digits = trimmed.replace(/\D/g, "");
+  return digits.length >= 6 && digits.length <= 15 ? `+${digits}` : null;
 }
 
 export async function saveClientAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -109,7 +112,8 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     };
   }
 
-  const data = db();
+  const { data, ctx } = await readAgency({ clients: true });
+  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
   if (!data.members.some((m) => m.id === input.assignedTo)) {
     return { message: "Le conseiller choisi n'existe pas.", values };
   }
@@ -139,58 +143,45 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     }
   }
 
-  const now = new Date();
+  const existing = clientId ? data.clients.find((c) => c.id === clientId) : undefined;
+  if (clientId && !existing) {
+    return { message: "Ce client n'existe pas ou a été supprimé.", values };
+  }
 
-  if (clientId) {
+  const fields: Parameters<typeof clientToRow>[0] = {
+    clientType: input.clientType,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    email: input.email || undefined,
+    phoneE164,
+    whatsappE164: whatsappE164 ?? undefined,
+    residenceCountry: input.residenceCountry,
+    city: input.city,
+    preferredLanguage: input.preferredLanguage,
+    assignedTo: input.assignedTo,
+    notes: input.notes || undefined,
+    gender: input.gender || undefined,
+    birthDate: input.birthDate || undefined,
+    nationality: input.nationality || undefined,
+    maritalStatus: input.maritalStatus || undefined,
+    idDocType: input.idDocType || undefined,
+    passportLast4: input.idDocNumber === undefined ? existing?.passportLast4 : input.idDocNumber ? input.idDocNumber.slice(-4) : undefined,
+    address: input.address || undefined,
+    serviceMotive: input.serviceMotive || undefined,
+    isSelfResponsible: isSelf,
+    guardian1,
+    guardian2,
+  };
+
+  const supabase = ctx.supabase;
+  let saved: Pick<Client, "id" | "reference">;
+
+  if (existing) {
     // Mode Modification
-    const index = data.clients.findIndex((c) => c.id === clientId);
-    if (index === -1) {
-      return { message: "Ce client n'existe pas ou a été supprimé.", values };
-    }
-
-    const existing = data.clients[index];
-    const updatedClient: Client = {
-      ...existing,
-      clientType: input.clientType,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email || undefined,
-      phoneE164,
-      whatsappE164: whatsappE164 ?? undefined,
-      residenceCountry: input.residenceCountry,
-      city: input.city,
-      preferredLanguage: input.preferredLanguage,
-      assignedTo: input.assignedTo,
-      notes: input.notes || undefined,
-
-      gender: input.gender || undefined,
-      birthDate: input.birthDate || undefined,
-      nationality: input.nationality || undefined,
-      maritalStatus: input.maritalStatus || undefined,
-      idDocType: input.idDocType || undefined,
-      idDocNumber: input.idDocNumber || undefined,
-      passportLast4: input.idDocNumber ? input.idDocNumber.trim().slice(-4) : existing.passportLast4,
-      address: input.address || undefined,
-      serviceMotive: input.serviceMotive || undefined,
-
-      isSelfResponsible: isSelf,
-      guardian1,
-      guardian2,
-    };
-
-    data.clients[index] = updatedClient;
-    data.events.push({
-      id: crypto.randomUUID(),
-      at: now.toISOString(),
-      actorId: data.currentMemberId,
-      clientId: updatedClient.id,
-      text: `Fiche client ${updatedClient.reference} modifiée.`,
-    });
-
-    revalidatePath("/clients");
-    revalidatePath(`/clients/${clientId}`);
-    revalidatePath(`/clients/${clientId}/edit`);
-    redirect(`/clients/${clientId}?ok=client-modifie`);
+    const { data: rows, error } = await supabase.from("clients").update(clientToRow(fields)).eq("id", existing.id).select("id, reference");
+    if (error) return { message: dbMessage(error), values };
+    if (!rows?.length) return { message: "Ce client n'existe pas ou vous n'avez pas le droit de le modifier.", values };
+    saved = { id: existing.id, reference: existing.reference };
   } else {
     // Mode Création
     const duplicates = findDuplicates(data.clients, { ...input, phoneE164, email: input.email || undefined });
@@ -205,52 +196,34 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
         values,
       };
     }
-
-    const client: Client = {
-      id: crypto.randomUUID(),
-      reference: reference("CLI", "client", now.getFullYear()),
-      clientType: input.clientType,
-      firstName: input.firstName,
-      lastName: input.lastName,
-      email: input.email || undefined,
-      phoneE164,
-      whatsappE164: whatsappE164 ?? undefined,
-      residenceCountry: input.residenceCountry,
-      city: input.city,
-      preferredLanguage: input.preferredLanguage,
-      registeredAt: now.toISOString(),
-      assignedTo: input.assignedTo,
-      notes: input.notes || undefined,
-      isDemoFixture: false,
-
-      gender: input.gender || undefined,
-      birthDate: input.birthDate || undefined,
-      nationality: input.nationality || undefined,
-      maritalStatus: input.maritalStatus || undefined,
-      idDocType: input.idDocType || undefined,
-      idDocNumber: input.idDocNumber || undefined,
-      passportLast4: input.idDocNumber ? input.idDocNumber.trim().slice(-4) : undefined,
-      address: input.address || undefined,
-      serviceMotive: input.serviceMotive || undefined,
-
-      isSelfResponsible: isSelf,
-      guardian1,
-      guardian2,
-    };
-
-    data.clients.push(client);
-    data.events.push({
-      id: crypto.randomUUID(),
-      at: now.toISOString(),
-      actorId: data.currentMemberId,
-      clientId: client.id,
-      text: `Fiche client ${client.reference} créée.`,
-    });
-
-    revalidatePath("/clients");
-    revalidatePath(`/clients/${client.id}`);
-    redirect(`/clients/${client.id}?ok=client-cree`);
+    // Le numéro CLI-… est attribué par la base.
+    const { data: row, error } = await supabase
+      .from("clients")
+      .insert({ ...clientToRow(fields), organization_id: ctx.organizationId, is_demo_fixture: false })
+      .select("id, reference")
+      .single();
+    if (error) return { message: dbMessage(error), values };
+    saved = { id: String(row.id), reference: String(row.reference) };
   }
+
+  // Numéro complet de la pièce d'identité : table protégée à part.
+  if (input.idDocNumber !== undefined) {
+    const { error } = await supabase
+      .from("client_sensitive")
+      .upsert({ client_id: saved.id, organization_id: ctx.organizationId, id_doc_number: input.idDocNumber || null }, { onConflict: "client_id" });
+    if (error) return { message: dbMessage(error, "La fiche est enregistrée, mais pas le numéro de la pièce d'identité."), values };
+  }
+
+  await supabase.from("activity_events").insert({
+    organization_id: ctx.organizationId,
+    actor_id: ctx.member.id,
+    client_id: saved.id,
+    text: existing ? `Fiche client ${saved.reference} modifiée.` : `Fiche client ${saved.reference} créée.`,
+  });
+
+  revalidatePath("/clients");
+  revalidatePath(`/clients/${saved.id}`);
+  redirect(`/clients/${saved.id}?ok=${existing ? "client-modifie" : "client-cree"}`);
 }
 
 export const createClientAction = saveClientAction;
@@ -264,21 +237,32 @@ export async function updateClientAction(
   return saveClientAction(prev, formData);
 }
 
+/**
+ * Suppression définitive d'une fiche, réservée aux responsables. Un client qui a des dossiers ne peut
+ * pas être supprimé : l'historique des démarches et les reçus doivent être conservés.
+ */
 export async function deleteClientAction(clientId: string): Promise<{ ok: boolean; message?: string }> {
-  const data = db();
-  const index = data.clients.findIndex((c) => c.id === clientId);
-  if (index === -1) {
-    return { ok: false, message: "Client introuvable." };
+  const ctx = await getAgencyContext();
+  if (!can(ctx.member.role, "client.delete")) return { ok: false, message: FORBIDDEN_MESSAGE };
+
+  const { count, error: countError } = await ctx.supabase.from("cases").select("id", { count: "exact", head: true }).eq("client_id", clientId);
+  if (countError) return { ok: false, message: dbMessage(countError) };
+  if (count) {
+    return {
+      ok: false,
+      message: "Ce client a des dossiers : sa fiche ne peut pas être supprimée, car l'historique des démarches et les reçus doivent être conservés.",
+    };
   }
 
-  const client = data.clients[index];
-  data.clients.splice(index, 1);
+  const { data: deleted, error } = await ctx.supabase.from("clients").delete().eq("id", clientId).select("reference, first_name, last_name");
+  if (error) return { ok: false, message: dbMessage(error) };
+  const client = deleted?.[0];
+  if (!client) return { ok: false, message: "Client introuvable." };
 
-  data.events.push({
-    id: crypto.randomUUID(),
-    at: new Date().toISOString(),
-    actorId: data.currentMemberId,
-    text: `Fiche client ${client.reference} (${client.firstName} ${client.lastName}) supprimée définitivement.`,
+  await ctx.supabase.from("activity_events").insert({
+    organization_id: ctx.organizationId,
+    actor_id: ctx.member.id,
+    text: `Fiche client ${client.reference} (${client.first_name} ${client.last_name}) supprimée définitivement.`,
   });
 
   revalidatePath("/clients");

@@ -10,6 +10,7 @@ import type { CaseCategory, StepKind } from "@/lib/domain/types";
 import { formatMoney } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getReports } from "@/features/finance/queries";
+import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { Download } from "lucide-react";
 
 export const metadata: Metadata = { title: "Rapports" };
@@ -35,6 +36,7 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
 
   return (
     <div className="space-y-6">
+      {!r.canSeeFinance && <FinanceRestricted />}
       <Pills label="Période" active={r.period.key} items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: `/reports?periode=${p.key}` }))} />
 
       <div className="grid gap-6 lg:grid-cols-2">

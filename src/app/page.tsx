@@ -3,8 +3,8 @@ import { CalendarDays, FileText, FolderKanban, ListChecks, Users, Wallet } from 
 import { Logo } from "@/components/brand/Logo";
 import { Button } from "@/components/ui/button";
 
-// Page d'accueil publique provisoire. La vraie page commerciale (tarifs, FAQ, démonstration)
-// est prévue en Phase 8 ; ici, aucune promesse ni chiffre qui ne serait pas vérifiable.
+// Page d'accueil publique provisoire. La vraie page commerciale (tarifs, FAQ) est prévue en
+// Phase 8 ; ici, aucune promesse ni chiffre qui ne serait pas vérifiable.
 
 const MODULES = [
   { icon: Users, title: "Clients", text: "Une fiche unique par client, avec ses coordonnées, ses dossiers et son historique." },
@@ -28,12 +28,13 @@ export default function HomePage() {
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild variant="accent" size="lg">
-              <Link href="/dashboard">Ouvrir la démonstration</Link>
+              <Link href="/signup">Créer un compte</Link>
+            </Button>
+            <Button asChild variant="onNavy" size="lg" className="border border-white/30">
+              <Link href="/login">Se connecter</Link>
             </Button>
           </div>
-          <p className="mt-4 text-sm text-navy-200">
-            Logiciel en cours de développement : la démonstration utilise uniquement des données fictives.
-          </p>
+          <p className="mt-4 text-sm text-navy-200">Logiciel en cours de développement, ouvert aux agences pilotes.</p>
         </div>
       </section>
       <section className="px-6 py-12">

@@ -1,12 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { UserPlus } from "lucide-react";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, PageHeader, PlannedAction, Section, StatusBadge } from "@/components/shared/ui";
+import { Card, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { ROLE } from "@/lib/domain/labels";
 import type { MemberRole } from "@/lib/domain/types";
-import { initials } from "@/lib/format";
+import { formatDate, initials } from "@/lib/format";
 import { getTeam } from "@/features/operations/queries";
+import { revokeInvitationAction } from "@/features/team/actions";
+import { InviteForm } from "@/features/team/TeamForms";
 
 export const metadata: Metadata = { title: "Équipe" };
 
@@ -16,7 +17,6 @@ export default function TeamPage() {
       <PageHeader
         title="Équipe"
         description="Les membres de l'agence et leur rôle. Chaque rôle n'accède qu'aux informations nécessaires à son travail."
-        actions={<PlannedAction icon={UserPlus} label="Inviter un collaborateur" reason="Invitations par e-mail avec la connexion sécurisée (Phase 6)." />}
       />
       <Suspense fallback={<PageSkeleton />}>
         <Team />
@@ -26,7 +26,7 @@ export default function TeamPage() {
 }
 
 async function Team() {
-  const { members, currentMemberId } = await getTeam();
+  const { agency, members, currentMemberId, canManage, invitations } = await getTeam();
   return (
     <div className="space-y-6">
       <Section title="Membres">
@@ -63,6 +63,40 @@ async function Team() {
         </div>
       </Section>
 
+      {canManage && (
+        <Section title="Inviter un collaborateur">
+          <Card className="space-y-4">
+            <p className="text-sm text-slate-600">
+              La personne crée son compte avec cette adresse e-mail, puis rejoint l&apos;agence avec le rôle choisi. Le rôle de propriétaire ne
+              s&apos;attribue pas par invitation.
+            </p>
+            <InviteForm />
+          </Card>
+          {invitations.length > 0 && (
+            <ul className="mt-3 space-y-2">
+              {invitations.map((invitation) => (
+                <li key={invitation.id}>
+                  <Card className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-900">{invitation.email}</span>
+                      <span className="block text-xs text-slate-500">
+                        {ROLE[invitation.role].label} · en attente · valable jusqu&apos;au {formatDate(invitation.expiresAt, agency.timezone)}
+                      </span>
+                    </span>
+                    <form action={revokeInvitationAction}>
+                      <input type="hidden" name="invitationId" value={invitation.id} />
+                      <button type="submit" className="inline-flex min-h-10 items-center text-sm font-medium text-red-700 hover:underline">
+                        Annuler l&apos;invitation
+                      </button>
+                    </form>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      )}
+
       <Section title="Les rôles">
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {(Object.keys(ROLE) as MemberRole[]).map((role) => (
@@ -75,8 +109,7 @@ async function Team() {
           ))}
         </ul>
         <p className="mt-3 text-sm text-slate-600">
-          Dans cette démonstration, vous êtes connecté en tant que propriétaire. Les contrôles d&apos;accès par rôle seront appliqués par
-          le serveur et la base de données avec l&apos;authentification (Phase 6).
+          Les droits de chaque rôle sont vérifiés par le serveur et par la base de données : masquer un bouton ne suffit jamais à donner ou retirer un accès.
         </p>
       </Section>
     </div>

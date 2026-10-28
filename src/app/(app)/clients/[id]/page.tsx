@@ -52,7 +52,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, cases, requirements, appointments, payments, events, communications, caseReferences, members } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/clients/${client.id}`;
@@ -68,14 +68,19 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
         title={`${client.firstName} ${client.lastName}`}
         description={`${CLIENT_TYPE[client.clientType]} · ${client.city}, ${countryName(client.residenceCountry)} · suivi par ${advisor?.fullName ?? "—"}`}
         actions={
+          permissions.write || permissions.delete ? (
           <>
+            {permissions.write && (
             <Button asChild variant="outline">
               <Link href={`${base}/edit`}>
                 <Pencil className="size-4" aria-hidden />
                 Modifier
               </Link>
             </Button>
-            <DeleteClientModal client={client} />
+            )}
+            {permissions.delete && <DeleteClientModal client={client} />}
+            {permissions.write && (
+            <>
             <Button asChild variant="outline">
               <Link href={`${base}?tab=communications`}>Préparer un message</Link>
             </Button>
@@ -85,7 +90,10 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                 Nouveau dossier
               </Link>
             </Button>
+            </>
+            )}
           </>
+          ) : undefined
         }
       />
       {query.ok === "client-cree" && (
@@ -132,7 +140,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                   </Field>
                   <Field
                     label={client.idDocType ? ID_DOC_TYPES[client.idDocType] ?? "Pièce d'identité" : "Pièce d'identité"}
-                    hint="Chiffré de bout en bout (Phase 5)"
+                    hint="Numéro complet visible par les responsables et les conseillers uniquement"
                   >
                     <span className="inline-flex items-center gap-1.5 font-mono">
                       <Lock className="size-3.5 text-slate-500" aria-hidden />
@@ -326,6 +334,9 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
         <div className="grid gap-6 lg:grid-cols-2">
           <Section title="Préparer un message WhatsApp">
             <Card>
+              {!permissions.write ? (
+                <p className="text-sm text-slate-600">Votre rôle permet de consulter les communications, pas d&apos;en préparer.</p>
+              ) : (
               <PrepareWhatsApp
                 clientId={client.id}
                 phoneDigits={client.isDemoFixture ? undefined : (client.whatsappE164 ?? client.phoneE164).replace(/\D/g, "")}
@@ -335,9 +346,10 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                   caseReference: cases.find((s) => s.travelCase.status === "active")?.travelCase.reference,
                   missingDocuments: missing.map((r) => r.label),
                   nextAppointment: nextAppointment ? { title: nextAppointment.title, when: formatRelativeDay(nextAppointment.startsAt, now, tz, !nextAppointment.allDay).toLowerCase(), location: nextAppointment.location } : undefined,
-                  balance: balance ? formatMoney(balance, agency.currency) : undefined,
+                  balance: balance && permissions.financeRead ? formatMoney(balance, agency.currency) : undefined,
                 })}
               />
+              )}
             </Card>
           </Section>
           <Section title="Historique des communications">

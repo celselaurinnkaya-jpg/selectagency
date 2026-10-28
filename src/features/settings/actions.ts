@@ -2,7 +2,9 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { db } from "@/lib/demo/store";
+import { getAgencyContext } from "@/lib/auth/context";
+import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { dbMessage } from "@/lib/data/errors";
 import { formValues, type FormState } from "@/lib/form-state";
 import { CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from "@/lib/format";
 
@@ -20,9 +22,22 @@ export async function updateAgencyAction(_prev: FormState, formData: FormData): 
   if (!parsed.success) {
     return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
   }
-  const data = db();
+  const ctx = await getAgencyContext();
+  if (!can(ctx.member.role, "settings.manage")) return { message: FORBIDDEN_MESSAGE, values };
   // La devise s'applique aux nouveaux dossiers : les dossiers existants gardent leur devise de facturation.
-  data.agency = { ...data.agency, ...parsed.data };
+  const { data: rows, error } = await ctx.supabase
+    .from("organizations")
+    .update({
+      name: parsed.data.name,
+      city: parsed.data.city,
+      currency: parsed.data.currency,
+      timezone: parsed.data.timezone,
+      receipt_prefix: parsed.data.receiptPrefix,
+    })
+    .eq("id", ctx.organizationId)
+    .select("id");
+  if (error) return { message: dbMessage(error), values };
+  if (!rows?.length) return { message: FORBIDDEN_MESSAGE, values };
   refresh();
-  return { ok: true, message: "Paramètres enregistrés pour cette session de démonstration." };
+  return { ok: true, message: "Paramètres de l'agence enregistrés." };
 }

@@ -1,12 +1,13 @@
 import "server-only";
-import { readDb } from "@/lib/demo/store";
+import { can } from "@/lib/auth/permissions";
+import { loadTables, readAgency } from "@/lib/data/agency";
 import { dayKey } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { summarizeCase } from "@/features/cases/summary";
 import { agencyFinance } from "./calculations";
 
 export async function getFinanceOverview(periodKey?: string) {
-  const { data, now } = await readDb();
+  const { data, now, ctx } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true, expenses: true });
   const period = resolvePeriod(periodKey, now, data.agency.timezone);
   const summaries = data.cases.map((c) => summarizeCase(data, c, now));
   const balances = summaries.filter((s) => s.finance.balanceMinor > 0).sort((a, b) => b.finance.balanceMinor - a.finance.balanceMinor);
@@ -14,6 +15,7 @@ export async function getFinanceOverview(periodKey?: string) {
     agency: data.agency,
     now,
     period,
+    canSeeFinance: can(ctx.member.role, "finance.read"),
     totals: agencyFinance(data.charges, data.payments, data.expenses, period).map((t) => ({
       ...t,
       balanceDueMinor: balances.filter((b) => b.finance.currency === t.currency).reduce((sum, b) => sum + b.finance.balanceMinor, 0),
@@ -23,9 +25,10 @@ export async function getFinanceOverview(periodKey?: string) {
 }
 
 export async function listPayments() {
-  const { data } = await readDb();
+  const { data, ctx } = await readAgency({ payments: true, clients: true, cases: true });
   return {
     agency: data.agency,
+    canSeeFinance: can(ctx.member.role, "finance.read"),
     rows: [...data.payments]
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
       .map((payment) => {
@@ -41,9 +44,10 @@ export async function listPayments() {
 }
 
 export async function listExpenses() {
-  const { data } = await readDb();
+  const { data, ctx } = await readAgency({ expenses: true, cases: true });
   return {
     agency: data.agency,
+    canSeeFinance: can(ctx.member.role, "finance.read"),
     rows: [...data.expenses]
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
       .map((expense) => ({
@@ -55,9 +59,18 @@ export async function listExpenses() {
 }
 
 export async function getReceipt(paymentId: string) {
-  const { data } = await readDb();
-  const payment = data.payments.find((p) => p.id === paymentId);
+  if (!/^[0-9a-f-]{36}$/i.test(paymentId)) return null;
+  const { data, ctx } = await readAgency({ payments: (q) => q.eq("id", paymentId) });
+  const payment = data.payments[0];
   if (!payment) return null;
+  Object.assign(
+    data,
+    await loadTables(ctx, {
+      cases: (q) => q.eq("id", payment.caseId),
+      clients: (q) => q.eq("id", payment.clientId),
+      charges: (q) => q.eq("case_id", payment.caseId),
+    }),
+  );
   const travelCase = data.cases.find((c) => c.id === payment.caseId)!;
   return {
     payment,
@@ -70,7 +83,7 @@ export async function getReceipt(paymentId: string) {
 }
 
 export async function getReports(periodKey?: string) {
-  const { data, now } = await readDb();
+  const { data, now, ctx } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true, expenses: true, tasks: true });
   const tz = data.agency.timezone;
   const period = resolvePeriod(periodKey, now, tz);
   const inPeriod = (iso?: string) => !!iso && (!period.from || new Date(iso).getTime() >= period.from.getTime());
@@ -90,6 +103,7 @@ export async function getReports(periodKey?: string) {
     agency: data.agency,
     now,
     period,
+    canSeeFinance: can(ctx.member.role, "finance.read"),
     openedCount: opened.length,
     closedCount: data.cases.filter((c) => inPeriod(c.closedAt)).length,
     byCategory: countBy(opened, (c) => c.category),

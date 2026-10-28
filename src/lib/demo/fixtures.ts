@@ -1,11 +1,10 @@
 import type {
   ActivityEvent,
-  Agency,
+  AgencyData,
   Appointment,
   CaseStep,
   Charge,
   Client,
-  CommunicationLog,
   DocumentRequirement,
   Expense,
   Member,
@@ -20,21 +19,7 @@ import { templateByKey } from "@/features/workflows/templates";
 // Données FICTIVES de démonstration. Elles sont cohérentes entre elles (montants, reçus, étapes)
 // pour que chaque écran raconte la même histoire. Aucune n'est issue d'une agence réelle.
 
-export interface DemoDatabase {
-  agency: Agency;
-  currentMemberId: string;
-  members: Member[];
-  clients: Client[];
-  cases: TravelCase[];
-  steps: CaseStep[];
-  requirements: DocumentRequirement[];
-  appointments: Appointment[];
-  tasks: Task[];
-  charges: Charge[];
-  payments: Payment[];
-  expenses: Expense[];
-  events: ActivityEvent[];
-  communications: CommunicationLog[];
+export interface DemoDatabase extends AgencyData {
   counters: Record<string, number>;
 }
 

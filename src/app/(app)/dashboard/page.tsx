@@ -37,13 +37,22 @@ export default function DashboardPage({ searchParams }: PageProps<"/dashboard">)
   );
 }
 
+const CONFIRMATIONS: Record<string, string> = {
+  "agence-creee": "Votre agence est créée. Enregistrez votre premier client, puis invitez votre équipe depuis la page Équipe.",
+  "invitation-acceptee": "Vous avez rejoint l'agence. Bienvenue dans l'équipe !",
+  "mot-de-passe": "Votre nouveau mot de passe est enregistré.",
+};
+
 async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "searchParams">) {
-  const { periode } = await searchParams;
+  const { periode, ok } = await searchParams;
   const d = await getDashboard(typeof periode === "string" ? periode : undefined);
   const tz = d.agency.timezone;
+  const confirmation = typeof ok === "string" ? CONFIRMATIONS[ok] : undefined;
 
   if (d.isEmpty) {
     return (
+      <div className="space-y-4">
+      {confirmation && <Notice tone="success">{confirmation}</Notice>}
       <EmptyState
         icon={FolderPlus}
         title="Bienvenue dans votre espace"
@@ -54,6 +63,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           </Button>
         }
       />
+      </div>
     );
   }
 
@@ -61,6 +71,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
 
   return (
     <div className="space-y-6">
+      {confirmation && <Notice tone="success">{confirmation}</Notice>}
       {/* Bannière de bienvenue (référence UNIP) */}
       <div className="rounded-2xl bg-linear-to-r from-navy-900 via-navy-800 to-navy-600 px-5 py-5 text-white shadow-sm sm:px-7 sm:py-6">
         <h1 className="text-xl font-semibold sm:text-2xl">
@@ -128,6 +139,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
         </div>
       </Section>
 
+      {d.canSeeFinance && (
       <Section title="Finances" action={<Link href="/finance" className="text-sm font-medium text-navy-700 hover:underline">Détail financier</Link>}>
         {d.finance.length === 0 ? (
           <p className="text-sm text-slate-600">Aucun paiement ni dépense enregistré.</p>
@@ -144,6 +156,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           ))
         )}
       </Section>
+      )}
 
       <div className="grid gap-6 xl:grid-cols-2">
         <Section title="Prochains rendez-vous" action={<Link href="/appointments" className="text-sm font-medium text-navy-700 hover:underline">Calendrier</Link>}>

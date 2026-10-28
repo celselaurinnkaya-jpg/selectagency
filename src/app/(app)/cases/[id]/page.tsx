@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, CalendarPlus, Check, CircleDashed, Clock, CreditCard, Upload, Wallet } from "lucide-react";
+import { AlertTriangle, CalendarPlus, Check, CircleDashed, Clock, FileText, Wallet } from "lucide-react";
 import { cn } from "cn";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
@@ -29,6 +29,8 @@ import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { buildMessageTemplates } from "@/features/communications/templates";
 import { CHECKLIST_DISCLAIMER, DOCUMENT_TYPES } from "@/features/documents/checklists";
 import { AddRequirementForm, ReviewDocumentForm } from "@/features/documents/DocumentForms";
+import { DocumentUpload } from "@/features/documents/DocumentUpload";
+import { AddChargeForm, RecordPaymentForm } from "@/features/finance/FinanceForms";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
 import { WORKFLOW_DISCLAIMER } from "@/features/workflows/templates";
 
@@ -85,7 +87,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getCaseDetail(id);
   if (!detail) notFound();
-  const { summary, agency, now, members, steps, transitions, requirements, appointments, tasks, charges, payments, events, communications } = detail;
+  const { summary, agency, now, members, permissions, organizationId, steps, transitions, requirements, appointments, tasks, charges, payments, events, communications } = detail;
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
@@ -95,6 +97,8 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const toReview = requirements.filter((r) => r.status === "received" || r.status === "to_verify");
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
   const isActive = c.status === "active";
+  // Les actions ne sont proposées qu'aux rôles qui peuvent les faire (la base refuserait de toute façon).
+  const canEdit = isActive && permissions.write;
   const balanceLabel = finance.balanceMinor ? formatMoney(finance.balanceMinor, finance.currency) : undefined;
 
   return (
@@ -161,8 +165,12 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Étape en cours" value={<span className="text-base">{current?.label ?? "Dossier clôturé"}</span>} hint={current ? STEP_KIND[current.kind].waitingLabel : undefined} icon={Clock} href={`${base}?tab=etapes`} />
             <StatCard label="Pièces manquantes" value={missing.length} hint={`${toReview.length} à examiner`} icon={AlertTriangle} href={`${base}?tab=documents`} tone={missing.length ? "danger" : "navy"} />
-            <StatCard label="Encaissé" value={formatMoney(finance.paidMinor, finance.currency)} hint={`sur ${formatMoney(finance.agreedMinor, finance.currency)} convenus`} icon={Wallet} href={`${base}?tab=finance`} />
-            <StatCard label="Solde dû" value={formatMoney(finance.balanceMinor, finance.currency)} icon={Wallet} href={`${base}?tab=finance`} tone={finance.balanceMinor ? "warning" : "success"} />
+            {permissions.financeRead && (
+              <>
+                <StatCard label="Encaissé" value={formatMoney(finance.paidMinor, finance.currency)} hint={`sur ${formatMoney(finance.agreedMinor, finance.currency)} convenus`} icon={Wallet} href={`${base}?tab=finance`} />
+                <StatCard label="Solde dû" value={formatMoney(finance.balanceMinor, finance.currency)} icon={Wallet} href={`${base}?tab=finance`} tone={finance.balanceMinor ? "warning" : "success"} />
+              </>
+            )}
           </div>
           <Section title="Informations du dossier">
             <Card>
@@ -222,9 +230,10 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
           </Section>
           <Section title="Faire avancer le dossier" className="order-first xl:order-none">
             <Card>
-              {isActive && current && transitions ? (
+              {canEdit && current && transitions ? (
                 <StepTransitionForm
                   caseId={c.id}
+                  version={c.version ?? 1}
                   currentLabel={current.label}
                   forward={transitions.forward}
                   back={transitions.back}
@@ -233,7 +242,9 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   balanceDue={balanceLabel}
                 />
               ) : (
-                <p className="text-sm text-slate-600">Ce dossier est clôturé : ses étapes ne peuvent plus être modifiées.</p>
+                <p className="text-sm text-slate-600">
+                  {isActive ? "Votre rôle permet de consulter ce dossier, pas de le faire avancer." : "Ce dossier est clôturé : ses étapes ne peuvent plus être modifiées."}
+                </p>
               )}
             </Card>
           </Section>
@@ -263,15 +274,26 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                         </div>
                         <StatusBadge spec={REQUIREMENT_STATUS[r.status]} />
                       </div>
-                      {isActive && awaitingReview && <ReviewDocumentForm requirementId={r.id} label={r.label} />}
-                      {isActive && needsFile && <PlannedAction icon={Upload} label="Téléverser le fichier" reason="Le stockage sécurisé des documents arrive avec la base de données (Phase 5)." />}
+                      {r.storagePath && permissions.documentsRead && (
+                        <a
+                          href={`/documents/${r.id}/fichier`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-navy-700 hover:underline"
+                        >
+                          <FileText className="size-4" aria-hidden />
+                          Ouvrir le fichier
+                        </a>
+                      )}
+                      {canEdit && awaitingReview && <ReviewDocumentForm requirementId={r.id} label={r.label} />}
+                      {canEdit && needsFile && <DocumentUpload organizationId={organizationId} caseId={c.id} requirementId={r.id} label={r.label} />}
                     </Card>
                   </li>
                 );
               })}
             </ul>
           </Section>
-          {isActive && (
+          {canEdit && (
             <Section title="Compléter la liste">
               <Card>
                 <AddRequirementForm
@@ -311,7 +333,11 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
         </Section>
       )}
 
-      {tab === "finance" && (
+      {tab === "finance" && !permissions.financeRead && (
+        <Notice title="Finance non accessible">Votre rôle permet de consulter le dossier, mais pas ses montants ni ses paiements.</Notice>
+      )}
+
+      {tab === "finance" && permissions.financeRead && (
         <div className="space-y-6">
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Frais de l'agence" value={formatMoney(finance.agreedAgencyMinor, finance.currency)} hint="Revenus propres convenus" icon={Wallet} />
@@ -320,6 +346,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
             <StatCard label={finance.overpaidMinor ? "Trop-perçu" : "Solde dû"} value={formatMoney(finance.overpaidMinor || finance.balanceMinor, finance.currency)} icon={Wallet} tone={finance.balanceMinor ? "warning" : "success"} />
           </div>
           <Section title="Prestations convenues">
+            {charges.length === 0 && <p className="mb-3 text-sm text-slate-600">Aucune prestation : ajoutez ce qui a été convenu avec le client avant d&apos;enregistrer un paiement.</p>}
             <ul className="space-y-2">
               {charges.map(({ charge, allocatedMinor, remainingMinor }) => (
                 <li key={charge.id}>
@@ -345,8 +372,26 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                 </li>
               ))}
             </ul>
+            {permissions.financeWrite && c.status !== "cancelled" && (
+              <Card className="mt-3">
+                <AddChargeForm caseId={c.id} currency={c.billingCurrency} />
+              </Card>
+            )}
           </Section>
-          <Section title="Paiements et reçus" action={isActive ? <PlannedAction icon={CreditCard} label="Enregistrer un paiement" reason="Formulaire d'encaissement prévu à la prochaine étape (Phase 4)." /> : undefined}>
+          {permissions.financeWrite && c.status !== "cancelled" && charges.some((x) => x.remainingMinor > 0) && (
+            <Section title="Enregistrer un paiement">
+              <Card>
+                <RecordPaymentForm
+                  caseId={c.id}
+                  currency={c.billingCurrency}
+                  remainingLabel={formatMoney(charges.reduce((sum, x) => sum + x.remainingMinor, 0), c.billingCurrency)}
+                  defaultDate={dayKey(now, tz)}
+                  defaultPayer={`${client.firstName} ${client.lastName}`}
+                />
+              </Card>
+            </Section>
+          )}
+          <Section title="Paiements et reçus">
             {payments.length === 0 ? (
               <p className="text-sm text-slate-600">Aucun paiement enregistré.</p>
             ) : (
@@ -401,7 +446,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               </ul>
             )}
           </Section>
-          {isActive && (
+          {canEdit && (
             <Section title="Ajouter une tâche">
               <Card>
                 <TaskCreateForm
@@ -420,6 +465,9 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
         <div className="grid gap-6 lg:grid-cols-2">
           <Section title="Préparer un message WhatsApp">
             <Card>
+              {!permissions.write ? (
+                <p className="text-sm text-slate-600">Votre rôle permet de consulter les communications, pas d&apos;en préparer.</p>
+              ) : (
               <PrepareWhatsApp
                 clientId={client.id}
                 caseId={c.id}
@@ -430,9 +478,10 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   caseReference: c.reference,
                   missingDocuments: missing.map((r) => r.label),
                   nextAppointment: nextAppointment ? { title: nextAppointment.title, when: formatRelativeDay(nextAppointment.startsAt, now, tz, !nextAppointment.allDay).toLowerCase(), location: nextAppointment.location } : undefined,
-                  balance: balanceLabel,
+                  balance: permissions.financeRead ? balanceLabel : undefined,
                 })}
               />
+              )}
             </Card>
           </Section>
           <Section title="Historique des communications">

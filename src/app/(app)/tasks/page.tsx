@@ -69,7 +69,7 @@ async function Tasks({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">
               return (
                 <li key={task.id}>
                   <Card className="flex items-start gap-3">
-                    <TaskToggle taskId={task.id} done={done} title={task.title} />
+                    {data.canWrite && <TaskToggle taskId={task.id} done={done} title={task.title} />}
                     <div className="min-w-0 flex-1">
                       <p className={cn("font-medium", done ? "text-slate-500 line-through" : "text-slate-900")}>{task.title}</p>
                       <p className="text-sm text-slate-600">
@@ -97,6 +97,7 @@ async function Tasks({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">
         )}
       </div>
 
+      {data.canWrite && (
       <Section title="Nouvelle tâche" id="nouvelle-tache">
         <TaskCreateForm
           defaultMemberId={data.currentMemberId}
@@ -105,6 +106,7 @@ async function Tasks({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">
           cases={data.cases.map((c) => ({ value: c.id, label: c.label }))}
         />
       </Section>
+      )}
     </div>
   );
 }

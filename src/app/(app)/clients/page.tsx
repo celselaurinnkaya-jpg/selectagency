@@ -44,7 +44,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
   const q = typeof params.q === "string" ? params.q : "";
   const type = typeof params.type === "string" && params.type in CLIENT_TYPE ? (params.type as ClientType) : undefined;
   const country = typeof params.pays === "string" ? params.pays : undefined;
-  const { rows, agency, now, countries, total } = await listClients({ q, type, country });
+  const { rows, agency, now, countries, total, canWrite, canDelete } = await listClients({ q, type, country });
   const tz = agency.timezone;
 
   return (
@@ -154,6 +154,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                     <td className="px-4 py-3 text-slate-600">{formatRelativeDay(lastActivityAt, now, tz, false)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {canWrite && (
                         <Link
                           href={`/clients/${client.id}/edit`}
                           className="flex size-8 items-center justify-center rounded-lg text-slate-500 hover:bg-navy-50 hover:text-navy-800 transition"
@@ -162,7 +163,8 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                         >
                           <Pencil className="size-4" aria-hidden />
                         </Link>
-                        <DeleteClientModal client={client} variant="icon" />
+                        )}
+                        {canDelete && <DeleteClientModal client={client} variant="icon" />}
                       </div>
                     </td>
                   </tr>
@@ -186,15 +188,19 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                   </span>
                   {balanceMinor > 0 && <span className="mt-1 block text-sm text-orange-800">Solde dû : {formatMoney(balanceMinor, agency.currency)}</span>}
                 </Link>
+                {(canWrite || canDelete) && (
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-2 text-xs">
+                  {canWrite && (
                   <Button asChild variant="outline" size="sm" className="h-8 text-xs">
                     <Link href={`/clients/${client.id}/edit`}>
                       <Pencil className="size-3.5" aria-hidden />
                       Modifier
                     </Link>
                   </Button>
-                  <DeleteClientModal client={client} />
+                  )}
+                  {canDelete && <DeleteClientModal client={client} />}
                 </div>
+                )}
               </li>
             ))}
           </ul>

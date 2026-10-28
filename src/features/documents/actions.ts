@@ -2,8 +2,11 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { db } from "@/lib/demo/store";
+import { getAgencyContext } from "@/lib/auth/context";
+import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { dbMessage } from "@/lib/data/errors";
 import { formValues, type FormState } from "@/lib/form-state";
+import { DOCUMENTS_BUCKET } from "./storage";
 
 // Vérification interne d'une pièce. « Vérifié par l'agence » n'est jamais une validation officielle.
 
@@ -24,29 +27,58 @@ export async function reviewDocumentAction(_prev: FormState, formData: FormData)
   if (!parsed.success) {
     return { message: "Vérification incomplète.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
   }
-  const data = db();
-  const requirement = data.requirements.find((r) => r.id === parsed.data.requirementId);
+  const ctx = await getAgencyContext();
+  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
+
+  const { data: requirement } = await ctx.supabase.from("document_requirements").select("label").eq("id", parsed.data.requirementId).maybeSingle();
   if (!requirement) return { message: "Pièce introuvable.", values };
-  if (requirement.status !== "received" && requirement.status !== "to_verify") {
-    return { message: "Cette pièce n'est pas en attente de vérification.", values };
-  }
-  const travelCase = data.cases.find((c) => c.id === requirement.caseId);
-  const now = new Date().toISOString();
-  requirement.status = parsed.data.decision;
-  requirement.reviewedAt = now;
-  requirement.reviewedBy = data.currentMemberId;
-  requirement.reviewComment = parsed.data.decision === "to_correct" ? parsed.data.comment : undefined;
-  data.events.push({
-    id: crypto.randomUUID(),
-    at: now,
-    actorId: data.currentMemberId,
-    clientId: travelCase?.clientId,
-    caseId: requirement.caseId,
-    text:
+  const { error } = await ctx.supabase.rpc("review_requirement", {
+    p_requirement_id: parsed.data.requirementId,
+    p_decision: parsed.data.decision,
+    p_comment: parsed.data.comment ?? null,
+    p_event:
       parsed.data.decision === "validated"
         ? `Pièce vérifiée par l'agence : ${requirement.label}.`
         : `Pièce à corriger : ${requirement.label} (${parsed.data.comment}).`,
   });
+  if (error) return { message: dbMessage(error), values };
   refresh();
   return { ok: true, message: parsed.data.decision === "validated" ? "Pièce marquée comme vérifiée par l'agence." : "Pièce marquée « à corriger »." };
+}
+
+const uploadSchema = z.object({
+  requirementId: z.uuid(),
+  storagePath: z.string().min(10).max(400),
+  fileName: z.string().trim().min(1).max(200),
+});
+
+/**
+ * Le navigateur a déposé le fichier dans Storage (bucket privé) ; on le rattache à la pièce.
+ * La base vérifie que le chemin appartient bien à ce dossier et que le fichier existe.
+ */
+export async function registerUploadAction(input: { requirementId: string; storagePath: string; fileName: string }): Promise<FormState> {
+  const parsed = uploadSchema.safeParse(input);
+  if (!parsed.success) return { message: "Envoi incomplet : recommencez." };
+  const ctx = await getAgencyContext();
+  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE };
+
+  const { data: requirement } = await ctx.supabase.from("document_requirements").select("label").eq("id", parsed.data.requirementId).maybeSingle();
+  if (!requirement) return { message: "Pièce introuvable." };
+  const { data: previousPath, error } = await ctx.supabase.rpc("register_requirement_file", {
+    p_requirement_id: parsed.data.requirementId,
+    p_storage_path: parsed.data.storagePath,
+    p_file_name: parsed.data.fileName,
+    p_event: `Document reçu : ${requirement.label} (${parsed.data.fileName}), à vérifier.`,
+  });
+  if (error) {
+    // Fichier déposé mais non rattaché : on le retire pour ne pas laisser de document orphelin.
+    await ctx.supabase.storage.from(DOCUMENTS_BUCKET).remove([parsed.data.storagePath]);
+    return { message: dbMessage(error) };
+  }
+  // L'ancienne version (pièce à corriger, expirée) est remplacée : elle ne reste pas stockée.
+  if (typeof previousPath === "string" && previousPath && previousPath !== parsed.data.storagePath) {
+    await ctx.supabase.storage.from(DOCUMENTS_BUCKET).remove([previousPath]);
+  }
+  refresh();
+  return { ok: true, message: "Fichier reçu : il est à vérifier par l'agence." };
 }

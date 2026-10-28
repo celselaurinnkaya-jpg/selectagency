@@ -8,6 +8,7 @@ import { Card, Notice, PageHeader, Section, StatCard } from "@/components/shared
 import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getFinanceOverview } from "@/features/finance/queries";
+import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
 
 export const metadata: Metadata = { title: "Finance" };
@@ -32,6 +33,7 @@ async function Overview({ searchParams }: Pick<PageProps<"/finance">, "searchPar
         description="Chaque devise est présentée séparément : aucune conversion n'est faite entre devises. Les sommes reçues pour des tiers ne sont pas des revenus de l'agence."
       />
       <FinanceTabs />
+      {!d.canSeeFinance && <FinanceRestricted />}
       <Pills label="Période" active={d.period.key} items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: p.key === "mois" ? "/finance" : `/finance?periode=${p.key}` }))} />
 
       {d.totals.length === 0 ? (

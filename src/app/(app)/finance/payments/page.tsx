@@ -1,11 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { CreditCard } from "lucide-react";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, PageHeader, PlannedAction, StatusBadge } from "@/components/shared/ui";
+import { Card, PageHeader, StatusBadge } from "@/components/shared/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import { listPayments } from "@/features/finance/queries";
+import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
 
 export const metadata: Metadata = { title: "Paiements et reçus" };
@@ -15,8 +15,7 @@ export default function PaymentsPage() {
     <>
       <PageHeader
         title="Paiements et reçus"
-        description="Chaque paiement reçoit un numéro de reçu unique et chronologique. Un paiement n'est jamais modifié : il peut seulement être annulé, avec un motif."
-        actions={<PlannedAction icon={CreditCard} label="Enregistrer un paiement" reason="Formulaire d'encaissement prévu à la prochaine étape (Phase 4)." />}
+        description="Chaque paiement reçoit un numéro de reçu unique et chronologique, attribué par la base de données, et n'est jamais modifié ni supprimé. Pour enregistrer un paiement, ouvrez le dossier concerné, onglet Finance."
       />
       <Suspense fallback={<PageSkeleton />}>
         <Payments />
@@ -26,8 +25,9 @@ export default function PaymentsPage() {
 }
 
 async function Payments() {
-  const { rows, agency } = await listPayments();
+  const { rows, agency, canSeeFinance } = await listPayments();
   const tz = agency.timezone;
+  if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
   return (
     <>
       <FinanceTabs />
