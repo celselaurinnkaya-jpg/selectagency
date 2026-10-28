@@ -1,36 +1,76 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SELECT Agency
 
-## Getting Started
+**La gestion intelligente des agences de voyages.** Logiciel de gestion (SaaS) pour les agences qui accompagnent
+des clients dans leurs projets de visa, d'études à l'étranger, de voyage et de démarches administratives.
 
-First, run the development server:
+> **État actuel : prototype d'interface sur données fictives (Phase 3 du plan, début de Phase 4).**
+> Il n'y a encore ni base de données, ni authentification, ni stockage de fichiers. Les données de
+> démonstration vivent en mémoire sur le serveur local et sont perdues à chaque redémarrage.
+> **Ne jamais déployer cette version en production** et n'y saisir aucune donnée réelle.
+
+Le plan complet est dans [docs/PLAN_IMPLEMENTATION.md](docs/PLAN_IMPLEMENTATION.md), la charte dans
+[docs/design/DESIGN_SYSTEM.md](docs/design/DESIGN_SYSTEM.md).
+
+## Démarrer
+
+Prérequis : Node.js 24 (LTS) et npm.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Commande | Rôle |
+|---|---|
+| `npm run dev` | Serveur de développement |
+| `npm run build` | Compilation de production (vérifie aussi les règles de rendu de Next.js) |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | Vérification TypeScript (mode strict) |
+| `npm test` | Tests unitaires (Vitest) |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Le bouton **« Réinitialiser les données »** du bandeau jaune remet la démonstration dans son état d'origine.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Ce qui fonctionne
 
-## Learn More
+- Tableau de bord calculé à partir des données (aucun chiffre écrit en dur), avec filtre de période.
+- Clients : liste, recherche, filtres, fiche détaillée, création avec validation du téléphone selon le pays
+  et alerte de doublon (jamais de fusion automatique).
+- Dossiers : création (copie du modèle d'étapes et de la checklist), liste, vue « par responsable »,
+  fiche à 8 onglets, changement d'étape avec niveau de preuve obligatoire pour les étapes externes
+  (« déclaré » avec source, ou « confirmé » avec référence du justificatif), retour en arrière motivé,
+  clôture avec contrôle du solde.
+- Documents : vérification interne (« vérifié par l'agence » ou « à corriger » avec commentaire), ajout
+  de pièces à la liste, alertes d'expiration.
+- Tâches : création, case à cocher, retards, filtre « mes tâches ».
+- Finance : synthèse par devise (frais de l'agence séparés des fonds destinés à des tiers), paiements,
+  dépenses, reçus imprimables.
+- Message WhatsApp préparé à partir d'un modèle : l'agent l'envoie lui-même, et l'historique le note
+  « préparé, envoi manuel ».
+- Rapports, équipe et rôles, paramètres de l'agence, modèles d'étapes et checklists (consultation).
 
-To learn more about Next.js, take a look at the following resources:
+## Ce qui n'est pas encore disponible
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Ces actions sont visibles mais désactivées, avec la raison affichée :
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- enregistrer un paiement, une dépense ou un rendez-vous (Phase 4) ;
+- téléverser des fichiers (stockage sécurisé, Phase 5) ;
+- exporter en CSV (Phase 5) ;
+- inviter un collaborateur, se connecter ou se déconnecter (Phase 6) ;
+- envoyer des e-mails (un fournisseur reste à configurer).
 
-## Deploy on Vercel
+## Organisation du code
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```
+src/
+├─ app/(app)/          Pages de l'espace de travail (cadre commun : en-tête, menu, bandeau démo)
+├─ app/page.tsx        Page d'accueil publique provisoire
+├─ components/         brand/ (logo), layout/ (cadre), shared/ (composants communs), ui/ (shadcn/ui)
+├─ features/<module>/  Lectures (queries.ts), écritures (actions.ts), règles métier et formulaires
+└─ lib/                Types métier, libellés, mise en forme, périodes, données de démonstration
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Les écrans ne lisent les données qu'au travers des `queries.ts` et `actions.ts` de chaque module. En
+Phase 5, seules ces fonctions changeront pour lire et écrire dans Supabase.
+
+Le projet utilise Next.js 16 avec Cache Components : toute lecture de données passe par `readDb()`
+(qui appelle `connection()`), et chaque page enveloppe son contenu dans un `<Suspense>`.

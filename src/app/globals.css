@@ -1,51 +1,112 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Le mode sombre n'est pas prévu au MVP : la variante ne s'active qu'avec une classe .dark explicite. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Charte SELECT Agency — couleurs relevées sur le logo officiel.
+ * Bleu marine #023764 (fond du logo) et jaune citron #F0FF0A (lettrage).
+ * Règle : jamais de texte jaune sur fond clair (contraste ≈ 1,1:1) ;
+ * le jaune s'utilise sur fond bleu, ou en aplat sous un texte bleu.
+ */
+@theme {
+  --color-navy-50: #eef4fa;
+  --color-navy-100: #d9e6f2;
+  --color-navy-200: #b3cce4;
+  --color-navy-300: #80a8cf;
+  --color-navy-400: #4d82b8;
+  --color-navy-500: #1f5f9c;
+  --color-navy-600: #0b4f8f;
+  --color-navy-700: #034582;
+  --color-navy-800: #023764;
+  --color-navy-900: #022a4d;
+  --color-navy-950: #011a30;
+
+  --color-citron-50: #fcffe0;
+  --color-citron-100: #f8ffb0;
+  --color-citron-200: #f5ff70;
+  --color-citron-300: #f3ff3d;
+  --color-citron-400: #f0ff0a;
+  --color-citron-500: #d6e400;
+  --color-citron-600: #a9b400;
+  --color-citron-700: #7e8600;
+
+  --color-surface: #f3f5f8;
+}
+
+@theme inline {
+  --font-sans: var(--font-rubik), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-rubik), ui-sans-serif, system-ui, sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Variables attendues par les composants shadcn/ui, alignées sur la charte. */
+:root {
+  --background: #ffffff;
+  --foreground: #101b2b;
+  --card: #ffffff;
+  --card-foreground: #101b2b;
+  --popover: #ffffff;
+  --popover-foreground: #101b2b;
+  --primary: #023764;
+  --primary-foreground: #ffffff;
+  --secondary: #eef4fa;
+  --secondary-foreground: #023764;
+  --muted: #f3f5f8;
+  --muted-foreground: #556479;
+  --accent: #eef4fa;
+  --accent-foreground: #023764;
+  --destructive: #c42121;
+  --border: #e1e6ee;
+  --input: #cbd4e0;
+  --ring: #0b4f8f;
+  --radius: 0.625rem;
+}
 
 @layer base {
-  :root {
-    --brand-navy-950: #011526;
-    --brand-navy-900: #022340;
-    --brand-navy-800: #023764;
-    --brand-navy-700: #034b88;
-    --brand-navy-600: #0561ae;
-    --brand-navy-50: #f0f7fd;
-    --brand-navy-100: #e0effb;
-
-    --brand-yellow: #f0ff0a;
-    --brand-yellow-dark: #d8e600;
-    --brand-yellow-gold: #eab308;
-    --brand-yellow-muted: #fef08a;
-
-    --background: #f8fafc;
-    --foreground: #0f172a;
-    --card: #ffffff;
-    --card-foreground: #0f172a;
-    --muted: #f1f5f9;
-    --muted-foreground: #64748b;
-    --border: #e2e8f0;
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
   }
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-feature-settings: "rlig" 1, "calt" 1;
-}
-
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 9999px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+@media print {
+  @page {
+    margin: 16mm;
+  }
 }

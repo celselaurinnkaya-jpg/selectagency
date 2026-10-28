@@ -1,36 +1,31 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Rubik } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+// Rubik : formes arrondies proches du logo et de la référence visuelle, très lisible en petite taille.
+const rubik = Rubik({
+  variable: "--font-rubik",
+  subsets: ["latin", "latin-ext"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "SELECT Agency — La gestion intelligente des agences de voyages",
+  title: {
+    default: "SELECT Agency — La gestion intelligente des agences de voyages",
+    template: "%s · SELECT Agency",
+  },
   description:
-    "Plateforme SaaS de gestion des dossiers de visa, études à l'étranger, voyages et démarches administratives.",
+    "Logiciel de gestion pour les agences de voyages : clients, dossiers de visa et d'études, documents, rendez-vous et paiements.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  themeColor: "#023764",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="fr"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col font-sans bg-[#F8FAFC] text-slate-900">
-        {children}
-      </body>
+    <html lang="fr" className={rubik.variable}>
+      <body>{children}</body>
     </html>
   );
 }
