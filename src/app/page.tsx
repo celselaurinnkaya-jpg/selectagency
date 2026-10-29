@@ -194,7 +194,13 @@ export default function HomePage() {
 
       <main>
         {/* Bannière principale */}
-        <section className="relative overflow-hidden bg-linear-to-br from-navy-900 via-navy-800 to-navy-600 text-white">
+        <section className="relative overflow-hidden bg-linear-to-br from-navy-950 via-navy-900 to-navy-800 text-white">
+          {/* Fond d'image d'ambiance agence */}
+          <div aria-hidden className="absolute inset-0 z-0 opacity-20 mix-blend-luminosity">
+            <img src="/images/hero-consultant.jpg" alt="" className="h-full w-full object-cover object-center filter contrast-125" />
+            <div className="absolute inset-0 bg-linear-to-r from-navy-950/95 via-navy-900/85 to-navy-800/80" />
+          </div>
+
           <div aria-hidden className="absolute -top-32 -right-24 size-96 rounded-full bg-navy-500/30 blur-3xl" />
           <div aria-hidden className="absolute -bottom-40 -left-24 size-96 rounded-full bg-citron-400/10 blur-3xl" />
 
@@ -338,8 +344,13 @@ export default function HomePage() {
         </section>
 
         {/* Fonctionnalités */}
-        <section id="fonctionnalites" className="scroll-mt-20 bg-surface py-16 sm:py-24">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <section id="fonctionnalites" className="relative scroll-mt-20 overflow-hidden bg-surface py-16 sm:py-24">
+          {/* Fond d'image d'ambiance */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-0 opacity-[0.06] mix-blend-multiply">
+            <img src="/images/voyage-affaires.jpg" alt="" className="h-full w-full object-cover object-center" />
+          </div>
+
+          <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
             <SectionIntro
               eyebrow="Fonctionnalités"
               title="Tout le travail de l'agence au même endroit"
@@ -392,8 +403,13 @@ export default function HomePage() {
         </section>
 
         {/* Démarrage */}
-        <section className="bg-surface py-16 sm:py-24">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <section className="relative overflow-hidden bg-surface py-16 sm:py-24">
+          {/* Fond d'image d'ambiance */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-0 opacity-[0.06] mix-blend-multiply">
+            <img src="/images/etudes-etranger.jpg" alt="" className="h-full w-full object-cover object-center" />
+          </div>
+
+          <div className="relative z-10 mx-auto max-w-6xl px-4 sm:px-6">
             <SectionIntro eyebrow="Démarrage" title="Prêt en trois étapes" />
             <ol className="relative mt-10 grid gap-4 lg:grid-cols-3 lg:gap-6">
               <span aria-hidden className="absolute top-8 right-[16%] left-[16%] hidden border-t-2 border-dashed border-navy-200 lg:block" />
@@ -443,8 +459,13 @@ export default function HomePage() {
         </section>
 
         {/* Questions fréquentes */}
-        <section id="questions" className="scroll-mt-20 bg-surface py-16 sm:py-24">
-          <div className="mx-auto max-w-3xl px-4 sm:px-6">
+        <section id="questions" className="relative scroll-mt-20 overflow-hidden bg-surface py-16 sm:py-24">
+          {/* Fond d'image d'ambiance */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 z-0 opacity-[0.06] mix-blend-multiply">
+            <img src="/images/hero-consultant.jpg" alt="" className="h-full w-full object-cover object-center" />
+          </div>
+
+          <div className="relative z-10 mx-auto max-w-3xl px-4 sm:px-6">
             <SectionIntro eyebrow="Questions fréquentes" title="Vos questions, nos réponses" />
             <div className="mt-8 space-y-3">
               {faq.map((item) => (
@@ -500,10 +521,16 @@ export default function HomePage() {
 
         {/* Appel à l'action */}
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
-          <div className="reveal relative overflow-hidden rounded-2xl bg-navy-800 px-6 py-12 text-center text-white sm:px-12">
+          <div className="reveal relative overflow-hidden rounded-2xl bg-navy-950 px-6 py-12 text-center text-white shadow-2xl sm:px-12">
+            {/* Fond d'image de départ voyage */}
+            <div aria-hidden className="absolute inset-0 z-0 opacity-25 mix-blend-luminosity">
+              <img src="/images/visa-tourisme.jpg" alt="" className="h-full w-full object-cover object-center filter contrast-125" />
+              <div className="absolute inset-0 bg-linear-to-r from-navy-950/95 via-navy-900/80 to-navy-950/95" />
+            </div>
+
             <div aria-hidden className="absolute -top-20 -left-20 size-64 rounded-full bg-navy-600/50 blur-2xl" />
             <div aria-hidden className="absolute -right-16 -bottom-24 size-64 rounded-full bg-citron-400/10 blur-2xl" />
-            <div className="relative">
+            <div className="relative z-10">
               <h2 className="mx-auto max-w-2xl text-2xl font-semibold sm:text-3xl">
                 Prêt à organiser votre agence <span className="text-citron-400">autrement</span> ?
               </h2>
