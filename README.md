@@ -19,20 +19,28 @@ Docker n'est pas nécessaire.
 1. **Créer le projet** sur [supabase.com](https://supabase.com) (région conseillée : Paris, eu-west-3).
 2. **Configurer l'application** : copier `.env.example` en `.env.local`, puis renseigner l'URL du projet et
    la clé publique (*Project Settings → API Keys*). La clé secrète n'est pas nécessaire.
-3. **Adresses autorisées** : dans *Authentication → URL Configuration*, indiquer `http://localhost:3000` comme
-   *Site URL* et ajouter `http://localhost:3000/**` aux *Redirect URLs*.
-4. **Créer les tables** (le mot de passe de la base est demandé par la deuxième commande) :
+3. **Créer les tables et régler l'authentification** (aucun mot de passe de base n'est demandé) :
 
    ```bash
    npm install
-   npm run db:login                          # ouvre le navigateur
+   npm run db:login                          # ouvre le navigateur, puis recopier le code affiché
    npm run db:link -- --project-ref <identifiant-du-projet>
    npm run db:push                           # applique supabase/migrations
+   npx supabase config diff                  # vérifier ce qui changerait, puis :
+   npx supabase config push                  # adresses autorisées, longueur du mot de passe
    npm run dev                               # http://localhost:3000
    ```
 
-5. Ouvrir l'application, **créer un compte**, confirmer l'adresse e-mail, puis créer son agence (ou essayer
+   Ne jamais coller le SQL des migrations dans l'éditeur SQL de Supabase : l'historique des migrations
+   resterait vide et `db:push` échouerait. Si c'est déjà fait, marquer les migrations correspondantes comme
+   appliquées : `npx supabase migration repair --status applied <versions…> --linked`.
+
+4. Ouvrir l'application, **créer un compte**, confirmer l'adresse e-mail, puis créer son agence (ou essayer
    l'agence de démonstration si `DEMO_DATA_ENABLED=true`).
+
+   Le service d'e-mails intégré à Supabase n'écrit qu'aux membres de l'équipe du projet Supabase, quelques
+   fois par heure : pour inscrire d'autres personnes (collègues invités, agences pilotes), configurer un
+   SMTP (*Authentication → Emails → SMTP Settings*, par exemple Brevo ou Resend).
 
 | Commande | Rôle |
 |---|---|

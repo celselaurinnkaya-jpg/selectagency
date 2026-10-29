@@ -1,5 +1,6 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { connection } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { supabaseEnv } from "@/lib/env";
 
@@ -8,6 +9,10 @@ import { supabaseEnv } from "@/lib/env";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  // Avec partialPrefetching, Next.js prépare l'enveloppe des pages en avance avec les cookies : la
+  // lecture des cookies n'arrête donc pas ce pré-rendu, alors que le client Supabase lit l'heure
+  // (expiration de la session) et interroge la base. connection() renvoie ce travail à la vraie requête.
+  await connection();
   const { url, publishableKey } = supabaseEnv();
   return createServerClient(url, publishableKey, {
     cookies: {
