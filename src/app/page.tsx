@@ -74,8 +74,8 @@ const CATEGORY_IMAGES: Record<CaseCategory, { src: string; alt: string }> = {
   study_abroad: { src: "/images/etudes-etranger.jpg", alt: "Étudiante en mobilité internationale sur campus universitaire" },
   tourist_visa: { src: "/images/visa-tourisme.jpg", alt: "Couple de voyageurs africains à l'aéroport devant la baie vitrée" },
   business_travel: { src: "/images/voyage-affaires.jpg", alt: "Professionnel africain en costume lors d'un déplacement international" },
-  custom_trip: { src: "/images/visa-tourisme.jpg", alt: "Voyage sur mesure et départs vers l'international" },
-  other_mobility: { src: "/images/voyage-affaires.jpg", alt: "Mobilité professionnelle et démarches d'expatriation" },
+  custom_trip: { src: "/images/voyage-sur-mesure.jpg", alt: "Voyage sur mesure et évasion personnalisée dans un lodge de prestige" },
+  other_mobility: { src: "/images/autre-mobilite.jpg", alt: "Mobilité internationale et démarches d'expatriation au terminal de départ" },
   administrative_support: { src: "/images/hero-consultant.jpg", alt: "Conseiller de voyage et accompagnement administratif" },
 };
 
