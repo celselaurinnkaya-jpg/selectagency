@@ -7,12 +7,14 @@ import { cn } from "cn";
 const TABS = [
   { href: "/finance", label: "Synthèse" },
   { href: "/finance/payments", label: "Paiements et reçus" },
+  { href: "/finance/invoices", label: "Factures" },
+  { href: "/finance/quotes", label: "Devis" },
   { href: "/finance/expenses", label: "Dépenses" },
 ];
 
 export function FinanceTabs() {
   const pathname = usePathname();
-  if (pathname?.startsWith("/finance/receipts")) return null;
+  if (pathname?.startsWith("/finance/receipts") || pathname?.startsWith("/finance/quotes/")) return null;
   return (
     <nav aria-label="Sections financières" className="-mx-4 mb-5 overflow-x-auto px-4 sm:mx-0 sm:px-0 print:hidden">
       <ul className="flex min-w-max gap-1 border-b border-slate-200">

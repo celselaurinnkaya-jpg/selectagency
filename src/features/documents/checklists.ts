@@ -84,6 +84,14 @@ export const CHECKLISTS: Checklist[] = [
   { key: "other_base", name: "Autre mobilité", category: "other_mobility", items: [req("passport")] },
 ];
 
+/** Valeur de la liste « Compléter la liste » pour une pièce que l'agence nomme elle-même. */
+export const OTHER_DOCUMENT = "__autre__";
+
+/** Une date d'expiration est-elle à surveiller ? Pour une pièce nommée par l'agence : dès qu'elle en a une. */
+export function tracksExpiry(code: string): boolean {
+  return DOCUMENT_TYPES.find((t) => t.code === code)?.hasExpiry ?? true;
+}
+
 export function documentType(code: string): DocumentType {
   const type = DOCUMENT_TYPES.find((t) => t.code === code);
   if (!type) throw new Error(`Type de document inconnu : ${code}`);

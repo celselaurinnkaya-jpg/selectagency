@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { getAgencyContext } from "@/lib/auth/context";
-import { can } from "@/lib/auth/permissions";
+import { allowed } from "@/lib/auth/permissions";
 
 /**
  * Journalise un message WhatsApp préparé. L'envoi reste manuel : l'agent l'envoie lui-même
@@ -10,7 +10,7 @@ import { can } from "@/lib/auth/permissions";
  */
 export async function logPreparedMessageAction(input: { clientId: string; caseId?: string; summary: string }): Promise<void> {
   const ctx = await getAgencyContext();
-  if (!can(ctx.member.role, "operations.write")) return;
+  if (!allowed(ctx, "operations.write")) return;
   const { data: client } = await ctx.supabase.from("clients").select("id").eq("id", input.clientId).maybeSingle();
   if (!client) return;
   if (input.caseId) {

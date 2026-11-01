@@ -5,13 +5,14 @@ import { redirect } from "next/navigation";
 import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
-import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
 import { clientToRow } from "@/lib/data/rows";
 import { formValues, type FormState } from "@/lib/form-state";
 import type { Client } from "@/lib/domain/types";
 import { findDuplicates } from "./duplicates";
+import { activeMembers } from "@/lib/domain/members";
 
 // Validation côté serveur : une Server Action est un point d'accès public, on ne fait jamais
 // confiance aux contrôles du navigateur. La session et le rôle sont revérifiés ici, puis par la RLS.
@@ -113,8 +114,8 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
   }
 
   const { data, ctx } = await readAgency({ clients: true });
-  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
-  if (!data.members.some((m) => m.id === input.assignedTo)) {
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
+  if (!activeMembers(data.members).some((m) => m.id === input.assignedTo)) {
     return { message: "Le conseiller choisi n'existe pas.", values };
   }
 
@@ -243,7 +244,7 @@ export async function updateClientAction(
  */
 export async function deleteClientAction(clientId: string): Promise<{ ok: boolean; message?: string }> {
   const ctx = await getAgencyContext();
-  if (!can(ctx.member.role, "client.delete")) return { ok: false, message: FORBIDDEN_MESSAGE };
+  if (!allowed(ctx, "client.delete")) return { ok: false, message: forbiddenMessage(ctx, "client.delete") };
 
   const { count, error: countError } = await ctx.supabase.from("cases").select("id", { count: "exact", head: true }).eq("client_id", clientId);
   if (countError) return { ok: false, message: dbMessage(countError) };

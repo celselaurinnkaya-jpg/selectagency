@@ -2,7 +2,7 @@
 
 import { startTransition, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, FolderPlus, ListPlus, LogOut, Menu, Plus, Settings, UserPlus, UserRound } from "lucide-react";
+import { ChevronDown, FolderPlus, ListPlus, LogOut, Menu, Plus, Settings, ShieldCheck, UserPlus, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -71,7 +71,7 @@ export function NewMenu() {
   );
 }
 
-export function UserMenu({ fullName, roleLabel, initials }: { fullName: string; roleLabel: string; initials: string }) {
+export function UserMenu({ fullName, roleLabel, initials, showConsole = false }: { fullName: string; roleLabel: string; initials: string; showConsole?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -104,6 +104,14 @@ export function UserMenu({ fullName, roleLabel, initials }: { fullName: string; 
             Paramètres de l&apos;agence
           </Link>
         </DropdownMenuItem>
+        {showConsole && (
+          <DropdownMenuItem asChild className="min-h-10 text-sm">
+            <Link href="/admin">
+              <ShieldCheck aria-hidden />
+              Console SELECT
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem className="min-h-10 text-sm" onSelect={() => startTransition(() => signOutAction())}>
           <LogOut aria-hidden />

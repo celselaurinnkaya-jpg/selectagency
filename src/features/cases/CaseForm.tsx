@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -16,22 +16,26 @@ interface Option {
   label: string;
 }
 
-export function CaseForm({
-  clients,
-  members,
-  destinations,
-  defaultClientId,
-  defaultMemberId,
-}: {
+interface CaseFormProps {
   clients: Option[];
   members: Option[];
   destinations: Option[];
   defaultClientId?: string;
   defaultMemberId: string;
-}) {
+}
+
+/**
+ * Next.js garde la page en mémoire entre deux visites : chaque clic sur « Nouveau dossier » doit
+ * pourtant ouvrir un formulaire vierge. La clé change à chaque nouvelle navigation (lien, bouton),
+ * pas avec le bouton « retour » du navigateur, qui retrouve le brouillon en cours.
+ */
+export function CaseForm(props: CaseFormProps) {
+  const { bfcacheId } = useRouter();
+  return <CaseFormFields key={bfcacheId} {...props} />;
+}
+
+function CaseFormFields({ clients, members, destinations, defaultClientId, defaultMemberId }: CaseFormProps) {
   const [state, action, pending] = useActionState(createCaseAction, initialFormState);
-  const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
   const v = state.values ?? {};
   const e = state.fieldErrors ?? {};
   const [category, setCategory] = useState<CaseCategory>((v.category as CaseCategory) ?? "study_abroad");
@@ -46,18 +50,11 @@ export function CaseForm({
     return !isInitialDestInList && initialDest && initialDest !== "__OTHER__" ? initialDest : "";
   });
 
-  useEffect(() => {
-    if (state.ok && state.redirectTo) {
-      formRef.current?.reset();
-      router.push(state.redirectTo);
-    }
-  }, [state, router]);
-
   const checkedTags = new Set((v.applicantTags ?? "").split(",").filter(Boolean));
 
   return (
-    <form ref={formRef} action={action} className="space-y-6" noValidate>
-      <FormMessage message={state.ok ? undefined : state.message} />
+    <form action={action} className="space-y-6" noValidate>
+      <FormMessage message={state.message} />
 
       <fieldset className="space-y-4 rounded-2xl bg-surface p-4 sm:p-5">
         <legend className="sr-only">Projet</legend>

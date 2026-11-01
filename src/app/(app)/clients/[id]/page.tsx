@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { FolderKanban, FolderPlus, Lock, Pencil } from "lucide-react";
+import { BriefcaseBusiness, FolderKanban, FolderPlus, Lock, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
@@ -20,6 +20,7 @@ import {
   LANGUAGES,
   MARITAL_STATUS,
   REQUIREMENT_STATUS,
+  SERVICE_CLIENT_STATUS,
   SERVICE_MOTIVES,
   STEP_KIND,
 } from "@/lib/domain/labels";
@@ -27,12 +28,14 @@ import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
 import { getClientDetail } from "@/features/clients/queries";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { buildMessageTemplates } from "@/features/communications/templates";
+import { EnrollForm, ServiceClientActions } from "@/features/services/ServiceForms";
 
 export const metadata: Metadata = { title: "Fiche client" };
 
 const TABS = [
   { key: "apercu", label: "Aperçu" },
   { key: "dossiers", label: "Dossiers" },
+  { key: "services", label: "Services" },
   { key: "documents", label: "Documents" },
   { key: "rendez-vous", label: "Rendez-vous" },
   { key: "paiements", label: "Paiements" },
@@ -52,7 +55,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/clients/${client.id}`;
@@ -118,7 +121,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
           key: t.key,
           label: t.label,
           href: t.key === "apercu" ? base : `${base}?tab=${t.key}`,
-          count: t.key === "dossiers" ? cases.length : t.key === "documents" ? missing.length || undefined : undefined,
+          count: t.key === "dossiers" ? cases.length : t.key === "services" ? services.followed.length || undefined : t.key === "documents" ? missing.length || undefined : undefined,
         }))}
       />
 
@@ -217,6 +220,22 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
             <Card>
               <dl className="space-y-3">
                 <Field label="Dossiers actifs">{cases.filter((s) => s.travelCase.status === "active").length}</Field>
+                <Field label="Services suivis">
+                  {services.followed.length === 0 ? (
+                    "Aucun"
+                  ) : (
+                    <ul className="space-y-1">
+                      {services.followed.map(({ link, service }) => (
+                        <li key={link.id} className="flex flex-wrap items-center gap-2">
+                          <Link href={`/services/${service.id}`} className="font-medium text-navy-700 hover:underline">
+                            {service.name}
+                          </Link>
+                          <StatusBadge spec={SERVICE_CLIENT_STATUS[link.status]} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Field>
                 <Field label="Pièces obligatoires manquantes">{missing.length}</Field>
                 <Field label="Solde dû">{balance ? formatMoney(balance, agency.currency) : "Aucun"}</Field>
                 <Field label="Prochain rendez-vous">{nextAppointment ? `${nextAppointment.title} — ${formatRelativeDay(nextAppointment.startsAt, now, tz)}` : "Aucun"}</Field>
@@ -256,6 +275,78 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
             ))}
           </div>
         ))}
+
+      {tab === "services" && (
+        <div className="space-y-6">
+          {permissions.write && !client.archivedAt && (
+            <Section title="Ajouter à un service">
+              {services.available.length === 0 ? (
+                <p className="text-sm text-slate-600">
+                  {services.followed.length > 0 ? "Ce client suit déjà tous les services actifs de l'agence." : "L'agence n'a encore aucun service actif."}{" "}
+                  <Link href="/services" className="font-medium text-navy-700 hover:underline">
+                    Voir les services
+                  </Link>
+                </p>
+              ) : (
+                <div className="rounded-xl bg-white p-4 shadow-[0_1px_2px_rgba(2,55,100,0.08)]">
+                  <EnrollForm
+                    clientId={client.id}
+                    services={services.available.map((s) => ({ id: s.id, label: s.name }))}
+                    cases={cases.map((s) => ({ id: s.travelCase.id, clientId: client.id, label: `${s.travelCase.reference} — ${s.travelCase.title}` }))}
+                  />
+                </div>
+              )}
+            </Section>
+          )}
+          <Section title="Services suivis">
+            {services.followed.length === 0 ? (
+              <EmptyState icon={BriefcaseBusiness} title="Ce client ne suit aucun service" description="Ajoutez-le à un service (hébergement, garant, AVI…) pour suivre où il en est." />
+            ) : (
+              <ul className="space-y-3">
+                {services.followed.map(({ link, service }) => {
+                  const linkedCase = cases.find((s) => s.travelCase.id === link.caseId)?.travelCase;
+                  return (
+                    <li key={link.id} className="space-y-3 rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.1)]">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <span className="flex min-w-0 items-center gap-3">
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-citron-400">
+                            <BriefcaseBusiness className="size-4" aria-hidden />
+                          </span>
+                          <Link href={`/services/${service.id}`} className="font-semibold break-words text-navy-800 hover:underline">
+                            {service.name}
+                          </Link>
+                        </span>
+                        <StatusBadge spec={SERVICE_CLIENT_STATUS[link.status]} />
+                      </div>
+                      <p className="text-sm text-slate-600">
+                        Dossier concerné :{" "}
+                        {linkedCase ? (
+                          <Link href={`/cases/${linkedCase.id}`} className="font-medium text-navy-700 hover:underline">
+                            <span className="font-mono text-xs">{linkedCase.reference}</span> — {linkedCase.title}
+                          </Link>
+                        ) : (
+                          "aucun"
+                        )}{" "}
+                        · ajouté le {formatDate(link.addedAt, tz)}
+                      </p>
+                      {link.note && <p className="rounded-lg bg-surface px-3 py-2 text-sm whitespace-pre-line text-slate-700">{link.note}</p>}
+                      {permissions.write && (
+                        <div className="border-t border-slate-100 pt-3">
+                          <ServiceClientActions
+                            link={link}
+                            who={`${client.firstName} ${client.lastName} du service « ${service.name} »`}
+                            cases={cases.map((s) => ({ id: s.travelCase.id, label: `${s.travelCase.reference} — ${s.travelCase.title}` }))}
+                          />
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+        </div>
+      )}
 
       {tab === "documents" && (
         <Section title="Pièces de tous ses dossiers">

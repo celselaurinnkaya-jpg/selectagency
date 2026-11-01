@@ -15,7 +15,7 @@ export default function PaymentsPage() {
     <>
       <PageHeader
         title="Paiements et reçus"
-        description="Chaque paiement reçoit un numéro de reçu unique et chronologique, attribué par la base de données, et n'est jamais modifié ni supprimé. Pour enregistrer un paiement, ouvrez le dossier concerné, onglet Finance."
+        description="Chaque paiement reçoit un numéro de reçu unique et chronologique, attribué par la base de données. Un reçu n'est jamais supprimé : une erreur s'annule depuis le reçu, avec un motif. Pour enregistrer un paiement, ouvrez le dossier concerné, onglet Finance."
       />
       <Suspense fallback={<PageSkeleton />}>
         <Payments />

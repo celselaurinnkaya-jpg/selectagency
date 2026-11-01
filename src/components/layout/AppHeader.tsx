@@ -21,11 +21,11 @@ async function AgencyName() {
 }
 
 async function HeaderActions() {
-  const { member } = await getShell();
+  const { member, showConsole } = await getShell();
   return (
     <>
       <NewMenu />
-      <UserMenu fullName={member.fullName} roleLabel={ROLE[member.role].label} initials={initials(member.fullName)} />
+      <UserMenu fullName={member.fullName} roleLabel={ROLE[member.role].label} initials={initials(member.fullName)} showConsole={showConsole} />
     </>
   );
 }

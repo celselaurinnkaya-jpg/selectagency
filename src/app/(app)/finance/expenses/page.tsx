@@ -3,11 +3,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Receipt } from "lucide-react";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, PageHeader, PlannedAction, StatusBadge } from "@/components/shared/ui";
+import { Card, EmptyState, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import type { ExpenseType } from "@/lib/domain/types";
 import type { LabelSpec } from "@/lib/domain/labels";
-import { formatDate, formatMoney } from "@/lib/format";
+import { dayKey, formatDate, formatMoney } from "@/lib/format";
 import { listExpenses } from "@/features/finance/queries";
+import { ExpenseForm } from "@/features/finance/FinanceForms";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
 
@@ -24,7 +25,6 @@ export default function ExpensesPage() {
       <PageHeader
         title="Dépenses"
         description="Les dépenses de fonctionnement de l'agence sont distinguées des sommes reversées à des tiers pour le compte des clients."
-        actions={<PlannedAction icon={Receipt} label="Enregistrer une dépense" reason="Formulaire prévu à la prochaine étape (Phase 4)." />}
       />
       <Suspense fallback={<PageSkeleton />}>
         <Expenses />
@@ -34,12 +34,20 @@ export default function ExpensesPage() {
 }
 
 async function Expenses() {
-  const { rows, agency, canSeeFinance } = await listExpenses();
+  const { rows, agency, canSeeFinance, canWrite, cases, now } = await listExpenses();
   const tz = agency.timezone;
   if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
   return (
     <>
       <FinanceTabs />
+      {canWrite && (
+        <Section title="Enregistrer une dépense" className="mb-6">
+          <Card>
+            <ExpenseForm currency={agency.currency} defaultDate={dayKey(now, tz)} cases={cases} />
+          </Card>
+        </Section>
+      )}
+      {rows.length === 0 && <EmptyState icon={Receipt} title="Aucune dépense enregistrée" description="Loyer, connexion, frais reversés pour un client : tout ce qui sort de la caisse de l'agence." />}
       <ul className="space-y-2">
         {rows.map(({ expense: e, caseRef, recordedBy }) => (
           <li key={e.id}>

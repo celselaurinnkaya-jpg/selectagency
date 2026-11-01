@@ -1,9 +1,11 @@
 import {
   BarChart3,
+  BriefcaseBusiness,
   CalendarDays,
   FileText,
   FolderKanban,
   LayoutDashboard,
+  LifeBuoy,
   ListChecks,
   Settings,
   UserCog,
@@ -20,12 +22,13 @@ export interface NavItem {
   match: string[];
 }
 
-// Dix entrées, comme une agence s'organise : le quotidien d'abord, l'administration ensuite.
+// Le quotidien d'abord, l'administration de l'agence ensuite, puis l'aide de l'équipe SELECT.
 export const NAV_MAIN: NavItem[] = [
   { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard, match: ["/dashboard"] },
   { label: "Clients", href: "/clients", icon: Users, match: ["/clients"] },
   { label: "Dossiers", href: "/cases", icon: FolderKanban, match: ["/cases"] },
   { label: "Documents", href: "/documents", icon: FileText, match: ["/documents"] },
+  { label: "Services", href: "/services", icon: BriefcaseBusiness, match: ["/services"] },
   { label: "Rendez-vous", href: "/appointments", icon: CalendarDays, match: ["/appointments"] },
   { label: "Tâches", href: "/tasks", icon: ListChecks, match: ["/tasks"] },
   { label: "Finance", href: "/finance", icon: Wallet, match: ["/finance"] },
@@ -35,6 +38,7 @@ export const NAV_MAIN: NavItem[] = [
 export const NAV_ADMIN: NavItem[] = [
   { label: "Équipe", href: "/team", icon: UserCog, match: ["/team"] },
   { label: "Paramètres", href: "/settings", icon: Settings, match: ["/settings"] },
+  { label: "Aide et support", href: "/support", icon: LifeBuoy, match: ["/support"] },
 ];
 
 export function isActive(item: NavItem, pathname: string | null): boolean {

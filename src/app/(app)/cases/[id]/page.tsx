@@ -2,11 +2,12 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, CalendarPlus, Check, CircleDashed, Clock, FileText, Wallet } from "lucide-react";
+import { AlertTriangle, Check, CircleDashed, Clock, Download, Eye, FileText, Plus, Wallet } from "lucide-react";
 import { cn } from "cn";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, Field, Notice, PageHeader, PlannedAction, Section, StatCard, StatusBadge } from "@/components/shared/ui";
+import { Card, Field, Notice, PageHeader, Section, StatCard, StatusBadge } from "@/components/shared/ui";
+import { Button } from "@/components/ui/button";
 import { countryName } from "@/lib/countries";
 import {
   APPLICANT_TAGS,
@@ -16,7 +17,10 @@ import {
   CASE_STATUS,
   CATEGORY_LABELS,
   CONFIRMATION,
+  INVOICE_OVERDUE,
+  INVOICE_STATUS,
   PRIORITY,
+  QUOTE_STATUS,
   REQUIREMENT_STATUS,
   ROLE,
   STEP_KIND,
@@ -28,11 +32,16 @@ import { StepTransitionForm } from "@/features/cases/StepTransitionForm";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { buildMessageTemplates } from "@/features/communications/templates";
 import { CHECKLIST_DISCLAIMER, DOCUMENT_TYPES } from "@/features/documents/checklists";
-import { AddRequirementForm, ReviewDocumentForm } from "@/features/documents/DocumentForms";
+import { AddRequirementForm, RemoveFileButton, RequirementEditor, ReviewDocumentForm } from "@/features/documents/DocumentForms";
 import { DocumentUpload } from "@/features/documents/DocumentUpload";
+import { AppointmentActions, AppointmentForm } from "@/features/appointments/AppointmentForms";
+import { appointmentValues } from "@/features/appointments/values";
 import { AddChargeForm, RecordPaymentForm } from "@/features/finance/FinanceForms";
+import { formatDay, isOverdue } from "@/features/invoices/document";
+import { QuoteForm } from "@/features/quotes/QuoteForms";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
 import { WORKFLOW_DISCLAIMER } from "@/features/workflows/templates";
+import { activeMembers } from "@/lib/domain/members";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -87,12 +96,15 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getCaseDetail(id);
   if (!detail) notFound();
-  const { summary, agency, now, members, permissions, organizationId, steps, transitions, requirements, appointments, tasks, charges, payments, events, communications } = detail;
+  const { summary, agency, now, members, permissions, organizationId, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications } = detail;
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/cases/${c.id}`;
   const memberName = (memberId?: string) => members.find((m) => m.id === memberId)?.fullName ?? "—";
+  const appointmentMembers = activeMembers(members)
+    .filter((m) => m.role !== "viewer")
+    .map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }));
   const missing = requirements.filter((r) => r.isRequired && (r.status === "not_received" || r.status === "to_correct" || r.status === "expired"));
   const toReview = requirements.filter((r) => r.status === "received" || r.status === "to_verify");
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
@@ -257,16 +269,15 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
             <ul className="space-y-2">
               {requirements.map((r) => {
                 const awaitingReview = r.status === "received" || r.status === "to_verify";
-                const needsFile = r.status === "not_received" || r.status === "to_correct" || r.status === "expired";
+                const requirementFiles = files.filter((f) => f.requirementId === r.id);
                 return (
                   <li key={r.id}>
-                    <Card className="space-y-2">
+                    <Card className="space-y-3">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
                           <p className="font-medium text-slate-900">{r.label}</p>
                           <p className="text-xs text-slate-500">
                             {r.category} · {r.isRequired ? "Obligatoire" : "Facultatif"}
-                            {r.fileName && ` · ${r.fileName}`}
                             {r.receivedAt && ` · reçu le ${formatDate(r.receivedAt, tz)}`}
                             {r.expiresAt && ` · expire le ${formatDate(`${r.expiresAt}T12:00:00Z`, tz)}`}
                           </p>
@@ -274,19 +285,40 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                         </div>
                         <StatusBadge spec={REQUIREMENT_STATUS[r.status]} />
                       </div>
-                      {r.storagePath && permissions.documentsRead && (
-                        <a
-                          href={`/documents/${r.id}/fichier`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex min-h-10 items-center gap-1.5 text-sm font-medium text-navy-700 hover:underline"
-                        >
-                          <FileText className="size-4" aria-hidden />
-                          Ouvrir le fichier
-                        </a>
+                      {permissions.documentsRead && requirementFiles.length > 0 && (
+                        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                          {requirementFiles.map((f) => {
+                            const fileUrl = `/documents/${r.id}/fichiers/${f.id}`;
+                            return (
+                              <li key={f.id} className="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                                <span className="flex min-w-0 items-center gap-2 text-sm text-slate-800">
+                                  <FileText className="size-4 shrink-0 text-navy-700" aria-hidden />
+                                  <span className="truncate">{f.fileName}</span>
+                                  <span className="shrink-0 text-xs text-slate-500">· {formatDate(f.createdAt, tz)}</span>
+                                </span>
+                                <span className="flex flex-wrap items-center gap-x-4">
+                                  {/* Même onglet : un nouvel onglet peut s'ouvrir dans un autre navigateur, sans la session. */}
+                                  <a href={fileUrl} className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-navy-700 hover:underline">
+                                    <Eye className="size-4" aria-hidden />
+                                    Voir
+                                  </a>
+                                  <a href={`${fileUrl}?telecharger=1`} className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-navy-700 hover:underline">
+                                    <Download className="size-4" aria-hidden />
+                                    Télécharger
+                                  </a>
+                                  {canEdit && <RemoveFileButton fileId={f.id} requirementId={r.id} fileName={f.fileName} />}
+                                </span>
+                              </li>
+                            );
+                          })}
+                        </ul>
                       )}
+                      {!permissions.documentsRead && r.storagePath && <p className="text-xs text-slate-500">Fichier reçu (votre rôle ne permet pas de l&apos;ouvrir).</p>}
                       {canEdit && awaitingReview && <ReviewDocumentForm requirementId={r.id} label={r.label} />}
-                      {canEdit && needsFile && <DocumentUpload organizationId={organizationId} caseId={c.id} requirementId={r.id} label={r.label} />}
+                      {canEdit && r.status !== "waived" && (
+                        <DocumentUpload organizationId={organizationId} caseId={c.id} requirementId={r.id} label={r.label} hasFiles={requirementFiles.length > 0} />
+                      )}
+                      {canEdit && <RequirementEditor requirementId={r.id} label={r.label} isRequired={r.isRequired} expiresAt={r.expiresAt} fileCount={requirementFiles.length} />}
                     </Card>
                   </li>
                 );
@@ -311,26 +343,40 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
       )}
 
       {tab === "rendez-vous" && (
-        <Section title="Rendez-vous et échéances" action={isActive ? <PlannedAction icon={CalendarPlus} label="Programmer un rendez-vous" reason="Formulaire prévu à la prochaine étape (Phase 4)." /> : undefined}>
-          {appointments.length === 0 ? (
-            <p className="text-sm text-slate-600">Aucun rendez-vous pour ce dossier.</p>
-          ) : (
-            <ul className="space-y-2">
-              {appointments.map((a) => (
-                <li key={a.id}>
-                  <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span>
-                      <span className="block text-sm font-semibold text-navy-800">{formatRelativeDay(a.startsAt, now, tz, !a.allDay)}</span>
-                      <span className="block text-sm text-slate-900">{a.title}</span>
-                      <span className="block text-xs text-slate-500">{[APPOINTMENT_KIND[a.kind], a.location, memberName(a.assignedTo)].filter(Boolean).join(" · ")}</span>
-                    </span>
-                    <StatusBadge spec={APPOINTMENT_STATUS[a.status]} />
-                  </Card>
-                </li>
-              ))}
-            </ul>
+        <div className="space-y-6">
+          <Section title="Rendez-vous et échéances">
+            {appointments.length === 0 ? (
+              <p className="text-sm text-slate-600">Aucun rendez-vous pour ce dossier.</p>
+            ) : (
+              <ul className="space-y-2">
+                {appointments.map((a) => (
+                  <li key={a.id}>
+                    <Card className="space-y-2">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                        <span>
+                          <span className="block text-sm font-semibold text-navy-800">{formatRelativeDay(a.startsAt, now, tz, !a.allDay)}</span>
+                          <span className="block text-sm text-slate-900">{a.title}</span>
+                          <span className="block text-xs text-slate-500">
+                            {[APPOINTMENT_KIND[a.kind], a.location, memberName(a.assignedTo), a.externalReference && `preuve : ${a.externalReference}`].filter(Boolean).join(" · ")}
+                          </span>
+                        </span>
+                        <StatusBadge spec={APPOINTMENT_STATUS[a.status]} />
+                      </div>
+                      {canEdit && <AppointmentActions appointment={appointmentValues(a, tz)} members={appointmentMembers} />}
+                    </Card>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+          {canEdit && (
+            <Section title="Programmer un rendez-vous">
+              <Card>
+                <AppointmentForm fixedCaseId={c.id} defaultMemberId={c.assignedTo} defaultDate={dayKey(now, tz)} members={appointmentMembers} />
+              </Card>
+            </Section>
           )}
-        </Section>
+        </div>
       )}
 
       {tab === "finance" && !permissions.financeRead && (
@@ -378,6 +424,75 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               </Card>
             )}
           </Section>
+          <Section title="Devis">
+            {quotes.length === 0 ? (
+              <p className="mb-3 text-sm text-slate-600">Aucun devis. Un devis accepté par le client devient les prestations convenues du dossier.</p>
+            ) : (
+              <ul className="mb-3 space-y-2">
+                {quotes.map(({ quote, total }) => (
+                  <li key={quote.id}>
+                    <Link href={`/finance/quotes/${quote.id}`} className="block rounded-xl transition hover:ring-2 hover:ring-navy-200">
+                      <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="block font-mono text-xs text-slate-500">{quote.reference}</span>
+                          <span className="block text-xs text-slate-500">
+                            {quote.items.length} ligne(s) · préparé le {formatDate(quote.createdAt, tz)}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <span className="font-semibold tabular-nums text-slate-900">{formatMoney(total, quote.currency)}</span>
+                          <StatusBadge spec={QUOTE_STATUS[quote.status]} />
+                        </span>
+                      </Card>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {permissions.financeWrite && c.status !== "cancelled" && c.status !== "closed" && (
+              <Card>
+                <QuoteForm key={quotes.length} caseId={c.id} currency={c.billingCurrency} />
+              </Card>
+            )}
+          </Section>
+          <Section
+            title="Factures"
+            action={
+              permissions.financeWrite && (
+                <Button asChild variant="accent" size="sm">
+                  <Link href={`/finance/invoices/new?dossier=${c.id}`}>
+                    <Plus aria-hidden />
+                    Créer une facture
+                  </Link>
+                </Button>
+              )
+            }
+          >
+            {invoices.length === 0 ? (
+              <p className="text-sm text-slate-600">Aucune facture pour ce dossier. Une facture se prépare en quelques lignes, avec le logo, le cachet et la signature de l&apos;agence.</p>
+            ) : (
+              <ul className="space-y-2">
+                {invoices.map((inv) => (
+                  <li key={inv.id}>
+                    <Link href={`/finance/invoices/${inv.id}`} className="block rounded-xl transition hover:ring-2 hover:ring-navy-200">
+                      <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="block font-mono text-xs text-slate-500">{inv.number}</span>
+                          <span className="block text-xs text-slate-500">
+                            Émise le {formatDay(inv.issueDate)} · échéance le {formatDay(inv.dueDate)}
+                          </span>
+                        </span>
+                        <span className="flex items-center gap-3">
+                          <span className="font-semibold tabular-nums text-slate-900">{formatMoney(inv.totalMinor, inv.currency)}</span>
+                          <StatusBadge spec={isOverdue(inv.status, inv.dueDate, dayKey(now, tz)) ? INVOICE_OVERDUE : INVOICE_STATUS[inv.status]} />
+                        </span>
+                      </Card>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
           {permissions.financeWrite && c.status !== "cancelled" && charges.some((x) => x.remainingMinor > 0) && (
             <Section title="Enregistrer un paiement">
               <Card>
@@ -400,7 +515,10 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   <li key={p.id}>
                     <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                       <span>
-                        <span className="block font-semibold tabular-nums text-slate-900">{formatMoney(p.amountMinor, p.currency)}</span>
+                        <span className="block font-semibold tabular-nums text-slate-900">
+                          {formatMoney(p.amountMinor, p.currency)}
+                          {p.status === "voided" && <StatusBadge className="ml-2" spec={{ label: "Annulé", tone: "danger" }} />}
+                        </span>
                         <span className="block text-xs text-slate-500">
                           {formatDate(p.paidAt, tz, "dateTime")} · {p.methodLabel}
                           {p.transactionReference && ` · réf. ${p.transactionReference}`} · reçu par {memberName(p.receivedBy)}
@@ -453,7 +571,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   fixedCaseId={c.id}
                   defaultMemberId={c.assignedTo}
                   defaultDate={dayKey(now, tz)}
-                  members={members.filter((m) => m.role !== "viewer").map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }))}
+                  members={activeMembers(members).filter((m) => m.role !== "viewer").map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }))}
                 />
               </Card>
             </Section>

@@ -1,5 +1,5 @@
 import "server-only";
-import { can } from "@/lib/auth/permissions";
+import { allowed } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { EVENT, toEvent } from "@/lib/data/rows";
 import { dayKey } from "@/lib/format";
@@ -109,7 +109,7 @@ export async function getDashboard(periodKey?: string) {
   return {
     agency: data.agency,
     member: ctx.member,
-    canSeeFinance: can(ctx.member.role, "finance.read"),
+    canSeeFinance: allowed(ctx, "finance.read"),
     now,
     period,
     isEmpty: data.clients.length === 0,

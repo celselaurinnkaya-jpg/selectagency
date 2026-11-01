@@ -31,7 +31,9 @@ import {
 } from "./rows";
 
 // Lecture des données de l'agence connectée. Chaque écran indique les tables dont il a besoin
-// (et, au besoin, un filtre : un dossier, un client) ; la RLS limite tout à l'agence de la personne.
+// (et, au besoin, un filtre : un dossier, un client) ; la RLS limite tout à l'agence de la personne,
+// et chaque requête précise en plus l'agence (défense en profondeur : une règle de lecture plus large
+// ajoutée un jour sur une table ne ferait pas apparaître les données d'une autre agence ici).
 // Les calculs (soldes, retards, files « à traiter ») restent dans les fonctions métier, testées.
 //
 // Limite connue : les listes complètes sont chargées puis filtrées côté serveur. C'est adapté à une
@@ -74,7 +76,7 @@ export async function fetchRows(
 ): Promise<Record<string, unknown>[]> {
   const rows: Record<string, unknown>[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    let query = selectQuery(ctx, table, columns);
+    let query = selectQuery(ctx, table, columns).eq("organization_id", ctx.organizationId);
     if (filter) query = filter(query);
     // Un ordre stable est indispensable pour que les pages ne se chevauchent pas.
     for (const column of order) query = query.order(column);

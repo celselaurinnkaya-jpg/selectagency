@@ -1,12 +1,14 @@
 import "server-only";
+import { cache } from "react";
 import { getAgencyContext } from "@/lib/auth/context";
-import { can } from "@/lib/auth/permissions";
+import { allowed, can } from "@/lib/auth/permissions";
 import { fetchRows, readAgency } from "@/lib/data/agency";
 import { INVITATION_COLUMNS, toInvitation } from "@/features/team/invitations";
 import { dayKey } from "@/lib/format";
 import { monthParts, shiftMonth } from "@/lib/period";
+import { activeMembers } from "@/lib/domain/members";
 import type { DocumentRequirement } from "@/lib/domain/types";
-import { documentType } from "@/features/documents/checklists";
+import { tracksExpiry } from "@/features/documents/checklists";
 
 // Lectures des écrans opérationnels : documents, rendez-vous, tâches, équipe, recherche.
 
@@ -20,7 +22,7 @@ export async function listDocumentQueue(view: DocumentView) {
   const limit = now.getTime() + EXPIRY_WARNING_DAYS * 24 * 3600 * 1000;
 
   const expiresSoon = (r: DocumentRequirement) =>
-    !!r.expiresAt && documentType(r.documentTypeCode).hasExpiry && new Date(r.expiresAt).getTime() <= limit;
+    !!r.expiresAt && tracksExpiry(r.documentTypeCode) && new Date(r.expiresAt).getTime() <= limit;
   const matches: Record<DocumentView, (r: DocumentRequirement) => boolean> = {
     "a-examiner": (r) => r.status === "received" || r.status === "to_verify",
     manquants: (r) => r.isRequired && r.status === "not_received",
@@ -47,7 +49,7 @@ export async function listDocumentQueue(view: DocumentView) {
 }
 
 export async function listAppointments(monthParam?: string) {
-  const { data, now } = await readAgency({ appointments: true, clients: true, cases: true });
+  const { data, now, ctx } = await readAgency({ appointments: true, clients: true, cases: true });
   const tz = data.agency.timezone;
   const parsed = monthParam?.match(/^(\d{4})-(\d{2})$/);
   const { year, month } = parsed ? { year: Number(parsed[1]), month: Number(parsed[2]) } : monthParts(now, tz);
@@ -72,6 +74,13 @@ export async function listAppointments(monthParam?: string) {
     now,
     today: dayKey(now, tz),
     month: { year, month, key: monthKey, previous: shiftMonth(year, month, -1), next: shiftMonth(year, month, 1) },
+    canWrite: allowed(ctx, "operations.write"),
+    currentMemberId: data.currentMemberId,
+    members: activeMembers(data.members).filter((m) => m.role !== "viewer"),
+    cases: data.cases
+      .filter((c) => c.status === "active")
+      .sort((a, b) => b.openedAt.localeCompare(a.openedAt))
+      .map((c) => ({ value: c.id, label: `${c.reference} — ${c.title}` })),
     upcoming: items.filter((i) => new Date(i.appointment.startsAt).getTime() >= now.getTime() - 3600 * 1000),
     past: items.filter((i) => new Date(i.appointment.startsAt).getTime() < now.getTime() - 3600 * 1000).reverse(),
     inMonth: items.filter((i) => i.day.startsWith(monthKey)),
@@ -108,9 +117,9 @@ export async function listTasks(scope: TaskScope, onlyMine = false) {
     rows,
     agency: data.agency,
     now,
-    members: data.members,
+    members: activeMembers(data.members),
     currentMemberId: data.currentMemberId,
-    canWrite: can(ctx.member.role, "operations.write"),
+    canWrite: allowed(ctx, "operations.write"),
     cases: data.cases.filter((c) => c.status === "active").map((c) => ({ id: c.id, label: `${c.reference} — ${c.title}` })),
     counts: Object.fromEntries((Object.keys(matches) as TaskScope[]).map((key) => [key, all.filter(matches[key]).length])) as Record<TaskScope, number>,
   };
@@ -118,18 +127,25 @@ export async function listTasks(scope: TaskScope, onlyMine = false) {
 
 export async function getTeam() {
   const { data, now, ctx } = await readAgency({ tasks: true, cases: true });
-  const canManage = can(ctx.member.role, "team.manage");
+  const canManage = allowed(ctx, "team.manage");
   // Les invitations ne sont lisibles que par les responsables (RLS) : inutile de les demander sinon.
   const invitations = canManage
     ? (await fetchRows(ctx, "invitations", INVITATION_COLUMNS, (q) => q.is("accepted_at", null).is("revoked_at", null))).map(toInvitation)
     : [];
+  const active = activeMembers(data.members);
   return {
     agency: data.agency,
     currentMemberId: data.currentMemberId,
     currentRole: ctx.member.role,
     canManage,
+    canInvite: canManage && ctx.writable,
+    canTransfer: allowed(ctx, "team.transfer"),
+    memberLimit: ctx.subscription?.plan?.maxMembers,
     invitations: invitations.sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    members: data.members.map((member) => {
+    // Qui peut reprendre le travail d'un membre retiré : les rôles qui suivent des dossiers.
+    heirs: active.filter((m) => m.role === "owner" || m.role === "admin" || m.role === "agent"),
+    removed: data.members.filter((m) => m.removedAt).sort((a, b) => (b.removedAt ?? "").localeCompare(a.removedAt ?? "")),
+    members: active.map((member) => {
       const openTasks = data.tasks.filter((t) => t.assignedTo === member.id && (t.status === "todo" || t.status === "in_progress"));
       return {
         member,
@@ -143,13 +159,23 @@ export async function getTeam() {
 
 export async function getAgencySettings() {
   const ctx = await getAgencyContext();
-  return { agency: ctx.agency, canManage: can(ctx.member.role, "settings.manage") };
+  return { agency: ctx.agency, canManage: allowed(ctx, "settings.manage"), readOnly: can(ctx.member.role, "settings.manage") && !ctx.writable };
 }
 
-export async function getShell() {
+/** Cadre de l'espace agence : en-tête, bandeaux (démonstration, abonnement), lien vers la console. */
+export const getShell = cache(async () => {
   const ctx = await getAgencyContext();
-  return { agency: ctx.agency, member: ctx.member, isDemo: ctx.isDemo };
-}
+  const { data: access } = await ctx.supabase.rpc("platform_access");
+  return {
+    agency: ctx.agency,
+    member: ctx.member,
+    isDemo: ctx.isDemo,
+    subscription: ctx.subscription,
+    writable: ctx.writable,
+    // Seuls les administrateurs SELECT voient le lien vers la console (rien n'est révélé aux autres).
+    showConsole: access === "ok" || access === "mfa",
+  };
+});
 
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 

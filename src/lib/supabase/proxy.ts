@@ -7,7 +7,10 @@ import { safeNext } from "@/features/auth/redirects";
 // cookies) et oriente les visiteurs : espace de travail réservé aux personnes connectées.
 // Ce n'est qu'un premier filtre : chaque page et chaque action revérifie la session (src/lib/auth).
 
-const PROTECTED = ["/dashboard", "/clients", "/cases", "/documents", "/appointments", "/tasks", "/finance", "/reports", "/team", "/settings", "/search", "/onboarding", "/reset-password"];
+const PROTECTED = [
+  "/dashboard", "/clients", "/cases", "/documents", "/services", "/appointments", "/tasks", "/finance", "/reports", "/team", "/settings", "/search",
+  "/support", "/onboarding", "/reset-password", "/admin",
+];
 const GUEST_ONLY = ["/login", "/signup"];
 
 const matches = (pathname: string, prefixes: string[]) => prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));

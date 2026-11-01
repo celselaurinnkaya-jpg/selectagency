@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
-import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { allowed, FORBIDDEN_MESSAGE, forbiddenMessage } from "@/lib/auth/permissions";
 import { dbMessage } from "@/lib/data/errors";
 import { formValues, type FormState } from "@/lib/form-state";
 import { CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from "@/lib/format";
@@ -23,7 +23,7 @@ export async function updateAgencyAction(_prev: FormState, formData: FormData): 
     return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
   }
   const ctx = await getAgencyContext();
-  if (!can(ctx.member.role, "settings.manage")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "settings.manage")) return { message: forbiddenMessage(ctx, "settings.manage"), values };
   // La devise s'applique aux nouveaux dossiers : les dossiers existants gardent leur devise de facturation.
   const { data: rows, error } = await ctx.supabase
     .from("organizations")

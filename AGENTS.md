@@ -8,6 +8,24 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
+# SELECT Agency — Règles Impératives du Projet
+
+## 🛑 RÈGLE ABSOLUE : AUCUN PUSH VERS GITHUB SANS DEMANDE EXPLICITE
+- **Interdiction formelle** d'exécuter `git push` ou de synchroniser avec GitHub de façon autonome.
+- GitHub étant relié en continu à Vercel, chaque push met le site à jour directement en ligne sur Internet.
+- **Toutes les modifications doivent impérativement rester en local** (`localhost:3000`).
+- Tu n'enverras les changements sur GitHub **QUE ET UNIQUEMENT SI l'utilisateur formule explicitement la demande** (ex: *"envoie sur GitHub"*, *"publie sur Vercel"*). Sans cette demande précise, reste strictement en local.
+- Règle détaillée : [`.agents/rules/git-workflow-and-deployments.md`](file:///C:/Users/Lenovo/.gemini/select%20agency/.agents/rules/git-workflow-and-deployments.md).
+
+---
+
+## 📝 RÈGLE IMPÉRATIVE : JOURNALISATION DES CONVERSATIONS ET DÉCISIONS
+- **Enregistrement systématique** : Toutes les conversations, demandes utilisateurs, analyses, décisions et modifications de fichiers doivent être obligatoirement consignées dans [`docs/JOURNAL_CONVERSATIONS.md`](file:///C:/Users/Lenovo/.gemini/select%20agency/docs/JOURNAL_CONVERSATIONS.md).
+- Ne jamais effacer l'historique précédent : ajouter systématiquement une nouvelle section datée en tête d'historique lors de chaque étape ou session de travail.
+- Cet enregistrement garantit la persistance totale du contexte même si l'interface d'historique de l'IDE est purgée ou rechargée.
+
+---
+
 # SELECT Agency — Règle Antigravity du Design System
 
 Tous les composants, pages, formulaires, modales et interfaces créés dans ce projet DOIVENT respecter impérativement le Design System officiel de SELECT Agency établi d'après le Dashboard (`src/app/(app)/dashboard/page.tsx`), la navigation (`AppHeader.tsx`, `SidebarNav.tsx`) et la bibliothèque partagée (`src/components/shared/ui.tsx`).

@@ -1,10 +1,14 @@
 import "server-only";
-import { can } from "@/lib/auth/permissions";
-import { loadTables, readAgency } from "@/lib/data/agency";
+import { allowed } from "@/lib/auth/permissions";
+import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
+import { DOCUMENT_FILE, toDocumentFile } from "@/lib/data/rows";
 import type { CaseCategory, CaseStatus, StepKind } from "@/lib/domain/types";
 import { chargeProgress } from "@/features/finance/calculations";
+import { loadInvoices } from "@/features/invoices/queries";
+import { loadQuotes, quoteTotal } from "@/features/quotes/queries";
 import { backOptions, forwardOptions, requiresConfirmation } from "@/features/workflows/rules";
 import { summarizeCase } from "./summary";
+import { activeMembers } from "@/lib/domain/members";
 
 export interface CaseFilters {
   q?: string;
@@ -72,6 +76,13 @@ export async function getCaseDetail(id: string) {
   data.clients = clients;
 
   const summary = summarizeCase(data, travelCase, now);
+  const [quotes, invoices] = allowed(ctx, "finance.read") ? await Promise.all([loadQuotes(ctx, id), loadInvoices(ctx, (q) => q.eq("case_id", id))]) : [[], []];
+  // Fichiers des pièces : la RLS ne les montre qu'aux rôles qui peuvent ouvrir les documents.
+  const requirementIds = data.requirements.map((r) => r.id);
+  const files =
+    allowed(ctx, "documents.read") && requirementIds.length
+      ? (await fetchRows(ctx, "document_files", DOCUMENT_FILE.list, (q) => q.in("requirement_id", requirementIds), ["created_at", "id"])).map(toDocumentFile)
+      : [];
   const steps = [...data.steps].sort((a, b) => a.position - b.position);
   const payments = [...data.payments].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
   const current = summary.current;
@@ -82,10 +93,10 @@ export async function getCaseDetail(id: string) {
     now,
     members: data.members,
     permissions: {
-      write: can(ctx.member.role, "operations.write"),
-      financeRead: can(ctx.member.role, "finance.read"),
-      financeWrite: can(ctx.member.role, "finance.write"),
-      documentsRead: can(ctx.member.role, "documents.read"),
+      write: allowed(ctx, "operations.write"),
+      financeRead: allowed(ctx, "finance.read"),
+      financeWrite: allowed(ctx, "finance.write"),
+      documentsRead: allowed(ctx, "documents.read"),
     },
     organizationId: ctx.organizationId,
     steps,
@@ -98,9 +109,12 @@ export async function getCaseDetail(id: string) {
         }
       : null,
     requirements: data.requirements,
+    files,
     appointments: [...data.appointments].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     tasks: [...data.tasks].sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
     charges: chargeProgress(data.charges, payments),
+    quotes: quotes.map((quote) => ({ quote, total: quoteTotal(quote) })),
+    invoices,
     payments,
     expenses: data.expenses,
     events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
@@ -115,7 +129,7 @@ export async function getCaseFormOptions(clientId?: string) {
       .filter((c) => !c.archivedAt)
       .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"))
       .map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName} (${c.reference})`, residenceCountry: c.residenceCountry })),
-    members: data.members.filter((m) => m.role !== "accountant" && m.role !== "viewer"),
+    members: activeMembers(data.members).filter((m) => m.role !== "accountant" && m.role !== "viewer"),
     currentMemberId: data.currentMemberId,
     preselectedClientId: data.clients.some((c) => c.id === clientId) ? clientId : undefined,
     currency: data.agency.currency,

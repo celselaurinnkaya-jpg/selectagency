@@ -1,13 +1,15 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { CalendarPlus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "cn";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, Notice, PageHeader, PlannedAction, Section, StatusBadge } from "@/components/shared/ui";
-import { APPOINTMENT_KIND, APPOINTMENT_STATUS } from "@/lib/domain/labels";
-import { formatDate, formatRelativeDay } from "@/lib/format";
+import { Card, Notice, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
+import { APPOINTMENT_KIND, APPOINTMENT_STATUS, ROLE } from "@/lib/domain/labels";
+import { dayKey, formatDate, formatRelativeDay } from "@/lib/format";
+import { AppointmentActions, AppointmentForm } from "@/features/appointments/AppointmentForms";
+import { appointmentValues } from "@/features/appointments/values";
 import { listAppointments } from "@/features/operations/queries";
 
 export const metadata: Metadata = { title: "Rendez-vous" };
@@ -20,7 +22,6 @@ export default function AppointmentsPage({ searchParams }: PageProps<"/appointme
       <PageHeader
         title="Rendez-vous et échéances"
         description="Entretiens, consultations, dépôts administratifs et dates limites. Un rendez-vous auprès d'un organisme n'est « confirmé » qu'avec une preuve."
-        actions={<PlannedAction icon={CalendarPlus} label="Programmer un rendez-vous" reason="Formulaire prévu à la prochaine étape (Phase 4)." />}
       />
       <Suspense fallback={<PageSkeleton />}>
         <Agenda searchParams={searchParams} />
@@ -36,6 +37,7 @@ async function Agenda({ searchParams }: Pick<PageProps<"/appointments">, "search
   const view = vue === "mois" ? "mois" : "liste";
   const data = await listAppointments(typeof mois === "string" ? mois : undefined);
   const tz = data.agency.timezone;
+  const members = data.members.map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }));
 
   return (
     <>
@@ -57,15 +59,20 @@ async function Agenda({ searchParams }: Pick<PageProps<"/appointments">, "search
               <ul className="space-y-2">
                 {data.upcoming.map(({ appointment: a, clientName, caseRef, assignee }) => (
                   <li key={a.id}>
-                    <Card className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-navy-800">{formatRelativeDay(a.startsAt, data.now, tz, !a.allDay)}</p>
-                        <p className="text-slate-900">{a.title}</p>
-                        <p className="text-sm text-slate-600">
-                          {[APPOINTMENT_KIND[a.kind], clientName, caseRef, a.location, assignee?.fullName].filter(Boolean).join(" · ")}
-                        </p>
+                    <Card className="space-y-2">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-navy-800">{formatRelativeDay(a.startsAt, data.now, tz, !a.allDay)}</p>
+                          <p className="text-slate-900">{a.title}</p>
+                          <p className="text-sm text-slate-600">
+                            {[APPOINTMENT_KIND[a.kind], clientName, caseRef, a.location, assignee?.fullName, a.externalReference && `preuve : ${a.externalReference}`]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </p>
+                        </div>
+                        <StatusBadge spec={APPOINTMENT_STATUS[a.status]} />
                       </div>
-                      <StatusBadge spec={APPOINTMENT_STATUS[a.status]} />
+                      {data.canWrite && <AppointmentActions appointment={appointmentValues(a, tz)} members={members} />}
                     </Card>
                   </li>
                 ))}
@@ -76,9 +83,17 @@ async function Agenda({ searchParams }: Pick<PageProps<"/appointments">, "search
             <Section title="Passés">
               <ul className="space-y-2">
                 {data.past.map(({ appointment: a, clientName }) => (
-                  <li key={a.id} className="text-sm text-slate-600">
-                    {formatDate(a.startsAt, tz, a.allDay ? "date" : "dateTime")} · {a.title}
-                    {clientName && ` · ${clientName}`}
+                  <li key={a.id}>
+                    <Card className="space-y-1 py-3">
+                      <div className="flex flex-col gap-1 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          {formatDate(a.startsAt, tz, a.allDay ? "date" : "dateTime")} · {a.title}
+                          {clientName && ` · ${clientName}`}
+                        </span>
+                        <StatusBadge spec={APPOINTMENT_STATUS[a.status]} />
+                      </div>
+                      {data.canWrite && <AppointmentActions appointment={appointmentValues(a, tz)} members={members} />}
+                    </Card>
                   </li>
                 ))}
               </ul>
@@ -87,6 +102,16 @@ async function Agenda({ searchParams }: Pick<PageProps<"/appointments">, "search
         </div>
       ) : (
         <MonthGrid data={data} />
+      )}
+
+      {data.canWrite && (
+        <div className="mt-6">
+          <Section title="Programmer un rendez-vous" id="nouveau-rendez-vous">
+            <Card>
+              <AppointmentForm members={members} cases={data.cases} defaultMemberId={data.currentMemberId} defaultDate={dayKey(data.now, tz)} />
+            </Card>
+          </Section>
+        </div>
       )}
 
       <div className="mt-6">

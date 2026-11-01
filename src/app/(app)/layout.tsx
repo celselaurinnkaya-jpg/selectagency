@@ -3,6 +3,7 @@ import { Menu } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { DemoBanner } from "@/components/layout/DemoBanner";
 import { SidebarNav, SidebarNavFallback } from "@/components/layout/SidebarNav";
+import { SubscriptionBanner } from "@/components/layout/SubscriptionBanner";
 
 // Cadre commun de l'espace de travail : il n'est rendu qu'une fois et persiste entre les pages.
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <AppHeader />
       <Suspense fallback={null}>
         <DemoBanner />
+        <SubscriptionBanner />
       </Suspense>
       <div className="flex">
         <aside className="sticky top-16 hidden h-[calc(100dvh-4rem)] w-64 shrink-0 overflow-y-auto border-r border-slate-200 bg-surface px-3 py-4 lg:block print:hidden">

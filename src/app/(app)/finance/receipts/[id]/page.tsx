@@ -6,6 +6,7 @@ import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { PrintButton } from "@/components/shared/PrintButton";
 import { PageHeader } from "@/components/shared/ui";
 import { formatDate, formatMoney } from "@/lib/format";
+import { VoidPaymentForm } from "@/features/finance/FinanceForms";
 import { getReceipt } from "@/features/finance/queries";
 
 export const metadata: Metadata = { title: "Reçu de paiement" };
@@ -22,7 +23,7 @@ async function Receipt({ params }: Pick<PageProps<"/finance/receipts/[id]">, "pa
   const { id } = await params;
   const receipt = await getReceipt(id);
   if (!receipt) notFound();
-  const { payment: p, agency, client, travelCase, receivedBy, lines } = receipt;
+  const { payment: p, agency, isDemo, canVoid, client, travelCase, receivedBy, voidedBy, lines } = receipt;
   const tz = agency.timezone;
 
   return (
@@ -104,14 +105,28 @@ async function Receipt({ params }: Pick<PageProps<"/finance/receipts/[id]">, "pa
           </table>
 
           <p className="text-sm text-slate-700">Reçu par : {receivedBy?.fullName ?? "—"}</p>
-          {p.status === "voided" && <p className="rounded-lg bg-red-50 p-3 text-center font-semibold text-red-800">REÇU ANNULÉ</p>}
+          {p.status === "voided" && (
+            <div className="rounded-lg bg-red-50 p-3 text-center text-red-800">
+              <p className="font-semibold">REÇU ANNULÉ</p>
+              <p className="text-sm">
+                {p.voidedAt && `Le ${formatDate(p.voidedAt, tz, "dateTime")}`}
+                {voidedBy && ` par ${voidedBy.fullName}`}
+                {p.voidReason && ` · motif : ${p.voidReason}`}
+              </p>
+            </div>
+          )}
 
           <footer className="space-y-1 border-t border-slate-200 pt-4 text-xs text-slate-500">
             <p>Reçu interne de paiement : il ne constitue pas une facture fiscale.</p>
-            <p className="font-semibold text-orange-800">Document de démonstration : données fictives, sans valeur.</p>
+            {isDemo && <p className="font-semibold text-orange-800">Document de démonstration : données fictives, sans valeur.</p>}
           </footer>
         </div>
       </article>
+      {canVoid && p.status === "recorded" && (
+        <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 print:hidden">
+          <VoidPaymentForm paymentId={p.id} />
+        </div>
+      )}
     </div>
   );
 }

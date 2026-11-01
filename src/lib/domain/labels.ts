@@ -2,16 +2,24 @@ import type {
   AppointmentKind,
   AppointmentStatus,
   ApplicantTag,
+  BillingPeriod,
   CaseCategory,
   CaseOutcome,
   CasePriority,
   CaseStatus,
   ClientType,
   ConfirmationLevel,
+  InvoiceStatus,
   MemberRole,
+  PaymentMethodKind,
+  QuoteStatus,
   RequirementStatus,
+  ServiceClientStatus,
   StepKind,
+  SubscriptionStatus,
   TaskStatus,
+  TicketCategory,
+  TicketStatus,
 } from "./types";
 
 // Libellés affichés et tonalités de badge. Une seule table par énumération :
@@ -112,6 +120,70 @@ export const TASK_STATUS: Record<TaskStatus, LabelSpec> = {
   in_progress: { label: "En cours", tone: "navy" },
   done: { label: "Terminée", tone: "success" },
   cancelled: { label: "Annulée", tone: "neutral" },
+};
+
+export const QUOTE_STATUS: Record<QuoteStatus, LabelSpec> = {
+  draft: { label: "Brouillon", tone: "neutral" },
+  sent: { label: "Remis au client", tone: "info" },
+  accepted: { label: "Accepté", tone: "success" },
+  refused: { label: "Refusé", tone: "danger" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+};
+
+export const INVOICE_STATUS: Record<InvoiceStatus, LabelSpec> = {
+  draft: { label: "Brouillon", tone: "neutral" },
+  issued: { label: "Émise, à payer", tone: "info" },
+  paid: { label: "Payée", tone: "success" },
+  cancelled: { label: "Annulée", tone: "neutral" },
+};
+
+/** Facture émise dont l'échéance est passée (calculé à l'affichage). */
+export const INVOICE_OVERDUE: LabelSpec = { label: "En retard", tone: "danger" };
+
+/** Suivi d'un client dans un service (mêmes libellés que l'historique, voir la migration des services). */
+export const SERVICE_CLIENT_STATUS: Record<ServiceClientStatus, LabelSpec> = {
+  in_progress: { label: "En cours", tone: "info" },
+  waiting_client: { label: "Attente client", tone: "warning" },
+  waiting_external: { label: "Attente d'un tiers", tone: "external" },
+  completed: { label: "Terminé", tone: "success" },
+  cancelled: { label: "Annulé", tone: "neutral" },
+};
+
+/** Statut d'abonnement tel que l'agence le vit (l'essai terminé est calculé à partir de sa date). */
+export const SUBSCRIPTION_STATUS: Record<SubscriptionStatus | "trial_expired", LabelSpec> = {
+  trialing: { label: "Essai gratuit", tone: "info" },
+  trial_expired: { label: "Essai terminé", tone: "danger" },
+  active: { label: "Abonnement actif", tone: "success" },
+  past_due: { label: "Paiement en retard", tone: "warning" },
+  suspended: { label: "Suspendu", tone: "danger" },
+  cancelled: { label: "Résilié", tone: "neutral" },
+};
+
+export const BILLING_PERIOD: Record<BillingPeriod, { label: string; per: string }> = {
+  monthly: { label: "Mensuel", per: "par mois" },
+  quarterly: { label: "Trimestriel", per: "par trimestre" },
+  yearly: { label: "Annuel", per: "par an" },
+};
+
+export const METHOD_KIND: Record<PaymentMethodKind, string> = {
+  cash: "Espèces",
+  bank_transfer: "Virement bancaire",
+  mobile_money: "Mobile Money",
+  other: "Autre moyen",
+};
+
+export const TICKET_STATUS: Record<TicketStatus, LabelSpec> = {
+  open: { label: "En attente de SELECT", tone: "warning" },
+  answered: { label: "Réponse reçue", tone: "info" },
+  resolved: { label: "Résolue", tone: "success" },
+};
+
+export const TICKET_CATEGORY: Record<TicketCategory, string> = {
+  question: "Question sur l'utilisation",
+  problem: "Problème ou erreur",
+  billing: "Abonnement et facturation",
+  account: "Compte et accès",
+  suggestion: "Suggestion",
 };
 
 export const CLIENT_TYPE: Record<ClientType, string> = {

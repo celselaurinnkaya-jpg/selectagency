@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -24,22 +24,27 @@ interface Option {
   label: string;
 }
 
-export function ClientForm({
-  countries,
-  members,
-  defaultCountry,
-  defaultMemberId,
-  client,
-}: {
+interface ClientFormProps {
   countries: Option[];
   members: Option[];
   defaultCountry: string;
   defaultMemberId: string;
   client?: Client;
-}) {
+}
+
+/**
+ * Next.js garde la page en mémoire entre deux visites : chaque clic sur « Nouveau client » (ou
+ * « Modifier ») doit repartir des données à jour. La clé change à chaque nouvelle navigation,
+ * pas avec le bouton « retour » du navigateur, qui retrouve la saisie en cours.
+ */
+export function ClientForm(props: ClientFormProps) {
+  const { bfcacheId } = useRouter();
+  return <ClientFormFields key={bfcacheId} {...props} />;
+}
+
+function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client }: ClientFormProps) {
+  // En cas de succès, saveClientAction redirige elle-même vers la fiche (rien à rejouer ici).
   const [state, action, pending] = useActionState(saveClientAction, initialFormState);
-  const router = useRouter();
-  const formRef = useRef<HTMLFormElement>(null);
   const v = state.values ?? {};
   const e = state.fieldErrors ?? {};
 
@@ -71,14 +76,8 @@ export function ClientForm({
     return !isInitialResidenceInList && initialResidence && initialResidence !== "__OTHER__" ? initialResidence : "";
   });
 
-  useEffect(() => {
-    if (state.ok && state.redirectTo) {
-      router.push(state.redirectTo);
-    }
-  }, [state.ok, state.redirectTo, router]);
-
   return (
-    <form ref={formRef} action={action} className="space-y-6" noValidate>
+    <form action={action} className="space-y-6" noValidate>
       <input type="hidden" name="clientId" defaultValue={client?.id ?? ""} />
       {state.duplicates?.length ? (
         <div role="alert" className="space-y-3 rounded-xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-950">

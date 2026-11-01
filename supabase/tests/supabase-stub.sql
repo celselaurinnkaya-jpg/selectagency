@@ -12,7 +12,10 @@ create schema extensions;
 
 create table auth.users (
   id uuid primary key,
-  email text
+  email text,
+  created_at timestamptz default now(),
+  last_sign_in_at timestamptz,
+  email_confirmed_at timestamptz
 );
 
 -- Comme sur Supabase : l'identité vient des « claims » du jeton, posés pour la transaction.
@@ -42,6 +45,7 @@ create table storage.objects (
   bucket_id text references storage.buckets (id),
   name text not null,
   owner uuid,
+  metadata jsonb,
   created_at timestamptz default now(),
   unique (bucket_id, name)
 );

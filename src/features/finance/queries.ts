@@ -1,10 +1,11 @@
 import "server-only";
-import { can } from "@/lib/auth/permissions";
+import { allowed } from "@/lib/auth/permissions";
 import { loadTables, readAgency } from "@/lib/data/agency";
 import { dayKey } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { summarizeCase } from "@/features/cases/summary";
 import { agencyFinance } from "./calculations";
+import { activeMembers } from "@/lib/domain/members";
 
 export async function getFinanceOverview(periodKey?: string) {
   const { data, now, ctx } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true, expenses: true });
@@ -15,7 +16,7 @@ export async function getFinanceOverview(periodKey?: string) {
     agency: data.agency,
     now,
     period,
-    canSeeFinance: can(ctx.member.role, "finance.read"),
+    canSeeFinance: allowed(ctx, "finance.read"),
     totals: agencyFinance(data.charges, data.payments, data.expenses, period).map((t) => ({
       ...t,
       balanceDueMinor: balances.filter((b) => b.finance.currency === t.currency).reduce((sum, b) => sum + b.finance.balanceMinor, 0),
@@ -28,7 +29,7 @@ export async function listPayments() {
   const { data, ctx } = await readAgency({ payments: true, clients: true, cases: true });
   return {
     agency: data.agency,
-    canSeeFinance: can(ctx.member.role, "finance.read"),
+    canSeeFinance: allowed(ctx, "finance.read"),
     rows: [...data.payments]
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
       .map((payment) => {
@@ -44,10 +45,16 @@ export async function listPayments() {
 }
 
 export async function listExpenses() {
-  const { data, ctx } = await readAgency({ expenses: true, cases: true });
+  const { data, ctx, now } = await readAgency({ expenses: true, cases: true });
   return {
     agency: data.agency,
-    canSeeFinance: can(ctx.member.role, "finance.read"),
+    now,
+    canSeeFinance: allowed(ctx, "finance.read"),
+    canWrite: allowed(ctx, "finance.write"),
+    cases: data.cases
+      .filter((c) => c.status === "active" || c.status === "on_hold")
+      .sort((a, b) => b.openedAt.localeCompare(a.openedAt))
+      .map((c) => ({ value: c.id, label: `${c.reference} — ${c.title}` })),
     rows: [...data.expenses]
       .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
       .map((expense) => ({
@@ -75,9 +82,12 @@ export async function getReceipt(paymentId: string) {
   return {
     payment,
     agency: data.agency,
+    isDemo: ctx.isDemo,
+    canVoid: allowed(ctx, "payment.void"),
     client: data.clients.find((c) => c.id === payment.clientId)!,
     travelCase,
     receivedBy: data.members.find((m) => m.id === payment.receivedBy),
+    voidedBy: data.members.find((m) => m.id === payment.voidedBy),
     lines: payment.allocations.map((a) => ({ ...a, charge: data.charges.find((c) => c.id === a.chargeId)! })),
   };
 }
@@ -103,7 +113,9 @@ export async function getReports(periodKey?: string) {
     agency: data.agency,
     now,
     period,
-    canSeeFinance: can(ctx.member.role, "finance.read"),
+    canSeeFinance: allowed(ctx, "finance.read"),
+    canExport: allowed(ctx, "reports.export"),
+    canExportFinance: allowed(ctx, "finance.export"),
     openedCount: opened.length,
     closedCount: data.cases.filter((c) => inPeriod(c.closedAt)).length,
     byCategory: countBy(opened, (c) => c.category),
@@ -116,7 +128,7 @@ export async function getReports(periodKey?: string) {
       receivedMinor: data.payments.filter((p) => p.status === "recorded" && p.currency === data.agency.currency && monthOf(p.paidAt) === m.key).reduce((s, p) => s + p.amountMinor, 0),
     })),
     finance: agencyFinance(data.charges, data.payments, data.expenses, period),
-    workload: data.members
+    workload: activeMembers(data.members)
       .filter((m) => m.role !== "viewer")
       .map((member) => {
         const tasks = data.tasks.filter((t) => t.assignedTo === member.id);

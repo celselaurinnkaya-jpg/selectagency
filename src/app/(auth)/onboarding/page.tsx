@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { Card } from "@/components/shared/ui";
@@ -29,11 +30,19 @@ async function Onboarding() {
   const { data: membership } = await user.supabase.from("members").select("id").eq("user_id", user.userId).limit(1).maybeSingle();
   if (membership) redirect("/dashboard");
 
-  const { data: invitations } = await user.supabase.rpc("my_invitations");
+  const [{ data: invitations }, { data: access }] = await Promise.all([user.supabase.rpc("my_invitations"), user.supabase.rpc("platform_access")]);
   const pending = (invitations ?? []) as { token: string; agency_name: string; role: MemberRole; expires_at: string }[];
 
   return (
     <div className="space-y-6">
+      {access !== "none" && (
+        <Card className="space-y-2">
+          <p className="text-sm text-slate-700">Votre compte fait partie de l&apos;équipe SELECT : la console de la plateforme n&apos;a pas besoin d&apos;agence.</p>
+          <Link href="/admin" className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+            Ouvrir la console SELECT
+          </Link>
+        </Card>
+      )}
       {pending.length > 0 && (
         <section aria-labelledby="invitations-titre" className="space-y-3">
           <h2 id="invitations-titre" className="text-base font-semibold text-navy-800">

@@ -1,19 +1,21 @@
 "use server";
 
 import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
-import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { loadTables, readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
 import { stepToRow } from "@/lib/data/rows";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import type { ApplicantTag } from "@/lib/domain/types";
-import { buildRequirements, documentType, DOCUMENT_TYPES } from "@/features/documents/checklists";
+import { buildRequirements, documentType, DOCUMENT_TYPES, OTHER_DOCUMENT } from "@/features/documents/checklists";
 import { caseFinance } from "@/features/finance/calculations";
 import { instantiateSteps } from "@/features/workflows/instantiate";
 import { applyTransition, validateTransition, type TransitionInput } from "@/features/workflows/rules";
 import { templateForCategory } from "@/features/workflows/templates";
+import { activeMembers } from "@/lib/domain/members";
 
 const categories = ["study_abroad", "tourist_visa", "business_travel", "administrative_support", "other_mobility", "custom_trip"] as const;
 const tags = ["student", "employee", "self_employed", "minor", "sponsored"] as const;
@@ -51,10 +53,10 @@ export async function createCaseAction(_prev: FormState, formData: FormData): Pr
   const applicantTags = formData.getAll("applicantTags").filter((t): t is ApplicantTag => (tags as readonly string[]).includes(String(t)));
 
   const { data, ctx } = await readAgency({ clients: (q) => q.eq("id", input.clientId).is("archived_at", null) });
-  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
   const client = data.clients[0];
   if (!client) return { message: "Le client choisi est introuvable.", values };
-  if (!data.members.some((m) => m.id === input.assignedTo)) return { message: "Le conseiller choisi est introuvable.", values };
+  if (!activeMembers(data.members).some((m) => m.id === input.assignedTo)) return { message: "Le conseiller choisi est introuvable.", values };
 
   // Copie du modèle et de la checklist dans le dossier : les modifications futures des modèles
   // ne changeront pas ce dossier. La base attribue le numéro DOS-… et écrit l'historique.
@@ -100,7 +102,10 @@ export async function createCaseAction(_prev: FormState, formData: FormData): Pr
   });
   if (error) return { message: dbMessage(error), values };
   refresh();
-  return { ok: true, redirectTo: `/cases/${(created as { id: string }).id}?ok=dossier-cree` };
+  // Redirection décidée ici, au moment de l'enregistrement : un résultat gardé dans l'état du
+  // formulaire serait rejoué quand Next.js réaffiche la page conservée (« Nouveau dossier »
+  // renvoyait alors vers le dossier précédent).
+  redirect(`/cases/${(created as { id: string }).id}?ok=dossier-cree`);
 }
 
 const transitionSchema = z.object({
@@ -127,7 +132,7 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
     charges: (q) => q.eq("case_id", caseId),
     payments: (q) => q.eq("case_id", caseId),
   });
-  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
   const travelCase = data.cases[0];
   if (!travelCase || travelCase.status !== "active") return { message: "Ce dossier n'est pas modifiable.", values };
   if (travelCase.version !== version) {
@@ -160,25 +165,42 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
   return { ok: true, message: result.closes ? "Dossier clôturé." : `Étape en cours : « ${result.to.label} ».` };
 }
 
-const requirementSchema = z.object({
-  caseId: z.string().min(1),
-  documentTypeCode: z.string().refine((code) => DOCUMENT_TYPES.some((t) => t.code === code), "Choisissez un type de document."),
-  isRequired: z.literal("1").optional(),
-});
+const requirementSchema = z
+  .object({
+    caseId: z.string().min(1),
+    documentTypeCode: z
+      .string()
+      .refine((code) => code === OTHER_DOCUMENT || DOCUMENT_TYPES.some((t) => t.code === code), "Choisissez un type de document."),
+    customLabel: z.string().trim().max(160).optional(),
+    isRequired: z.literal("1").optional(),
+  })
+  .refine((v) => v.documentTypeCode !== OTHER_DOCUMENT || (v.customLabel?.length ?? 0) >= 2, {
+    message: "Indiquez le nom de la pièce.",
+    path: ["customLabel"],
+  });
+
+const normalizeLabel = (label: string) => label.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().trim();
 
 export async function addRequirementAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
   const parsed = requirementSchema.safeParse(values);
-  if (!parsed.success) return { message: "Choisissez un type de document.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
+  if (!parsed.success) {
+    const fieldErrors = z.flattenError(parsed.error).fieldErrors;
+    return { message: fieldErrors.customLabel?.[0] ?? "Choisissez un type de document.", fieldErrors, values };
+  }
   const { data, ctx } = await readAgency({ cases: (q) => q.eq("id", parsed.data.caseId).eq("status", "active") });
-  if (!can(ctx.member.role, "operations.write")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
   const travelCase = data.cases[0];
   if (!travelCase) return { message: "Ce dossier n'est pas modifiable.", values };
   const { requirements = [] } = await loadTables(ctx, { requirements: (q) => q.eq("case_id", travelCase.id) });
-  if (requirements.some((r) => r.documentTypeCode === parsed.data.documentTypeCode)) {
+  // Pièce de la liste type, ou pièce nommée par l'agence (« Autre »), avec un code qui lui est propre.
+  const type =
+    parsed.data.documentTypeCode === OTHER_DOCUMENT
+      ? { code: `autre-${crypto.randomUUID().slice(0, 8)}`, label: parsed.data.customLabel!, category: "Autre" }
+      : documentType(parsed.data.documentTypeCode);
+  if (requirements.some((r) => r.documentTypeCode === type.code || normalizeLabel(r.label) === normalizeLabel(type.label))) {
     return { message: "Cette pièce figure déjà dans la liste du dossier.", values };
   }
-  const type = documentType(parsed.data.documentTypeCode);
   const { error } = await ctx.supabase.from("document_requirements").insert({
     organization_id: ctx.organizationId,
     case_id: travelCase.id,

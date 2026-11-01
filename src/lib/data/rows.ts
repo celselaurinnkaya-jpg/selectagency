@@ -1,16 +1,28 @@
 import type {
   ActivityEvent,
   Agency,
+  AgencyService,
   Appointment,
   CaseStep,
   Charge,
   Client,
   CommunicationLog,
+  DocumentFile,
   DocumentRequirement,
   Expense,
+  Invoice,
+  InvoiceItem,
+  InvoiceSettings,
   Member,
   Payment,
   PaymentAllocation,
+  Plan,
+  Quote,
+  QuoteItem,
+  ServiceClient,
+  Subscription,
+  SupportMessage,
+  SupportTicket,
   Task,
   TravelCase,
 } from "@/lib/domain/types";
@@ -48,10 +60,18 @@ export function toAgency(r: Row): Agency {
   };
 }
 
-export const MEMBER = columns("id", "organization_id", "user_id", "full_name", "email", "role", "job_title", "created_at");
+export const MEMBER = columns("id", "organization_id", "user_id", "full_name", "email", "role", "job_title", "created_at", "removed_at");
 
 export function toMember(r: Row): Member {
-  return { id: str(r.id), fullName: str(r.full_name), email: str(r.email), role: r.role as Member["role"], jobTitle: str(r.job_title) };
+  return {
+    id: str(r.id),
+    fullName: str(r.full_name),
+    email: str(r.email),
+    role: r.role as Member["role"],
+    jobTitle: str(r.job_title),
+    removedAt: optIso(r.removed_at),
+    hasAccount: r.user_id !== null && r.user_id !== undefined,
+  };
 }
 
 export function memberToRow(m: Member): Row {
@@ -263,6 +283,19 @@ export function toRequirement(r: Row): DocumentRequirement {
   };
 }
 
+export const DOCUMENT_FILE = columns("id", "requirement_id", "file_name", "storage_path", "uploaded_by", "created_at");
+
+export function toDocumentFile(r: Row): DocumentFile {
+  return {
+    id: str(r.id),
+    requirementId: str(r.requirement_id),
+    fileName: str(r.file_name),
+    storagePath: str(r.storage_path),
+    uploadedBy: optStr(r.uploaded_by),
+    createdAt: iso(r.created_at),
+  };
+}
+
 export function requirementToRow(d: DocumentRequirement): Row {
   return {
     id: d.id,
@@ -383,7 +416,7 @@ export function chargeToRow(c: Charge): Row {
 
 export const PAYMENT = columns(
   "id", "case_id", "client_id", "amount_minor", "currency", "method_kind", "method_label", "transaction_reference",
-  "payer_name", "paid_at", "received_by", "status", "receipt_number",
+  "payer_name", "paid_at", "received_by", "status", "receipt_number", "voided_at", "voided_by", "void_reason",
 );
 
 export const ALLOCATION = columns("id", "payment_id", "charge_id", "amount_minor");
@@ -404,6 +437,9 @@ export function toPayment(r: Row, allocations: PaymentAllocation[]): Payment {
     status: r.status as Payment["status"],
     receiptNumber: str(r.receipt_number),
     allocations,
+    voidedAt: optIso(r.voided_at),
+    voidedBy: optStr(r.voided_by),
+    voidReason: optStr(r.void_reason),
   };
 }
 
@@ -486,6 +522,207 @@ export function toCommunication(r: Row): CommunicationLog {
   };
 }
 
+// Devis -------------------------------------------------------------------------------------------
+
+export const QUOTE = columns(
+  "id", "reference", "case_id", "client_id", "currency", "status", "valid_until", "notes", "created_by", "created_at",
+  "sent_at", "decided_at",
+);
+
+export const QUOTE_ITEM = columns("id", "quote_id", "position", "label", "charge_type", "quantity", "unit_amount_minor");
+
+export function toQuoteItem(r: Row): QuoteItem {
+  return {
+    id: str(r.id),
+    quoteId: str(r.quote_id),
+    position: Number(r.position),
+    label: str(r.label),
+    chargeType: r.charge_type as QuoteItem["chargeType"],
+    quantity: Number(r.quantity),
+    unitAmountMinor: Number(r.unit_amount_minor),
+  };
+}
+
+export function toQuote(r: Row, items: QuoteItem[]): Quote {
+  return {
+    id: str(r.id),
+    reference: str(r.reference),
+    caseId: str(r.case_id),
+    clientId: str(r.client_id),
+    currency: str(r.currency),
+    status: r.status as Quote["status"],
+    validUntil: optStr(r.valid_until),
+    notes: optStr(r.notes),
+    createdBy: str(r.created_by),
+    createdAt: iso(r.created_at),
+    sentAt: optIso(r.sent_at),
+    decidedAt: optIso(r.decided_at),
+    items: [...items].sort((a, b) => a.position - b.position),
+  };
+}
+
+// Factures -----------------------------------------------------------------------------------------
+
+export const INVOICE = columns(
+  "id", "number", "client_id", "case_id", "status", "currency", "issue_date", "due_date", "discount_label", "discount_minor",
+  "subtotal_minor", "tax_minor", "total_minor", "payment_details", "notes", "created_by", "created_at", "updated_at",
+  "issued_at", "paid_at", "cancelled_at",
+);
+
+export const INVOICE_ITEM = columns("id", "invoice_id", "position", "label", "quantity", "unit_amount_minor", "tax_rate");
+
+export function toInvoiceItem(r: Row): InvoiceItem {
+  return {
+    id: str(r.id),
+    invoiceId: str(r.invoice_id),
+    position: Number(r.position),
+    label: str(r.label),
+    quantity: Number(r.quantity),
+    unitAmountMinor: Number(r.unit_amount_minor),
+    taxRate: Number(r.tax_rate),
+  };
+}
+
+export function toInvoice(r: Row, items: InvoiceItem[]): Invoice {
+  return {
+    id: str(r.id),
+    number: str(r.number),
+    clientId: str(r.client_id),
+    caseId: optStr(r.case_id),
+    status: r.status as Invoice["status"],
+    currency: str(r.currency),
+    issueDate: str(r.issue_date),
+    dueDate: str(r.due_date),
+    discountLabel: optStr(r.discount_label),
+    discountMinor: Number(r.discount_minor),
+    subtotalMinor: Number(r.subtotal_minor),
+    taxMinor: Number(r.tax_minor),
+    totalMinor: Number(r.total_minor),
+    paymentDetails: optStr(r.payment_details),
+    notes: optStr(r.notes),
+    createdBy: str(r.created_by),
+    createdAt: iso(r.created_at),
+    updatedAt: iso(r.updated_at),
+    issuedAt: optIso(r.issued_at),
+    paidAt: optIso(r.paid_at),
+    cancelledAt: optIso(r.cancelled_at),
+    items: [...items].sort((a, b) => a.position - b.position),
+  };
+}
+
+export const INVOICE_SETTINGS = columns(
+  "organization_id", "legal_name", "address", "phone", "email", "tax_id", "signatory_name", "payment_details", "footer_note",
+  "logo_path", "stamp_path", "signature_path",
+);
+
+/** Réglages lus, ou réglages vides tant que l'agence n'a rien enregistré. */
+export function toInvoiceSettings(r: Row | null | undefined): InvoiceSettings {
+  return {
+    legalName: str(r?.legal_name),
+    address: str(r?.address),
+    phone: str(r?.phone),
+    email: str(r?.email),
+    taxId: str(r?.tax_id),
+    signatoryName: str(r?.signatory_name),
+    paymentDetails: str(r?.payment_details),
+    footerNote: str(r?.footer_note),
+    logoPath: optStr(r?.logo_path),
+    stampPath: optStr(r?.stamp_path),
+    signaturePath: optStr(r?.signature_path),
+  };
+}
+
+// Services de l'agence -----------------------------------------------------------------------------
+
+export const SERVICE = columns("id", "name", "description", "price_minor", "currency", "is_active", "created_at");
+
+export function toService(r: Row): AgencyService {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    description: str(r.description),
+    priceMinor: r.price_minor === null || r.price_minor === undefined ? undefined : Number(r.price_minor),
+    currency: optStr(r.currency),
+    isActive: Boolean(r.is_active),
+    createdAt: iso(r.created_at),
+  };
+}
+
+export const SERVICE_CLIENT = columns("id", "service_id", "client_id", "case_id", "status", "note", "added_by", "added_at", "updated_at");
+
+export function toServiceClient(r: Row): ServiceClient {
+  return {
+    id: str(r.id),
+    serviceId: str(r.service_id),
+    clientId: str(r.client_id),
+    caseId: optStr(r.case_id),
+    status: r.status as ServiceClient["status"],
+    note: str(r.note),
+    addedBy: str(r.added_by),
+    addedAt: iso(r.added_at),
+    updatedAt: iso(r.updated_at),
+  };
+}
+
+// Abonnement et support -------------------------------------------------------------------------
+
+export const SUBSCRIPTION = columns("organization_id", "plan_id", "status", "trial_ends_at", "current_period_end");
+
+export const PLAN = columns("id", "name", "description", "price_minor", "currency", "billing_period", "max_members", "is_active");
+
+export function toPlan(r: Row): Plan {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    description: str(r.description),
+    priceMinor: Number(r.price_minor),
+    currency: str(r.currency),
+    billingPeriod: r.billing_period as Plan["billingPeriod"],
+    maxMembers: r.max_members === null || r.max_members === undefined ? undefined : Number(r.max_members),
+  };
+}
+
+export function toSubscription(r: Row, plan?: Plan): Subscription {
+  return {
+    status: r.status as Subscription["status"],
+    plan: plan && { id: plan.id, name: plan.name, maxMembers: plan.maxMembers },
+    trialEndsAt: optIso(r.trial_ends_at),
+    currentPeriodEnd: optIso(r.current_period_end),
+  };
+}
+
+export const SUBSCRIPTION_PAYMENT = columns(
+  "id", "plan_id", "amount_minor", "currency", "method_kind", "transaction_reference", "paid_at", "period_end", "status",
+);
+
+export const TICKET = columns("id", "reference", "subject", "category", "status", "created_by", "created_at", "updated_at");
+
+export function toTicket(r: Row): SupportTicket {
+  return {
+    id: str(r.id),
+    reference: str(r.reference),
+    subject: str(r.subject),
+    category: r.category as SupportTicket["category"],
+    status: r.status as SupportTicket["status"],
+    createdBy: str(r.created_by),
+    createdAt: iso(r.created_at),
+    updatedAt: iso(r.updated_at),
+  };
+}
+
+export const TICKET_MESSAGE = columns("id", "ticket_id", "author_kind", "author_name", "body", "created_at");
+
+export function toTicketMessage(r: Row): SupportMessage {
+  return {
+    id: str(r.id),
+    ticketId: str(r.ticket_id),
+    authorKind: r.author_kind as SupportMessage["authorKind"],
+    authorName: str(r.author_name),
+    body: str(r.body),
+    createdAt: iso(r.created_at),
+  };
+}
+
 /** Toutes les lectures, pour la vérification des colonnes par le test de la base. */
 export const READ_COLUMNS = {
   organizations: ORGANIZATION,
@@ -495,6 +732,7 @@ export const READ_COLUMNS = {
   cases: CASE,
   case_steps: STEP,
   document_requirements: REQUIREMENT,
+  document_files: DOCUMENT_FILE,
   appointments: APPOINTMENT,
   tasks: TASK,
   charges: CHARGE,
@@ -503,4 +741,16 @@ export const READ_COLUMNS = {
   expenses: EXPENSE,
   activity_events: EVENT,
   communication_logs: COMMUNICATION,
+  quotes: QUOTE,
+  quote_items: QUOTE_ITEM,
+  invoices: INVOICE,
+  invoice_items: INVOICE_ITEM,
+  invoice_settings: INVOICE_SETTINGS,
+  services: SERVICE,
+  service_clients: SERVICE_CLIENT,
+  subscriptions: SUBSCRIPTION,
+  plans: PLAN,
+  subscription_payments: SUBSCRIPTION_PAYMENT,
+  support_tickets: TICKET,
+  support_messages: TICKET_MESSAGE,
 } as const;

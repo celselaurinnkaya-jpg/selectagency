@@ -2,7 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
-import { can, FORBIDDEN_MESSAGE } from "@/lib/auth/permissions";
+import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
 import { formatMoney } from "@/lib/format";
@@ -26,7 +26,7 @@ export async function addChargeAction(_prev: FormState, formData: FormData): Pro
   if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
 
   const { data, ctx } = await readAgency({ cases: (q) => q.eq("id", parsed.data.caseId) });
-  if (!can(ctx.member.role, "finance.write")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write"), values };
   const travelCase = data.cases[0];
   if (!travelCase || travelCase.status === "cancelled") return { message: "Ce dossier n'accepte pas de nouvelle prestation.", values };
   const amountMinor = parseAmount(parsed.data.amount, travelCase.billingCurrency);
@@ -73,7 +73,7 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
     charges: (q) => q.eq("case_id", input.caseId),
     payments: (q) => q.eq("case_id", input.caseId),
   });
-  if (!can(ctx.member.role, "finance.write")) return { message: FORBIDDEN_MESSAGE, values };
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write"), values };
   const travelCase = data.cases[0];
   if (!travelCase) return { message: "Dossier introuvable.", values };
   const currency = travelCase.billingCurrency;
@@ -113,4 +113,72 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
   const receipt = created as { id: string; receipt_number: string };
   refresh();
   return { ok: true, message: `Paiement enregistré : reçu ${receipt.receipt_number}.`, redirectTo: `/finance/receipts/${receipt.id}` };
+}
+
+// Annulation : le reçu garde son numéro et reste consultable, marqué « annulé » avec son motif.
+const voidSchema = z.object({
+  paymentId: z.uuid(),
+  reason: z.string().trim().min(3, "Indiquez le motif de l'annulation.").max(300),
+});
+
+export async function voidPaymentAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const values = formValues(formData);
+  const parsed = voidSchema.safeParse(values);
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Certains champs sont à corriger.", values };
+  const { data, ctx } = await readAgency({ payments: (q) => q.eq("id", parsed.data.paymentId) });
+  if (!allowed(ctx, "payment.void")) return { message: forbiddenMessage(ctx, "payment.void"), values };
+  const payment = data.payments[0];
+  if (!payment) return { message: "Paiement introuvable.", values };
+
+  const { error } = await ctx.supabase.rpc("void_payment", {
+    p_payment_id: payment.id,
+    p_reason: parsed.data.reason,
+    p_event: `Paiement de ${formatMoney(payment.amountMinor, payment.currency)} annulé (reçu ${payment.receiptNumber}) : ${parsed.data.reason}`,
+  });
+  if (error) return { message: dbMessage(error), values };
+  refresh();
+  return { ok: true, message: `Reçu ${payment.receiptNumber} annulé. Le montant ne compte plus dans les soldes.` };
+}
+
+// Dépenses : fonctionnement de l'agence, ou somme reversée à un tiers pour le compte d'un client.
+const expenseSchema = z.object({
+  label: z.string().trim().min(2, "Décrivez la dépense.").max(160),
+  expenseType: z.enum(["operating", "client_disbursement"], { error: "Précisez la nature de la dépense." }),
+  supplier: z.string().trim().max(120).optional(),
+  amount: z.string().trim().min(1, "Indiquez le montant."),
+  currency: z.string().regex(/^[A-Z]{3}$/, "Devise invalide."),
+  paidDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indiquez la date."),
+  caseId: z.string().optional(),
+});
+
+export async function createExpenseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const values = formValues(formData);
+  const parsed = expenseSchema.safeParse(values);
+  if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
+  const input = parsed.data;
+  if (input.expenseType === "client_disbursement" && !input.caseId) {
+    return { message: "Certains champs sont à corriger.", fieldErrors: { caseId: ["Choisissez le dossier du client concerné."] }, values };
+  }
+  const { data, ctx } = await readAgency(input.caseId ? { cases: (q) => q.eq("id", input.caseId!) } : {});
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write"), values };
+  const travelCase = data.cases[0];
+  if (input.caseId && !travelCase) return { message: "Dossier introuvable.", values };
+  const amountMinor = parseAmount(input.amount, input.currency);
+  if (!amountMinor) return { message: "Certains champs sont à corriger.", fieldErrors: { amount: [`Montant invalide en ${input.currency}.`] }, values };
+
+  const { error } = await ctx.supabase.from("expenses").insert({
+    organization_id: ctx.organizationId,
+    case_id: travelCase?.id ?? null,
+    expense_type: input.expenseType,
+    label: input.label,
+    supplier: input.supplier || null,
+    amount_minor: amountMinor,
+    currency: input.currency,
+    paid_at: localDateTimeToIso(input.paidDate, "12:00", data.agency.timezone),
+    // Remplacé par la base par la personne connectée (trigger) : jamais une valeur du navigateur.
+    recorded_by: ctx.member.id,
+  });
+  if (error) return { message: dbMessage(error), values };
+  refresh();
+  return { ok: true, message: `Dépense enregistrée : ${formatMoney(amountMinor, input.currency)}.` };
 }

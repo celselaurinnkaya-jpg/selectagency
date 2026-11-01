@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import { BarList, MonthlyColumns } from "@/components/shared/charts";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, Notice, PageHeader, PlannedAction, Section } from "@/components/shared/ui";
+import { Card, Notice, PageHeader, Section } from "@/components/shared/ui";
 import { countryName } from "@/lib/countries";
 import { CATEGORY_LABELS, ROLE, STEP_KIND } from "@/lib/domain/labels";
 import type { CaseCategory, StepKind } from "@/lib/domain/types";
@@ -12,6 +12,7 @@ import { PERIOD_OPTIONS } from "@/lib/period";
 import { getReports } from "@/features/finance/queries";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = { title: "Rapports" };
 
@@ -21,7 +22,6 @@ export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
       <PageHeader
         title="Rapports"
         description="Volume d'activité, répartition des dossiers, finances par devise et charge de travail de l'équipe."
-        actions={<PlannedAction icon={Download} label="Exporter en CSV" reason="Export prévu avec la base de données (Phase 5)." />}
       />
       <Suspense fallback={<PageSkeleton />}>
         <Reports searchParams={searchParams} />
@@ -37,6 +37,28 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
   return (
     <div className="space-y-6">
       {!r.canSeeFinance && <FinanceRestricted />}
+      {(r.canExport || r.canExportFinance) && (
+        <Section title="Exporter (CSV pour Excel)">
+          <div className="flex flex-wrap gap-2">
+            {r.canExport && (
+              <>
+                <ExportLink report="clients" label="Clients" />
+                <ExportLink report="dossiers" label="Dossiers" />
+              </>
+            )}
+            {r.canExportFinance && (
+              <>
+                <ExportLink report="paiements" label="Paiements et reçus" />
+                <ExportLink report="depenses" label="Dépenses" />
+              </>
+            )}
+          </div>
+          <p className="mt-3 text-sm text-slate-600">
+            Chaque fichier contient toutes les données de l&apos;agence (sans les numéros de pièce d&apos;identité). Conservez-le en lieu sûr : il contient des
+            données personnelles de vos clients.
+          </p>
+        </Section>
+      )}
       <Pills label="Période" active={r.period.key} items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: `/reports?periode=${p.key}` }))} />
 
       <div className="grid gap-6 lg:grid-cols-2">
@@ -128,5 +150,16 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
 
       <Notice>Les rapports sont calculés à partir des données de démonstration de cette session.</Notice>
     </div>
+  );
+}
+
+function ExportLink({ report, label }: { report: string; label: string }) {
+  return (
+    <Button asChild variant="outline">
+      <a href={`/reports/export/${report}`} download>
+        <Download aria-hidden />
+        {label}
+      </a>
+    </Button>
   );
 }

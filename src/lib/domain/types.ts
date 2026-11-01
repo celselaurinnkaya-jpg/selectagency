@@ -66,6 +66,10 @@ export interface Member {
   email: string;
   role: MemberRole;
   jobTitle: string;
+  /** Membre retiré de l'équipe : son nom reste dans l'historique, il n'a plus accès à l'agence. */
+  removedAt?: string;
+  /** Faux pour un collègue fictif de la démonstration ou un membre retiré (aucun compte rattaché). */
+  hasAccount?: boolean;
 }
 
 export interface ClientGuardian {
@@ -184,6 +188,16 @@ export interface DocumentRequirement {
   reviewedAt?: string;
 }
 
+/** Un fichier d'une pièce (une pièce peut en compter plusieurs : recto-verso, plusieurs relevés…). */
+export interface DocumentFile {
+  id: string;
+  requirementId: string;
+  fileName: string;
+  storagePath: string;
+  uploadedBy?: string;
+  createdAt: string;
+}
+
 export interface Appointment {
   id: string;
   caseId?: string;
@@ -242,6 +256,170 @@ export interface Payment {
   status: "recorded" | "voided";
   receiptNumber: string;
   allocations: PaymentAllocation[];
+  voidedAt?: string;
+  voidedBy?: string;
+  voidReason?: string;
+}
+
+export type QuoteStatus = "draft" | "sent" | "accepted" | "refused" | "cancelled";
+
+export interface QuoteItem {
+  id: string;
+  quoteId: string;
+  position: number;
+  label: string;
+  chargeType: ChargeType;
+  quantity: number;
+  unitAmountMinor: number;
+}
+
+/** Devis rattaché à un dossier, dans sa devise. Accepté, il devient des prestations convenues. */
+export interface Quote {
+  id: string;
+  reference: string;
+  caseId: string;
+  clientId: string;
+  currency: string;
+  status: QuoteStatus;
+  validUntil?: string;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  sentAt?: string;
+  decidedAt?: string;
+  items: QuoteItem[];
+}
+
+// Factures ------------------------------------------------------------------------------------------
+
+export type InvoiceStatus = "draft" | "issued" | "paid" | "cancelled";
+export type InvoiceImageKind = "logo" | "stamp" | "signature";
+
+export interface InvoiceItem {
+  id: string;
+  invoiceId: string;
+  position: number;
+  label: string;
+  quantity: number;
+  unitAmountMinor: number;
+  /** Taux de taxe en pourcentage (ex. 19.25). */
+  taxRate: number;
+}
+
+/** Facture adressée à un client : un document remis au client, sans effet sur les prestations ni les paiements. */
+export interface Invoice {
+  id: string;
+  number: string;
+  clientId: string;
+  caseId?: string;
+  status: InvoiceStatus;
+  currency: string;
+  /** Dates du document (AAAA-MM-JJ). */
+  issueDate: string;
+  dueDate: string;
+  discountLabel?: string;
+  discountMinor: number;
+  subtotalMinor: number;
+  taxMinor: number;
+  totalMinor: number;
+  paymentDetails?: string;
+  notes?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  issuedAt?: string;
+  paidAt?: string;
+  cancelledAt?: string;
+  items: InvoiceItem[];
+}
+
+/** Coordonnées et images imprimées sur les factures de l'agence. */
+export interface InvoiceSettings {
+  legalName: string;
+  address: string;
+  phone: string;
+  email: string;
+  taxId: string;
+  signatoryName: string;
+  paymentDetails: string;
+  footerNote: string;
+  logoPath?: string;
+  stampPath?: string;
+  signaturePath?: string;
+}
+
+// Services de l'agence ------------------------------------------------------------------------------
+
+/** Service proposé par l'agence (hébergement, garant, AVI…), avec un tarif indicatif facultatif. */
+export interface AgencyService {
+  id: string;
+  name: string;
+  description: string;
+  priceMinor?: number;
+  currency?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export type ServiceClientStatus = "in_progress" | "waiting_client" | "waiting_external" | "completed" | "cancelled";
+
+/** Client suivi dans un service, avec le dossier concerné s'il y en a un. */
+export interface ServiceClient {
+  id: string;
+  serviceId: string;
+  clientId: string;
+  caseId?: string;
+  status: ServiceClientStatus;
+  note: string;
+  addedBy: string;
+  addedAt: string;
+  updatedAt: string;
+}
+
+// Abonnement à SELECT Agency et support ---------------------------------------------------------
+
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "suspended" | "cancelled";
+export type BillingPeriod = "monthly" | "quarterly" | "yearly";
+
+export interface Plan {
+  id: string;
+  name: string;
+  description: string;
+  priceMinor: number;
+  currency: string;
+  billingPeriod: BillingPeriod;
+  /** Nombre de membres actifs autorisés ; absent = sans limite. */
+  maxMembers?: number;
+}
+
+export interface Subscription {
+  status: SubscriptionStatus;
+  plan?: Pick<Plan, "id" | "name" | "maxMembers">;
+  trialEndsAt?: string;
+  currentPeriodEnd?: string;
+}
+
+export type TicketStatus = "open" | "answered" | "resolved";
+export type TicketCategory = "question" | "problem" | "billing" | "account" | "suggestion";
+
+export interface SupportTicket {
+  id: string;
+  reference: string;
+  subject: string;
+  category: TicketCategory;
+  status: TicketStatus;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportMessage {
+  id: string;
+  ticketId: string;
+  authorKind: "agency" | "platform";
+  authorName: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface Expense {

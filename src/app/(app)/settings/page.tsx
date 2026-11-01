@@ -21,13 +21,15 @@ export default function SettingsPage() {
 }
 
 async function Settings() {
-  const { agency, canManage } = await getAgencySettings();
+  const { agency, canManage, readOnly } = await getAgencySettings();
   return (
     <Section title="Agence">
       {canManage ? (
         <Card>
           <SettingsForm agency={agency} />
         </Card>
+      ) : readOnly ? (
+        <Notice tone="warning">L&apos;agence est en lecture seule : les paramètres seront de nouveau modifiables dès l&apos;activation de l&apos;abonnement.</Notice>
       ) : (
         <Notice>Seuls le propriétaire et les administrateurs peuvent modifier les paramètres de l&apos;agence.</Notice>
       )}

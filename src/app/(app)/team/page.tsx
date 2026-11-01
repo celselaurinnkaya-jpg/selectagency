@@ -1,13 +1,13 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
+import { Card, Notice, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { ROLE } from "@/lib/domain/labels";
 import type { MemberRole } from "@/lib/domain/types";
 import { formatDate, initials } from "@/lib/format";
 import { getTeam } from "@/features/operations/queries";
 import { revokeInvitationAction } from "@/features/team/actions";
-import { InviteForm } from "@/features/team/TeamForms";
+import { InviteForm, MemberManage } from "@/features/team/TeamForms";
 
 export const metadata: Metadata = { title: "Équipe" };
 
@@ -26,10 +26,10 @@ export default function TeamPage() {
 }
 
 async function Team() {
-  const { agency, members, currentMemberId, canManage, invitations } = await getTeam();
+  const { agency, members, removed, heirs, currentMemberId, canManage, canInvite, canTransfer, memberLimit, invitations } = await getTeam();
   return (
     <div className="space-y-6">
-      <Section title="Membres">
+      <Section title="Membres" action={memberLimit ? <span className="text-sm text-slate-600 tabular-nums">{members.length} sur {memberLimit} places de la formule</span> : undefined}>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {members.map(({ member, activeCases, openTasks, overdueTasks }) => (
             <Card key={member.id} className="space-y-3">
@@ -58,6 +58,13 @@ async function Team() {
                   <dd className={`font-semibold tabular-nums ${overdueTasks ? "text-red-700" : ""}`}>{overdueTasks}</dd>
                 </div>
               </dl>
+              {canManage && member.id !== currentMemberId && member.role !== "owner" && (
+                <MemberManage
+                  member={{ id: member.id, fullName: member.fullName, role: member.role, hasAccount: member.hasAccount !== false }}
+                  heirs={heirs.filter((h) => h.id !== member.id).map((h) => ({ value: h.id, label: `${h.fullName} (${ROLE[h.role].label})` }))}
+                  canTransfer={canTransfer}
+                />
+              )}
             </Card>
           ))}
         </div>
@@ -65,13 +72,20 @@ async function Team() {
 
       {canManage && (
         <Section title="Inviter un collaborateur">
-          <Card className="space-y-4">
-            <p className="text-sm text-slate-600">
-              La personne crée son compte avec cette adresse e-mail, puis rejoint l&apos;agence avec le rôle choisi. Le rôle de propriétaire ne
-              s&apos;attribue pas par invitation.
-            </p>
-            <InviteForm />
-          </Card>
+          {canInvite ? (
+            <Card className="space-y-4">
+              <p className="text-sm text-slate-600">
+                La personne crée son compte avec cette adresse e-mail, puis rejoint l&apos;agence avec le rôle choisi. Le rôle de propriétaire ne
+                s&apos;attribue pas par invitation : il se transmet depuis la fiche d&apos;un membre.
+              </p>
+              <InviteForm />
+            </Card>
+          ) : (
+            <Notice tone="warning" title="Invitations suspendues">
+              L&apos;agence est en lecture seule : son abonnement est suspendu ou son essai est terminé. Vous pouvez toujours retirer l&apos;accès
+              d&apos;un membre.
+            </Notice>
+          )}
           {invitations.length > 0 && (
             <ul className="mt-3 space-y-2">
               {invitations.map((invitation) => (
@@ -94,6 +108,25 @@ async function Team() {
               ))}
             </ul>
           )}
+        </Section>
+      )}
+
+      {removed.length > 0 && (
+        <Section title="Anciens membres">
+          <ul className="space-y-2">
+            {removed.map((member) => (
+              <li key={member.id}>
+                <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium text-slate-700">{member.fullName}</span>
+                    <span className="block truncate text-xs text-slate-500">{member.email}</span>
+                  </span>
+                  <span className="text-xs text-slate-500">Sans accès depuis le {formatDate(member.removedAt!, agency.timezone)}</span>
+                </Card>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-slate-600">Leur nom reste dans l&apos;historique des dossiers et sur les reçus qu&apos;ils ont établis.</p>
         </Section>
       )}
 
