@@ -196,3 +196,30 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - Indexation et commit de l'ensemble des fonctionnalités développées (Équipe & Rôles, Plateforme Console Super-Admin, Devis & Annulations, Support, Factures avec PDF/WhatsApp, Menu Services, Exports CSV, Multi-fichiers, etc.).
   - Exécution de `git push origin main` vers GitHub (déclenchement du déploiement continu Vercel).
 
+
+### Session 12 — 31 Octobre 2026 (Claude Code) — Équipe : « Ajouter un membre » visible et invitations complètes
+* **Demande** : capture de la section « Membres » de la page Équipe : « il n'y a pas la possibilité d'ajouter un membre ».
+* **Constat** : l'invitation existait, mais dans une section séparée plus bas (« Inviter un collaborateur »), sans aucun lien depuis « Membres ». Autres manques trouvés : le lien d'une invitation n'était visible qu'au moment de sa création (perdu ensuite), une même adresse pouvait recevoir plusieurs invitations, une invitation expirée restait affichée « en attente », et le rôle choisi pouvait revenir à « Agent » après une erreur de saisie (réinitialisation des formulaires par React 19).
+* **Réalisations** :
+  - `src/app/(app)/team/page.tsx` : bouton « Ajouter un membre » dans l'en-tête de « Membres », carte en pointillés « Ajouter un membre » à côté des membres, message quand le propriétaire est seul, places utilisées (membres + invitations valables, même calcul que la base). Section « Ajouter un membre » expliquée en 3 étapes. Formule pleine : bouton et carte masqués, explication avec lien vers Aide et support. Nouvelle section « Invitations en attente » : rôle, fonction, dates, badge En attente / Expirée, Copier le lien, message WhatsApp, Renouveler (si expirée), Annuler.
+  - `src/features/team/TeamForms.tsx` : formulaire d'invitation à champs contrôlés envoyé par `onSubmit` (rôle et fonction conservés après une erreur, formulaire vidé après succès), description du rôle sous le choix, boutons d'au moins 40 px (y compris « Gérer l'accès »).
+  - `src/features/team/actions.ts` : refus d'une deuxième invitation valable pour la même adresse ; `renewInvitationAction` (nouvelle invitation de 7 jours avec le même rôle, l'ancienne est annulée seulement si la base accepte la nouvelle).
+  - `src/features/operations/queries.ts` (`getTeam`) : lien complet de chaque invitation, état expiré, places utilisées et restantes.
+  - `src/lib/domain/labels.ts` : `INVITATION_WAITING`, `INVITATION_EXPIRED`.
+* **Validation** : typage et lint sans erreur ; `npm run build` réussi ; test Chrome de bout en bout sur la vraie base (`team-flow.mjs`, hors projet, comptes de test supprimés) : **32/33** — carte et bouton, défilement vers le formulaire, rôle conservé après erreur, invitation créée avec le bon rôle, doublon refusé, expirée puis renouvelée, acceptation (la comptable apparaît dans « Membres »), annulation, formule pleine, téléphone sans défilement horizontal, aucune erreur JavaScript. Le seul échec (boutons de 36 px dans « Gérer l'accès » sur téléphone) est corrigé ; ce dernier point n'a pas été repassé dans Chrome (test interrompu à la demande de l'utilisateur, ses restes en base ont été supprimés).
+* La migration des services est appliquée sur la base en ligne (vérification à blanc : base à jour).
+
+---
+
+### Session 13 — 31 Octobre 2026 à 22:04 — Push GitHub & Déploiement Vercel (Améliorations Équipe)
+* **Demande de l'Utilisateur** : « fais le push » (autorisation explicite).
+* **Vérifications préalables** :
+  - Tests unitaires et base de données : **87/87 tests réussis** (`vitest run`).
+  - Compilation Next.js 16 : **57/57 routes** validées (`next build`).
+* **Contenu déployé** :
+  - Page Équipe : ajout du bouton et de la carte « Ajouter un membre » bien visibles.
+  - Retransmission du lien d'invitation (copier / WhatsApp), gestion des invitations expirées avec renouvellement en 1 clic.
+  - Prévention des doublons d'invitations et sécurisation des rôles sélectionnés.
+  - Boutons tactiles standardisés (hauteur ≥ 40 px pour mobile).
+* **Actions** :
+  - Commit et `git push origin main` vers GitHub (déclenchement de la CI/CD Vercel).

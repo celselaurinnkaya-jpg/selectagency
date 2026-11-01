@@ -1,15 +1,23 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import type { Metadata } from "next";
+import { UserPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, Notice, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
-import { ROLE } from "@/lib/domain/labels";
+import { INVITATION_EXPIRED, INVITATION_WAITING, ROLE } from "@/lib/domain/labels";
 import type { MemberRole } from "@/lib/domain/types";
 import { formatDate, initials } from "@/lib/format";
 import { getTeam } from "@/features/operations/queries";
-import { revokeInvitationAction } from "@/features/team/actions";
-import { InviteForm, MemberManage } from "@/features/team/TeamForms";
+import { InviteForm, MemberManage, PendingInvitationActions } from "@/features/team/TeamForms";
 
 export const metadata: Metadata = { title: "Équipe" };
+
+const INVITE_STEPS = [
+  "Indiquez son adresse e-mail et son rôle, puis créez l'invitation.",
+  "Envoyez-lui le lien, par WhatsApp ou en le copiant.",
+  "La personne crée son compte avec cette adresse et apparaît dans « Membres ».",
+];
 
 export default function TeamPage() {
   return (
@@ -25,11 +33,38 @@ export default function TeamPage() {
   );
 }
 
+const ADD_ANCHOR = "ajouter-un-membre";
+
 async function Team() {
-  const { agency, members, removed, heirs, currentMemberId, canManage, canInvite, canTransfer, memberLimit, invitations } = await getTeam();
+  const { agency, members, removed, heirs, currentMemberId, canManage, canInvite, canTransfer, memberLimit, seatsUsed, seatsLeft, invitations } =
+    await getTeam();
+  // Ajouter un membre : responsables seulement, abonnement actif, et une place libre dans la formule.
+  const full = seatsLeft === 0;
+  const canAdd = canInvite && !full;
   return (
     <div className="space-y-6">
-      <Section title="Membres" action={memberLimit ? <span className="text-sm text-slate-600 tabular-nums">{members.length} sur {memberLimit} places de la formule</span> : undefined}>
+      <Section
+        title="Membres"
+        action={
+          (memberLimit || canAdd) && (
+            <div className="flex flex-wrap items-center gap-3">
+              {memberLimit && (
+                <span className="text-sm text-slate-600 tabular-nums">
+                  {seatsUsed} sur {memberLimit} places utilisées
+                </span>
+              )}
+              {canAdd && (
+                <Button asChild variant="accent">
+                  <a href={`#${ADD_ANCHOR}`}>
+                    <UserPlus aria-hidden />
+                    Ajouter un membre
+                  </a>
+                </Button>
+              )}
+            </div>
+          )
+        }
+      >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {members.map(({ member, activeCases, openTasks, overdueTasks }) => (
             <Card key={member.id} className="space-y-3">
@@ -67,47 +102,95 @@ async function Team() {
               )}
             </Card>
           ))}
+          {canAdd && (
+            <a
+              href={`#${ADD_ANCHOR}`}
+              className="flex min-h-40 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-slate-300 bg-white p-4 text-center transition hover:ring-2 hover:ring-navy-200"
+            >
+              <span className="flex size-11 items-center justify-center rounded-full bg-navy-800 text-citron-400">
+                <UserPlus aria-hidden className="size-5" />
+              </span>
+              <span className="font-medium text-navy-800">Ajouter un membre</span>
+              <span className="text-sm text-slate-600">Agent, comptable, administrateur… chacun avec son propre accès.</span>
+            </a>
+          )}
         </div>
+        {canAdd && members.length === 1 && (
+          <p className="mt-3 text-sm text-slate-600">
+            Vous êtes seul dans l&apos;agence pour l&apos;instant. Invitez vos collaborateurs : chacun aura son compte et ne verra que ce que son rôle permet.
+          </p>
+        )}
       </Section>
 
       {canManage && (
-        <Section title="Inviter un collaborateur">
-          {canInvite ? (
-            <Card className="space-y-4">
-              <p className="text-sm text-slate-600">
-                La personne crée son compte avec cette adresse e-mail, puis rejoint l&apos;agence avec le rôle choisi. Le rôle de propriétaire ne
-                s&apos;attribue pas par invitation : il se transmet depuis la fiche d&apos;un membre.
-              </p>
-              <InviteForm />
-            </Card>
-          ) : (
+        <Section id={ADD_ANCHOR} title="Ajouter un membre" className="scroll-mt-24">
+          {!canInvite ? (
             <Notice tone="warning" title="Invitations suspendues">
               L&apos;agence est en lecture seule : son abonnement est suspendu ou son essai est terminé. Vous pouvez toujours retirer l&apos;accès
               d&apos;un membre.
             </Notice>
+          ) : full ? (
+            <Notice tone="warning" title="Toutes les places sont utilisées">
+              Votre formule permet {memberLimit} membres, invitations en attente comprises. Annulez une invitation en attente, retirez un ancien
+              membre, ou demandez une formule plus grande depuis{" "}
+              <Link href="/support" className="font-medium underline">
+                Aide et support
+              </Link>
+              .
+            </Notice>
+          ) : (
+            <Card className="space-y-5">
+              <ol className="grid gap-3 sm:grid-cols-3">
+                {INVITE_STEPS.map((step, index) => (
+                  <li key={step} className="flex items-start gap-3">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-navy-800 text-sm font-semibold text-citron-400 tabular-nums">
+                      {index + 1}
+                    </span>
+                    <span className="text-sm text-slate-700">{step}</span>
+                  </li>
+                ))}
+              </ol>
+              <div className="border-t border-slate-100 pt-4">
+                <InviteForm />
+              </div>
+              <p className="text-xs text-slate-500">
+                Le rôle de propriétaire ne s&apos;attribue pas par invitation : il se transmet depuis « Gérer l&apos;accès » sur la carte d&apos;un
+                membre.
+              </p>
+            </Card>
           )}
-          {invitations.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {invitations.map((invitation) => (
-                <li key={invitation.id}>
-                  <Card className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        </Section>
+      )}
+
+      {canManage && invitations.length > 0 && (
+        <Section title="Invitations en attente">
+          <ul className="space-y-2">
+            {invitations.map((invitation) => (
+              <li key={invitation.id}>
+                <Card className="space-y-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
                     <span className="min-w-0">
                       <span className="block truncate font-medium text-slate-900">{invitation.email}</span>
+                      <span className="block text-sm text-slate-600">
+                        {ROLE[invitation.role].label}
+                        {invitation.jobTitle && ` · ${invitation.jobTitle}`}
+                      </span>
                       <span className="block text-xs text-slate-500">
-                        {ROLE[invitation.role].label} · en attente · valable jusqu&apos;au {formatDate(invitation.expiresAt, agency.timezone)}
+                        Créée le {formatDate(invitation.createdAt, agency.timezone)} ·{" "}
+                        {invitation.expired ? "expirée le " : "valable jusqu'au "}
+                        {formatDate(invitation.expiresAt, agency.timezone)}
                       </span>
                     </span>
-                    <form action={revokeInvitationAction}>
-                      <input type="hidden" name="invitationId" value={invitation.id} />
-                      <button type="submit" className="inline-flex min-h-10 items-center text-sm font-medium text-red-700 hover:underline">
-                        Annuler l&apos;invitation
-                      </button>
-                    </form>
-                  </Card>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <StatusBadge spec={invitation.expired ? INVITATION_EXPIRED : INVITATION_WAITING} />
+                  </div>
+                  <PendingInvitationActions id={invitation.id} link={invitation.link} expired={invitation.expired} canRenew={canInvite} />
+                </Card>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-sm text-slate-600">
+            La personne apparaît dans « Membres » dès qu&apos;elle a créé son compte avec l&apos;adresse invitée.
+          </p>
         </Section>
       )}
 

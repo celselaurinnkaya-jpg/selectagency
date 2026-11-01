@@ -42,6 +42,23 @@ export async function inviteMemberAction(_prev: FormState, formData: FormData): 
     .maybeSingle();
   if (existing) return { message: "Cette personne fait déjà partie de l'équipe.", values };
 
+  const { data: waiting } = await ctx.supabase
+    .from("invitations")
+    .select("id")
+    .eq("organization_id", ctx.organizationId)
+    .eq("email", parsed.data.email)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .limit(1)
+    .maybeSingle();
+  if (waiting) {
+    return {
+      message: "Une invitation est déjà en attente pour cette adresse : retrouvez son lien dans « Invitations en attente », ou annulez-la pour en créer une autre.",
+      values,
+    };
+  }
+
   const { data: invitation, error } = await ctx.supabase
     .from("invitations")
     .insert({
@@ -72,6 +89,35 @@ export async function revokeInvitationAction(formData: FormData): Promise<void> 
   if (!allowed(ctx, "team.manage")) return;
   await ctx.supabase.from("invitations").update({ revoked_at: new Date().toISOString() }).eq("id", id.data).eq("organization_id", ctx.organizationId);
   refresh();
+}
+
+/** Invitation expirée : une nouvelle, avec la même adresse et le même rôle, remplace l'ancienne. */
+export async function renewInvitationAction(invitationId: string): Promise<FormState> {
+  const id = z.uuid().safeParse(invitationId);
+  if (!id.success) return { message: "Invitation introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "team.manage")) return { message: forbiddenMessage(ctx, "team.manage") };
+  if (!ctx.writable) return { message: READ_ONLY_MESSAGE };
+
+  const { data: old } = await ctx.supabase
+    .from("invitations")
+    .select("email, role, job_title, expires_at")
+    .eq("id", id.data)
+    .eq("organization_id", ctx.organizationId)
+    .is("accepted_at", null)
+    .is("revoked_at", null)
+    .maybeSingle();
+  if (!old) return { message: "Cette invitation n'est plus en attente." };
+  if (new Date(old.expires_at).getTime() > Date.now()) return { message: "Cette invitation est encore valable : transmettez son lien." };
+
+  // La nouvelle d'abord : si la base la refuse (places de la formule), l'ancienne reste visible.
+  const { error } = await ctx.supabase
+    .from("invitations")
+    .insert({ organization_id: ctx.organizationId, email: old.email, role: old.role, job_title: old.job_title, invited_by: ctx.member.id });
+  if (error) return { message: dbMessage(error) };
+  await ctx.supabase.from("invitations").update({ revoked_at: new Date().toISOString() }).eq("id", id.data).eq("organization_id", ctx.organizationId);
+  refresh();
+  return { ok: true, message: `Nouvelle invitation créée pour ${old.email}, valable 7 jours : transmettez son lien.` };
 }
 
 /** Membre en poste de l'agence, pour composer le texte de l'historique. */

@@ -193,6 +193,10 @@ export const CLIENT_TYPE: Record<ClientType, string> = {
   company: "Entreprise",
 };
 
+/** Invitations à rejoindre l'équipe, tant que la personne n'a pas créé son compte. */
+export const INVITATION_WAITING: LabelSpec = { label: "En attente", tone: "warning" };
+export const INVITATION_EXPIRED: LabelSpec = { label: "Expirée", tone: "danger" };
+
 export const ROLE: Record<MemberRole, LabelSpec & { description: string }> = {
   owner: { label: "Propriétaire", tone: "navy", description: "Tous les droits, abonnement et fermeture de l'agence." },
   admin: { label: "Administrateur", tone: "navy", description: "Gestion de l'équipe, des paramètres et de tous les dossiers." },
