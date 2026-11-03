@@ -614,3 +614,19 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - DMARC souple ;
   - secrets présents seulement sur ce PC.
 * **Aucun envoi sur GitHub, aucune mise en ligne.**
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Les 3 points importants du rapport (demande « règle les 3 points importants »)
+* **Point 2, e-mails de bienvenue trop anciens** : nouvelle migration `20261102200000_emails_anciens.sql`. Juste avant l'envoi, `tidy_email_outbox` annule un message de bienvenue ou une alerte d'abonnement restés **plus de 3 jours** en attente, avec la raison « message trop ancien ». Les anciennes bienvenues de la vraie base s'annuleront donc d'elles-mêmes à la mise en ligne, sans manipulation à la main. Nouveau test de base : 63 tests de base réussis.
+* **Point 3, e-mails vérifiés jusque-là seulement par des tests** : essai réel sur le projet de test, en bac à sable, avec `email-rest-flow.mjs` (hors projet) :
+  - facture, devis et confirmation de réservation envoyés par le bouton : « Brevo l'a accepté », numéro Brevo, envoi manuel ;
+  - décision « Visa refusé » (déclarée, avec sa source) : avertissement avant l'enregistrement, message « Un e-mail part au client », e-mail accepté ;
+  - clôture : avertissement, e-mail accepté, et les deux e-mails apparaissent dans l'onglet « Communications ».
+  - Premier passage : 10/11. La vérification attendait le message après la clôture, mais une fois le dossier clôturé le formulaire laisse place à « Ce dossier est clôturé » et le message disparaît avec lui. L'e-mail était bien parti ; la vérification a été corrigée. Second passage : **12/12**.
+  - Restent la relance automatique et l'alerte d'abonnement : il faut simuler 4 jours écoulés sur le projet de test, par une ligne SQL de l'utilisateur.
+* **Point 1, sauvegarde Git** :
+  - vérification avant la sauvegarde : aucune valeur secrète de `.env.local` dans les 147 fichiers (seule la fausse clé des tests) ; aucun fichier volumineux ;
+  - `tsc` : 0 erreur, ESLint : 0 erreur, **148 tests réussis** ;
+  - commit `a534f6b` sur la **branche locale `sauvegarde-2026-11-02`**, créée pour ne pas toucher à `main` (la branche de mise en ligne).
+  - **Aucun envoi sur GitHub.**
