@@ -639,3 +639,22 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - les 3 points sont marqués réglés ;
   - la liste de mise en ligne compte 4 migrations ;
   - restent : la mise en ligne, le webhook réel, les autres alertes d'abonnement et la confirmation d'inscription.
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Question : « ce qui a été fait sur le projet de test est-il aussi bon sur le projet principal ? »
+* **Vérifié en lecture seule** (appels refusés avec la clé publique, aucune donnée créée) sur le projet principal `lhel…` :
+  - migrations présentes : jusqu'à `20261102120000` (y compris partenaires et documents) ;
+  - migrations **absentes** : `20261102140000`, `160000` et `180000` ; `200000` n'a pas été appliquée non plus.
+* **Site en ligne** : `main` et `origin/main` sont sur `ff7e3a7` (31/10/2026, gestion d'équipe). Les nouveautés depuis (paiements à vérifier, prospects, étapes, partenaires, documents PDF, e-mails) ne sont que sur la branche locale `sauvegarde-2026-11-02`.
+* **Compatibilité contrôlée** : parmi les fonctions modifiées depuis le 31/10, le site en ligne n'appelle que `record_payment`. Son nouveau paramètre `p_pending` a une valeur par défaut, donc l'ancien appel fonctionne toujours.
+* **Réponse donnée** : non, pas encore, et c'est voulu. Tout ce qui a été fait sur le projet de test sera refait sur le projet principal à la mise en ligne. Aucune donnée d'essai n'a été mise dans la vraie base.
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Mise en ligne (demande explicite : « publie sur Vercel »)
+* **Préparation** : le CLI Supabase est bien lié au vrai projet (`lhel…`), et `npm run build` réussit avec la vraie configuration (aucune trace du projet de test).
+* **Étape 1, vraie base** : l'utilisateur a lancé `npx supabase db push` (4 migrations : `20261102140000`, `160000`, `180000`, `200000`). Vérifié en lecture seule : les nouvelles fonctions existent et refusent les appels non autorisés.
+* **Étape 2, empreintes** : l'utilisateur a enregistré `email_worker` et `brevo_webhook` dans le vrai projet (SQL Editor). Vérifié par deux appels sans effet : les deux secrets de `.env.local` sont reconnus.
+* **Étape 3, Vercel** : l'utilisateur a ajouté `BREVO_API_KEY`, `CRON_SECRET`, `BREVO_SENDER_EMAIL` et `NEXT_PUBLIC_SITE_URL` (Production). Les valeurs n'ont jamais été transmises dans la conversation.
+* **Étape 4, publication** : fusion de `sauvegarde-2026-11-02` dans `main`, puis `git push origin main`, sur la demande explicite de l'utilisateur.
