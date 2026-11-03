@@ -780,3 +780,26 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - **Non-régression dans Chrome** avec S6 : `s1-flow.mjs` 12/12, `s23-flow.mjs` 14/14.
   - `s45-flow.mjs` : 6/8. Les 2 échecs viennent de l'essai : la démo vieillie avait déjà été quittée lors du passage précédent, donc son compte arrive sur la création d'agence. Les en-têtes et la démo récente sont toujours bons.
 * **Avant la mise en ligne** : `npm run build` réussi avec la vraie configuration (aucune trace du projet de test) ; recherche de secrets dans les fichiers modifiés.
+
+---
+
+### Session 23 — 3 Novembre 2026 à 01:08 — Déploiement et Push GitHub (Lots de Sécurité S1 à S6)
+* **Demande de l'utilisateur** : « fais le push » (demande et autorisation explicites).
+* **Vérifications préalables** :
+  - `npm run typecheck` : 0 erreur TypeScript.
+  - `npm run lint` : 0 erreur ESLint.
+  - `npm test` : **163/163 tests validés avec succès** (16 suites de tests).
+  - Statut git vérifié : aucun fichier secret indexé (`.env.local` bien exclu).
+* **Contenu déployé (Commit `123d64f`)** :
+  - **S1 (Dossiers)** : `apply_case_transition` sécurisée (règles et justificatifs obligatoires en base).
+  - **S2 (Pièces)** : validation sécurisée (fichier réel requis, pas de validation sans document).
+  - **S3 (Clients)** : protection anti-réinscription non sollicitée (`email_resubscribe_hash`) et intégrité de la fiche.
+  - **S4 (Démonstration)** : limite stricte d'écriture à 7 jours, bascule automatique en lecture seule.
+  - **S5 (Sécurité HTTP)** : en-têtes renforcés dans [next.config.ts](file:///C:/Users/Lenovo/.gemini/select%20agency/next.config.ts) (CSP, anti-clickjacking `DENY`, `nosniff`, `Permissions-Policy`).
+  - **S6 (Historique)** : journalisation native et auditée par la base (`activity_events`).
+  - **Migrations associées** : `20261103100000_securite_dossiers.sql` à `20261103140000_securite_historique.sql`.
+* **Actions exécutées** :
+  - Commit : `feat(security): securisation complete lots S1 a S6 (dossiers, pieces, clients, demo, headers HTTP, historique)`.
+  - Exécution de `git push origin main` vers GitHub (déclenchement du build et déploiement Vercel).
+  - Working tree propre (`working tree clean`).
+
