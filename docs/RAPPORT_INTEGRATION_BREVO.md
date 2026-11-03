@@ -5,7 +5,11 @@
 ## 1. En bref
 
 - **L'intégration est terminée et vérifiée**, en local et sur le projet Supabase de test (`select-agency-test`).
-- **Elle n'est pas encore en ligne.** Le vrai site (`www.myselectagency.com`) n'envoie aujourd'hui aucun e-mail aux clients des agences. Seuls les e-mails de compte (mot de passe oublié, confirmation d'adresse) passent déjà par Brevo, via Supabase.
+- **Elle est en ligne depuis le 3 novembre 2026** (commit `b02d95a` sur `main`, publié par Vercel). Vérifications sur le vrai site :
+  - page « E-mails » sans avertissement ;
+  - un vrai document envoyé par le bouton à l'adresse du propriétaire : **reçu dans sa boîte** ;
+  - l'état est passé tout seul à **« Livré »** grâce au webhook Brevo ;
+  - la tâche quotidienne et le webhook refusent tout appel sans secret.
 - **Tests** : 148 tests automatiques réussis, dont 34 propres aux e-mails. 6 essais complets dans l'application, sur le projet de test : 16/16, 16/16, 10/10, 13/13, 12/12 et 4/4. **Chaque type d'e-mail client a été essayé au moins une fois en bac à sable.**
 - **Sauvegarde** : tout le travail est enregistré dans Git sur la branche locale `sauvegarde-2026-11-02` (commit `a534f6b`). Rien n'a été envoyé sur GitHub.
 - **Preuves d'envoi réel** : un seul e-mail client a été réellement envoyé et **livré**, l'e-mail de démonstration « paiement reçu » avec son reçu PDF, envoyé à l'adresse de test fournie. Tous les autres essais ont été faits en **bac à sable** : Brevo vérifie le message et l'accepte, mais ne l'envoie à personne.
@@ -153,10 +157,10 @@ Pour chaque essai en bac à sable, le registre Brevo a été relu en lecture seu
 
 *Les trois points les plus importants du premier rapport sont réglés : la sauvegarde Git, les bienvenues en attente (annulées automatiquement après 3 jours) et les e-mails jamais essayés (tous essayés en bac à sable). Restent :*
 
-1. **Pas encore en ligne.** Tout ce qui précède tourne en local et sur le projet de test. Le travail est sauvegardé sur la branche locale `sauvegarde-2026-11-02`, à fusionner dans `main` au moment de la mise en ligne.
+1. *(Réglé)* Mise en ligne : faite le 3 novembre 2026, voir la section 7.
 2. *(Réglé)* Sauvegarde Git : commit `a534f6b`, rien sur GitHub.
 3. *(Réglé)* Bienvenues en attente dans la vraie base : avec la migration `20261102200000`, celles de plus de 3 jours seront annulées automatiquement au premier passage, avec leur raison.
-4. **Webhook réel non testé.** Brevo ne peut joindre que le site en ligne. Les champs exacts de l'écran Brevo (Intégrations → Webhooks, authentification par jeton) sont à confirmer à ce moment-là. La clé API actuelle n'a pas le droit de gérer les webhooks, et c'est voulu.
+4. *(Réglé)* Webhook réel : créé dans Brevo (Intégrations → Webhooks sortants, catégorie « Transactional email », authentification par jeton). Un vrai e-mail est passé à « Livré ». Le paragraphe ci-dessous est conservé pour l'historique : **Webhook réel non testé.** Brevo ne peut joindre que le site en ligne. Les champs exacts de l'écran Brevo (Intégrations → Webhooks, authentification par jeton) sont à confirmer à ce moment-là. La clé API actuelle n'a pas le droit de gérer les webhooks, et c'est voulu.
 5. **Tâche quotidienne une seule fois par jour** : c'est la limite de la formule gratuite de Vercel, avec une heure approximative. Les e-mails avec PDF bloqués par une panne repartent à la prochaine action de l'agence ou par le bouton « Envoyer les e-mails en attente » des réglages.
 6. **Encore vérifiés seulement par des tests automatiques** : les alertes d'abonnement autres que « fin d'essai dans 7 jours » (même chemin d'envoi), et la confirmation d'inscription d'un compte. L'essayer demanderait de créer un compte sur le vrai site.
    - Après une clôture, le message « Un e-mail part au client » ne reste pas affiché, car le formulaire laisse place à « Ce dossier est clôturé ». L'e-mail apparaît dans l'onglet « Communications ».
@@ -169,7 +173,17 @@ Pour chaque essai en bac à sable, le registre Brevo a été relu en lecture seu
     - la dernière compilation locale (`.next`) vise le projet de test, sans effet sur `npm run dev` ni sur Vercel.
 12. **Choix à confirmer** : l'envoi d'un document demandé par l'agent part même si le client s'est désinscrit des relances, puisque c'est une demande explicite de l'agent.
 
-## 7. Mise en ligne (uniquement sur demande explicite, pas à pas)
+## 7. Mise en ligne : faite le 3 novembre 2026, sur demande explicite de l'utilisateur
+
+Toutes les étapes ci-dessous ont été réalisées et vérifiées :
+- 4 migrations appliquées à la vraie base ;
+- 2 empreintes enregistrées et reconnues ;
+- 4 variables ajoutées dans Vercel ;
+- `main` publié (`b02d95a`) ;
+- webhook créé dans Brevo ;
+- un vrai envoi reçu et passé à « Livré ».
+
+Première tâche quotidienne : 16 h UTC (17 h à Douala), visible dans Vercel → Settings → Cron Jobs.
 
 1. **Git** : c'est fait (branche locale `sauvegarde-2026-11-02`). Au moment de publier, la fusionner dans `main`.
 2. **Vraie base Supabase** :

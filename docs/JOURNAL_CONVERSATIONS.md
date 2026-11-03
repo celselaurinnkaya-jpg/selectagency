@@ -658,3 +658,19 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 * **Étape 2, empreintes** : l'utilisateur a enregistré `email_worker` et `brevo_webhook` dans le vrai projet (SQL Editor). Vérifié par deux appels sans effet : les deux secrets de `.env.local` sont reconnus.
 * **Étape 3, Vercel** : l'utilisateur a ajouté `BREVO_API_KEY`, `CRON_SECRET`, `BREVO_SENDER_EMAIL` et `NEXT_PUBLIC_SITE_URL` (Production). Les valeurs n'ont jamais été transmises dans la conversation.
 * **Étape 4, publication** : fusion de `sauvegarde-2026-11-02` dans `main`, puis `git push origin main`, sur la demande explicite de l'utilisateur.
+* **Étape 4, publication faite** : `main` avancé sans fusion compliquée jusqu'à `b02d95a`, puis `git push origin main` (`ff7e3a7..b02d95a`). Vercel a publié en 50 s environ. Sur le vrai site :
+  - `/api/cron/emails` répond 401 sans secret, donc `CRON_SECRET` est bien présent ;
+  - le webhook répond 401 sans secret et 400 avec un secret dans l'adresse ;
+  - accueil, connexion et désinscription répondent 200.
+* **Étape 5, webhook Brevo créé par l'utilisateur** : Intégrations → Webhooks → « Créer un webhook sortant ». Nom « SELECT Agency - suivi des e-mails », adresse `https://www.myselectagency.com/api/webhooks/brevo`, authentification **Token** (valeur de `BREVO_WEBHOOK_SECRET`), catégorie **Transactional email**.
+* **Étape 6, vérification finale par l'utilisateur sur le vrai site** :
+  - Paramètres → E-mails : **aucun avertissement**, donc la clé Brevo et l'expéditeur sont bien réglés dans Vercel ;
+  - un vrai document envoyé par le bouton « Envoyer par e-mail » à un client portant l'adresse de l'utilisateur : **e-mail reçu** ;
+  - onglet « Communications » : état **« Livré »**. Le webhook Brevo fonctionne en production.
+* **Mise en ligne terminée et vérifiée.** Rapport mis à jour (sections 1, 6 et 7). Ces dernières modifications du rapport et du journal restent locales, non enregistrées dans Git : elles partiront avec la prochaine sauvegarde.
+* **Sauvegarde finale (demande : « vas-y sur git, github et rassure-toi qu'aucune clé n'est visible »)** :
+  - vérification avant l'envoi : `.env.local` n'a jamais été dans Git et reste ignoré ;
+  - aucune des 4 valeurs secrètes de `.env.local` (`BREVO_API_KEY`, `BREVO_SMTP_KEY`, `CRON_SECRET`, `BREVO_WEBHOOK_SECRET`) n'apparaît dans les fichiers ni dans **tout l'historique Git** ;
+  - les seules formes de clé trouvées sont la fausse clé des tests (`…secretTestKey999`) ;
+  - `.env.example` ne contient que des valeurs publiques ;
+  - rapport et journal enregistrés puis envoyés sur GitHub (`main`).
