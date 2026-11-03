@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { PGlite, type Transaction } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { READ_COLUMNS } from "@/lib/data/rows";
+import { formatDate, formatMoney } from "@/lib/format";
 import { buildDemoPayload } from "@/features/onboarding/demo-data";
 import { buildRequirements } from "@/features/documents/checklists";
 import { instantiateSteps } from "@/features/workflows/instantiate";
@@ -99,6 +100,59 @@ async function createCase(who: User, org: string, clientId: string, assignedTo: 
   return { ...result.r, stepCount: steps.length, requirementCount: requirements.length };
 }
 
+type StepRow = { key: string; kind: string; position: number; status: string; next: { to: string }[] | null };
+
+/** Change l'étape d'un dossier par la fonction contrôlée ; renvoie la nouvelle version. */
+async function transition(
+  who: User,
+  caseId: string,
+  mode: "advance" | "skip" | "back",
+  to: string | null,
+  extra: { confirmation?: string; evidence?: string; source?: string; reason?: string; acknowledge?: boolean } = {},
+) {
+  const { version } = await one<{ version: number }>(who, "select version from public.cases where id = $1", [caseId]);
+  const r = await one<{ r: { version: number; closes: boolean; to_label: string } }>(
+    who,
+    "select public.apply_case_transition($1, $2, $3, $4, $5, $6, $7, $8, $9) as r",
+    [caseId, version, mode, to, extra.confirmation ?? null, extra.evidence ?? null, extra.source ?? null, extra.reason ?? null, extra.acknowledge ?? false],
+  );
+  return r.r;
+}
+
+/**
+ * Fait avancer un dossier jusqu'à l'étape `key`, une étape à la fois, comme un conseiller : preuve « déclarée »
+ * quand elle est exigée, motif pour un retour, clôture confirmée malgré le solde. Renvoie la version finale.
+ */
+async function walkTo(who: User, caseId: string, key: string): Promise<number> {
+  for (let i = 0; i < 30; i++) {
+    const steps = await rows<StepRow>(who, "select key, kind, position, status, next from public.case_steps where case_id = $1 order by position", [caseId]);
+    const current = steps.find((s) => s.status === "in_progress");
+    const target = steps.find((s) => s.key === key);
+    if (!current || !target) throw new Error(`Étape introuvable : ${key}`);
+    const options = current.next?.length
+      ? current.next.map((o) => o.to).filter((k) => steps.some((s) => s.key === k))
+      : steps.filter((s) => s.position > current.position).slice(0, 1).map((s) => s.key);
+    let mode: "advance" | "back" = "advance";
+    let to = options.includes(key) ? key : null;
+    if (!to && target.position < current.position) mode = "back";
+    if (mode === "back") to = key;
+    if (!to) {
+      const reachable = options.map((k) => steps.find((s) => s.key === k)!).filter((s) => s.position <= target.position);
+      to = reachable.sort((a, b) => b.position - a.position)[0]?.key ?? options[0]!;
+    }
+    const next = steps.find((s) => s.key === to)!;
+    const proof = mode === "advance" && (current.kind === "external_event" || next.kind === "outcome");
+    const r = await transition(who, caseId, mode, to, {
+      confirmation: proof ? "declared" : undefined,
+      source: proof ? "Appel du client" : undefined,
+      reason: mode === "back" ? "Reprise du dossier" : undefined,
+      acknowledge: true,
+    });
+    if (to === key) return r.version;
+  }
+  throw new Error(`Étape « ${key} » jamais atteinte`);
+}
+
 beforeAll(async () => {
   db = await PGlite.create();
   await db.exec(readFileSync(join(root, "tests", "supabase-stub.sql"), "utf8"));
@@ -173,15 +227,17 @@ describe("agences et cloisonnement", () => {
   });
 
   it("refuse de rattacher un dossier au client d'une autre agence", async () => {
-    await expect(createCase(BRUNO, orgB, clientA.id, bruno)).rejects.toThrow(/foreign key/);
+    await expect(createCase(BRUNO, orgB, clientA.id, bruno)).rejects.toThrow(/client choisi est introuvable/);
   });
 
   it("garde l'historique en ajout seul et impose l'auteur", async () => {
     await as(ALICE, (tx) =>
       tx.query("insert into public.activity_events (organization_id, actor_id, client_id, text) values ($1, $2, $3, 'Test')", [orgA, alice, clientA.id]),
     );
-    const event = await one<{ id: string; actor_id: string }>(ALICE, "select id, actor_id from public.activity_events where text = 'Test'");
+    // Ligne ajoutée à la main : auteur imposé, et marquée comme une note (elle ne passe pas pour un événement).
+    const event = await one<{ id: string; actor_id: string; origin: string }>(ALICE, "select id, actor_id, origin from public.activity_events where text = 'Note ajoutée à la main : Test'");
     expect(event.actor_id).toBe(alice);
+    expect(event.origin).toBe("note");
     expect(await rows(ALICE, "update public.activity_events set text = 'Modifié' where id = $1 returning id", [event.id])).toEqual([]);
     expect(await rows(ALICE, "delete from public.activity_events where id = $1 returning id", [event.id])).toEqual([]);
   });
@@ -212,7 +268,7 @@ describe("dossiers, étapes et paiements", () => {
 
   it("refuse un changement d'étape calculé sur une version périmée", async () => {
     const transition = (version: number) =>
-      one<{ v: number }>(ERIC, "select public.apply_case_transition($1, $2, '[]'::jsonb, '{\"next_action\": \"Suite\"}'::jsonb, 'Étape') as v", [caseId, version]);
+      one<{ r: { version: number } }>(ERIC, "select public.apply_case_transition($1, $2, 'advance', 'registration') as r", [caseId, version]).then((x) => ({ v: x.r.version }));
     expect((await transition(1)).v).toBe(2);
     await expect(transition(1)).rejects.toThrow(/modifié par une autre personne/);
   });
@@ -900,7 +956,7 @@ describe("prospects", () => {
     expect(await state(prospect.id)).toEqual({ status: "client", converted: true });
     expect((await lastEvent(prospect.id)).text).toBe("Prospect devenu client.");
     await expect(convert(LINA)).rejects.toThrow(/déjà cliente/);
-    await expect(as(KARL, (tx) => tx.query("update public.clients set status = 'prospect' where id = $1", [prospect.id]))).rejects.toThrow(/clients_converted_check/);
+    await expect(as(KARL, (tx) => tx.query("update public.clients set status = 'prospect' where id = $1", [prospect.id]))).rejects.toThrow(/Transformer en client/);
     await expect(as(KARL, (tx) => tx.query("update public.clients set source = 'radio' where id = $1", [prospect.id]))).rejects.toThrow(/clients_source_check/);
   });
 
@@ -908,7 +964,7 @@ describe("prospects", () => {
     const withCase = await newProspect("Essomba");
     const travelCase = await createCase(KARL, org, withCase.id, karl);
     expect(await state(withCase.id)).toEqual({ status: "client", converted: true });
-    expect(await one(KARL, "select text, case_id from public.activity_events where client_id = $1 and text like 'Prospect%'", [withCase.id])).toEqual({
+    expect(await one(KARL, "select text, case_id from public.activity_events where client_id = $1 and text like 'Prospect devenu%'", [withCase.id])).toEqual({
       text: "Prospect devenu client : premier dossier ouvert.", case_id: travelCase.id,
     });
 
@@ -1406,19 +1462,7 @@ describe("e-mails transactionnels (Brevo) : file d'envoi, réglages, désinscrip
   });
 
   // Fait avancer un dossier jusqu'à l'étape `key`, comme l'écran du dossier (verrou de version compris).
-  async function moveTo(caseId: string, key: string, casePatch: Record<string, unknown> = {}) {
-    const { version } = await one<{ version: number }>(KARL, "select version from public.cases where id = $1", [caseId]);
-    const steps = await rows<{ id: string; key: string; kind: string; status: string }>(KARL, "select id, key, kind, status from public.case_steps where case_id = $1", [caseId]);
-    const patch = steps
-      .filter((s) => s.status === "in_progress" || s.key === key)
-      .map((s) => ({ id: s.id, status: s.key === key ? (s.kind === "closure" ? "done" : "in_progress") : "done" }));
-    return one<{ v: number }>(KARL, "select public.apply_case_transition($1, $2, $3::jsonb, $4::jsonb, 'Étape') as v", [
-      caseId,
-      version,
-      JSON.stringify(patch),
-      JSON.stringify({ next_action: key, ...casePatch }),
-    ]).then((r) => r.v);
-  }
+  const moveTo = (caseId: string, key: string) => walkTo(KARL, caseId, key);
   const caseEmails = (caseId: string) =>
     rows<{ id: string; status: string; is_automatic: boolean; subject: string; payload: Record<string, unknown>; last_error: string | null }>(
       KARL,
@@ -1457,7 +1501,7 @@ describe("e-mails transactionnels (Brevo) : file d'envoi, réglages, désinscrip
     });
 
     // Décision enregistrée : un e-mail, toujours d'actualité au moment de l'envoi.
-    await moveTo(caseId, "visa_refused", { outcome: "refused" });
+    await moveTo(caseId, "visa_refused");
     const decision = (await caseEmails(caseId))[1]!;
     expect(decision.payload).toMatchObject({ event: "decision", status_label: "Visa refusé", outcome: "refused" });
     expect(decision.subject).toMatch(/^Mise à jour de votre dossier /);
@@ -1465,7 +1509,7 @@ describe("e-mails transactionnels (Brevo) : file d'envoi, réglages, désinscrip
     expect(claimed.map((c) => c.id)).toContain(decision.id);
 
     // Clôture : un dernier e-mail.
-    await moveTo(caseId, "closed", { status: "closed", closed_at: new Date().toISOString() });
+    await moveTo(caseId, "closed");
     expect((await caseEmails(caseId))[2]!.payload).toMatchObject({ event: "closure", status_label: "Dossier clôturé" });
     expect(await caseEmails(caseId)).toHaveLength(3);
 
@@ -1725,5 +1769,338 @@ describe("e-mails transactionnels (Brevo) : file d'envoi, réglages, désinscrip
         original.current_period_end,
       ]);
     }
+  });
+});
+
+describe("sécurité S1 : dossiers et étapes modifiés uniquement par les fonctions contrôlées", () => {
+  let org: string;
+  let lina: string;
+  let clientId: string;
+  const generic = templateForCategory("study_abroad");
+  const stepsOf = (overrides: Record<string, unknown> = {}) =>
+    instantiateSteps("x", generic).map((s) => ({
+      position: s.position, key: s.key, label: s.label, kind: s.kind, is_optional: s.isOptional, outcome: s.outcome ?? null, next: s.next ?? null, status: s.status,
+      ...(s.key in overrides ? (overrides[s.key] as object) : {}),
+    }));
+  const newCase = (who: User, steps: unknown[], forClient?: string) =>
+    one<{ r: { id: string } }>(who, "select public.create_case($1::jsonb, $2::jsonb, '[]'::jsonb, 'modèle') as r", [
+      JSON.stringify({ organization_id: org, client_id: forClient ?? clientId, category: "study_abroad", title: "Sécurité", destination_country: "FR", residence_country: "CM", priority: "normal", assigned_to: lina, billing_currency: "XAF", applicant_tags: ["student"], details: {}, template_key: generic.key }),
+      JSON.stringify(steps),
+    ]).then((x) => x.r.id);
+  const caseRow = (id: string) => one<{ status: string; outcome: string; version: number }>(KARL, "select status, outcome, version from public.cases where id = $1", [id]);
+  const step = (id: string, key: string) =>
+    one<{ status: string; confirmation_level: string | null; evidence_ref: string | null; source_note: string | null }>(
+      KARL, "select status, confirmation_level, evidence_ref, source_note from public.case_steps where case_id = $1 and key = $2", [id, key]);
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    lina = await memberId(LINA);
+    clientId = (
+      await one<{ id: string }>(KARL,
+        `insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to)
+         values ($1, 'student', 'Sam', 'Sécurité', '+237690008801', 'CM', 'Douala', $2) returning id`, [org, lina])
+    ).id;
+  });
+
+  it("aucune création ni modification directe d'un dossier ou d'une étape", async () => {
+    const id = await newCase(LINA, stepsOf());
+    // Modifications directes : aucune ligne touchée.
+    await rows(LINA, "update public.cases set status = 'closed', outcome = 'approved' where id = $1", [id]);
+    await rows(LINA, "update public.case_steps set status = 'done', confirmation_level = 'confirmed' where case_id = $1 and key = 'visa_granted'", [id]);
+    expect(await caseRow(id)).toMatchObject({ status: "active", outcome: "pending", version: 1 });
+    expect(await step(id, "visa_granted")).toMatchObject({ status: "pending", confirmation_level: null });
+    // Créations directes : refusées.
+    await expect(
+      rows(LINA, "insert into public.cases (organization_id, client_id, category, title, destination_country, assigned_to, billing_currency, status, outcome) values ($1, $2, 'study_abroad', 'X', 'FR', $3, 'XAF', 'closed', 'approved')", [org, clientId, lina]),
+    ).rejects.toThrow(/row-level security/);
+    await expect(
+      rows(LINA, "insert into public.case_steps (organization_id, case_id, position, key, label, kind, status) values ($1, $2, 99, 'faux', 'Faux', 'outcome', 'done')", [org, id]),
+    ).rejects.toThrow(/row-level security/);
+  });
+
+  it("create_case impose l'état de départ et vérifie le rôle et le client", async () => {
+    const forged = stepsOf({ new_candidate: { status: "done" }, visa_granted: { status: "done", confirmation_level: "confirmed" } });
+    const id = await newCase(LINA, forged);
+    const states = await rows<{ key: string; status: string; confirmation_level: string | null }>(KARL, "select key, status, confirmation_level from public.case_steps where case_id = $1 order by position", [id]);
+    expect(states[0]).toEqual({ key: "new_candidate", status: "in_progress", confirmation_level: null });
+    expect(states.slice(1).every((s) => s.status === "pending" && s.confirmation_level === null)).toBe(true);
+    for (const who of [MAX, NOAH]) await expect(newCase(who, stepsOf())).rejects.toThrow(/pas le droit de créer un dossier/);
+    const foreign = (await db.query<{ id: string }>("select id from public.clients where organization_id <> $1 limit 1", [org])).rows[0]!.id;
+    await expect(newCase(LINA, stepsOf(), foreign)).rejects.toThrow(/client choisi est introuvable/);
+  });
+
+  it("apply_case_transition applique elle-même les règles : étape suivante, preuve, motif, solde", async () => {
+    const id = await newCase(LINA, stepsOf());
+    await expect(transition(LINA, id, "advance", "visa_granted")).rejects.toThrow(/Choisissez l'étape suivante/);
+    await expect(transition(LINA, id, "skip", null, { reason: "Pas utile" })).rejects.toThrow(/étape facultative/);
+    for (const who of [MAX, NOAH]) await expect(transition(who, id, "advance", "registration")).rejects.toThrow(/pas le droit de le modifier/);
+
+    await walkTo(LINA, id, "visa_decision_wait");
+    // Décision venant du consulat : preuve obligatoire.
+    await expect(transition(LINA, id, "advance", "visa_granted")).rejects.toThrow(/déclarée ou confirmée/);
+    await expect(transition(LINA, id, "advance", "visa_granted", { confirmation: "declared", source: " " })).rejects.toThrow(/source de l'information/);
+    await expect(transition(LINA, id, "advance", "visa_granted", { confirmation: "confirmed" })).rejects.toThrow(/référence du justificatif/);
+    const granted = await transition(LINA, id, "advance", "visa_granted", { confirmation: "confirmed", evidence: "Visa n° FR-123" });
+    expect(granted).toMatchObject({ closes: false, to_label: "Visa accordé" });
+    expect(await caseRow(id)).toMatchObject({ status: "active", outcome: "approved" });
+    expect(await step(id, "visa_granted")).toEqual({ status: "in_progress", confirmation_level: "confirmed", evidence_ref: "Visa n° FR-123", source_note: null });
+    expect(await step(id, "visa_decision_wait")).toMatchObject({ status: "done", confirmation_level: "confirmed", evidence_ref: "Visa n° FR-123" });
+    const history = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc, id desc limit 1", [id]);
+    expect(history.text).toMatch(/^Étape « .+ » terminée \(confirmé, justificatif au dossier : Visa n° FR-123\)\. Étape en cours : « Visa accordé »\.$/);
+
+    // Retour en arrière : toujours avec un motif, et jamais vers une décision déjà enregistrée.
+    await walkTo(LINA, id, "departure_prep");
+    await expect(transition(LINA, id, "back", "visa_prep")).rejects.toThrow(/motif du retour/);
+    await expect(transition(LINA, id, "back", "visa_granted", { reason: "Erreur" })).rejects.toThrow(/étape à reprendre/);
+
+    // Clôture d'un dossier non soldé : confirmation explicite exigée ; l'issue « accordé » est conservée.
+    await db.query("insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais', 'agency_fee', 100000, 'XAF')", [org, id]);
+    await expect(transition(LINA, id, "advance", "closed")).rejects.toThrow(/solde du dossier n'est pas réglé/);
+    expect(await transition(LINA, id, "advance", "closed", { acknowledge: true })).toMatchObject({ closes: true });
+    expect(await caseRow(id)).toMatchObject({ status: "closed", outcome: "approved" });
+    await expect(transition(KARL, id, "back", "visa_prep", { reason: "Réouverture" })).rejects.toThrow(/pas modifiable/);
+  });
+
+  it("une décision exige toujours une preuve, même si le modèle a été trafiqué", async () => {
+    // Modèle fabriqué : une étape de l'agence mène directement à « Visa accordé ».
+    const forged = [
+      { position: 1, key: "debut", label: "Début", kind: "agency_action", next: [{ to: "accorde", label: "Accordé" }] },
+      { position: 2, key: "accorde", label: "Visa accordé", kind: "outcome", outcome: "approved" },
+      { position: 3, key: "closed", label: "Dossier clôturé", kind: "closure" },
+    ];
+    const id = await newCase(LINA, forged);
+    await expect(transition(LINA, id, "advance", "accorde")).rejects.toThrow(/déclarée ou confirmée/);
+    expect(await caseRow(id)).toMatchObject({ outcome: "pending", version: 1 });
+  });
+});
+
+describe("sécurité S2 : la liste des pièces ne change que par les fonctions contrôlées", () => {
+  let org: string;
+  let lina: string;
+  let caseId: string;
+  const req = (id: string) =>
+    one<{ status: string; review_comment: string | null }>(KARL, "select status, review_comment from public.document_requirements where id = $1", [id]);
+  const lastEvent = () =>
+    one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc, id desc limit 1", [caseId]).then((r) => r.text);
+  const review = (who: User, id: string, decision: string, comment: string | null) =>
+    one(who, "select public.review_requirement($1, $2, $3, 'Texte inventé par le navigateur')", [id, decision, comment]);
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    lina = await memberId(LINA);
+    const client = await one<{ id: string }>(KARL,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to)
+       values ($1, 'student', 'Paula', 'Pièces', '+237690008802', 'CM', 'Douala', $2) returning id`, [org, lina]);
+    caseId = (await createCase(LINA, org, client.id, lina)).id;
+  });
+
+  it("aucune écriture directe : ni pièce « vérifiée » sans fichier, ni pièce ajoutée déjà vérifiée", async () => {
+    const first = (await one<{ id: string }>(KARL, "select id from public.document_requirements where case_id = $1 order by created_at, id limit 1", [caseId])).id;
+    await rows(LINA, "update public.document_requirements set status = 'validated' where id = $1", [first]);
+    expect((await req(first)).status).toBe("not_received");
+    await expect(
+      rows(LINA, "insert into public.document_requirements (organization_id, case_id, document_type_code, label, status) values ($1, $2, 'faux', 'Faux', 'validated')", [org, caseId]),
+    ).rejects.toThrow(/row-level security/);
+    await expect(review(LINA, first, "validated", null)).rejects.toThrow(/pas en attente de vérification/);
+  });
+
+  it("add_requirement : pièce toujours « non reçue », doublons refusés, droits vérifiés, historique écrit par la base", async () => {
+    const add = (who: User, code: string, label: string) =>
+      one<{ id: string }>(who, "select public.add_requirement($1, $2, $3, 'Autre', true) as id", [caseId, code, label]).then((r) => r.id);
+    const id = await add(LINA, "autre-lettre", "Lettre de motivation");
+    expect(await req(id)).toEqual({ status: "not_received", review_comment: null });
+    expect(await lastEvent()).toBe("Pièce ajoutée à la liste du dossier : Lettre de motivation.");
+    await expect(add(LINA, "autre-lettre", "Autre nom")).rejects.toThrow(/figure déjà dans la liste/);
+    await expect(add(LINA, "autre-x", "  lettre de MOTIVATION ")).rejects.toThrow(/figure déjà dans la liste/);
+    for (const who of [MAX, NOAH]) await expect(add(who, "autre-y", "Attestation")).rejects.toThrow(/pas le droit de modifier sa liste/);
+  });
+
+  it("review_requirement : rôle, fichier reçu, motif obligatoire, historique écrit par la base", async () => {
+    const r = await one<{ id: string; label: string }>(KARL, "select id, label from public.document_requirements where case_id = $1 and status = 'not_received' order by created_at, id limit 1", [caseId]);
+    const path = (n: number) => `${org}/${caseId}/${r.id}/${n}-scan.pdf`;
+    const upload = async (n: number) => {
+      await as(LINA, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [path(n)]));
+      await one(LINA, "select public.add_requirement_file($1, $2, $3, 'Fichier ajouté.')", [r.id, path(n), `scan-${n}.pdf`]);
+    };
+    await upload(1);
+    expect((await req(r.id)).status).toBe("received");
+
+    for (const who of [MAX, NOAH]) await expect(review(who, r.id, "validated", null)).rejects.toThrow(/pas le droit de la modifier/);
+    await expect(review(LINA, r.id, "to_correct", "  ")).rejects.toThrow(/ce qu'il faut corriger/);
+    await review(LINA, r.id, "to_correct", "Photo floue");
+    expect(await req(r.id)).toEqual({ status: "to_correct", review_comment: "Photo floue" });
+    expect(await lastEvent()).toBe(`Pièce à corriger : ${r.label} (Photo floue).`);
+    await expect(review(LINA, r.id, "validated", null)).rejects.toThrow(/pas en attente de vérification/);
+
+    // Nouveau fichier : la pièce redevient « reçue », puis peut être vérifiée.
+    await upload(2);
+    await review(LINA, r.id, "validated", null);
+    expect(await req(r.id)).toEqual({ status: "validated", review_comment: null });
+    expect(await lastEvent()).toBe(`Pièce vérifiée par l'agence : ${r.label}.`);
+  });
+});
+
+describe("sécurité S3 : informations sensibles de la fiche client", () => {
+  let org: string;
+  let lina: string;
+  const insertClient = (who: User, extra: Record<string, unknown> = {}) => {
+    const cols = { organization_id: org, client_type: "student", first_name: "Cléo", last_name: "Client", phone_e164: `+2376900${Math.floor(10000 + Math.random() * 89999)}`, residence_country: "CM", city: "Douala", assigned_to: lina, email: "cleo@client.test", ...extra };
+    const keys = Object.keys(cols);
+    return one<{ id: string }>(who, `insert into public.clients (${keys.join(", ")}) values (${keys.map((_, i) => `$${i + 1}`).join(", ")}) returning id`, Object.values(cols)).then((r) => r.id);
+  };
+  const fiche = (id: string) =>
+    db.query<{ partner_id: string | null; status: string; converted_at: string | null; is_demo_fixture: boolean; email_opt_out: boolean; email_opt_out_at: string | null; email_unsubscribe_token: string; email_resubscribe_hash: string | null; first_name: string }>(
+      "select partner_id, status, converted_at, is_demo_fixture, email_opt_out, email_opt_out_at, email_unsubscribe_token, email_resubscribe_hash, first_name from public.clients where id = $1", [id],
+    ).then((r) => r.rows[0]!);
+  const update = (who: User, id: string, set: string) => as(who, (tx) => tx.query(`update public.clients set ${set} where id = $1`, [id]));
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    lina = await memberId(LINA);
+  });
+
+  it("à la création directe : ni apporteur, ni fiche « démonstration », ni code de désinscription choisi", async () => {
+    const partner = (await db.query<{ id: string }>("select id from public.partners where organization_id = $1 limit 1", [org])).rows[0];
+    if (partner) await expect(insertClient(LINA, { partner_id: partner.id })).rejects.toThrow(/se choisit avec son code/);
+    const forgedToken = "11111111-2222-4333-8444-555555555555";
+    const id = await insertClient(LINA, { converted_at: new Date().toISOString(), is_demo_fixture: true, email_unsubscribe_token: forgedToken });
+    const row = await fiche(id);
+    expect(row).toMatchObject({ converted_at: null, is_demo_fixture: false, email_opt_out: false, email_resubscribe_hash: null });
+    expect(row.email_unsubscribe_token).not.toBe(forgedToken);
+  });
+
+  it("modification directe : apporteur, statut, agence, référence et code de désinscription refusés ; le reste reste modifiable", async () => {
+    const id = await insertClient(LINA);
+    await update(LINA, id, "first_name = 'Cléa', notes = 'Préfère WhatsApp'");
+    expect((await fiche(id)).first_name).toBe("Cléa");
+    await expect(update(LINA, id, `partner_id = '${crypto.randomUUID()}'`)).rejects.toThrow(/partenaire d'un client se change/);
+    await expect(update(LINA, id, "converted_at = now()")).rejects.toThrow(/Transformer en client/);
+    await expect(update(LINA, id, "email_unsubscribe_token = gen_random_uuid()")).rejects.toThrow(/ne peut pas être modifiée/);
+    await expect(update(LINA, id, "reference = 'CLI-FAUX'")).rejects.toThrow(/ne peut pas être modifiée/);
+    await expect(update(LINA, id, "is_demo_fixture = true")).rejects.toThrow(/ne peut pas être modifiée/);
+  });
+
+  it("l'agence peut désinscrire un client à sa demande, jamais le réinscrire", async () => {
+    const id = await insertClient(LINA);
+    await update(LINA, id, "email_opt_out = true, email_opt_out_at = '2000-01-01'");
+    const row = await fiche(id);
+    expect(row.email_opt_out).toBe(true);
+    expect(new Date(row.email_opt_out_at!).getFullYear()).toBeGreaterThan(2020);
+    await expect(update(LINA, id, "email_opt_out = false")).rejects.toThrow(/lui seul peut se réinscrire/);
+    await expect(update(KARL, id, "email_opt_out = false, email_opt_out_at = null")).rejects.toThrow(/lui seul peut se réinscrire/);
+  });
+
+  it("page de désinscription : réinscription seulement avec le code remis au client, à usage unique", async () => {
+    const id = await insertClient(LINA);
+    const { email_unsubscribe_token: token } = await fiche(id);
+    const call = (resubscribe: boolean, code: string | null = null) =>
+      one<{ r: { unsubscribed: boolean; resubscribe_code: string | null } }>(null, "select public.unsubscribe_client_email($1::uuid, $2, $3) as r", [token, resubscribe, code]).then((x) => x.r);
+
+    const done = await call(false);
+    expect(done.unsubscribed).toBe(true);
+    expect(done.resubscribe_code).toMatch(/^[0-9a-f]{64}$/);
+    // L'agence ne voit que l'empreinte, jamais le code.
+    const seen = await one<Record<string, unknown>>(KARL, "select * from public.clients where id = $1", [id]);
+    expect(JSON.stringify(seen)).not.toContain(done.resubscribe_code);
+    // Le lien seul (que l'agence connaît) ne suffit pas pour réinscrire.
+    await expect(call(true)).rejects.toThrow(/juste après la désinscription/);
+    await expect(call(true, "0".repeat(64))).rejects.toThrow(/juste après la désinscription/);
+    expect((await call(true, done.resubscribe_code)).unsubscribed).toBe(false);
+    expect(await fiche(id)).toMatchObject({ email_opt_out: false, email_opt_out_at: null, email_resubscribe_hash: null });
+    // Code à usage unique.
+    await call(false);
+    await expect(call(true, done.resubscribe_code)).rejects.toThrow(/juste après la désinscription/);
+  });
+});
+
+describe("sécurité S4 : une agence de démonstration n'est utilisable que 7 jours", () => {
+  const PAULINE = user(17, "pauline@demo-api.test", "Pauline Demo");
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [PAULINE.id, PAULINE.email]);
+  });
+
+  it("modifiable pendant 7 jours, puis consultable seulement ; on peut toujours la quitter", async () => {
+    // Démonstration créée directement par l'API, sans données fictives ni abonnement.
+    const org = await createOrg(PAULINE, "Démo par l'API", true);
+    const owner = await memberId(PAULINE);
+    const fresh = await createClient(PAULINE, org, owner);
+    expect(fresh.reference).toMatch(/^CLI-/);
+    expect(await rows(null, "select 1")).toHaveLength(1);
+    expect((await db.query("select count(*)::int as n from public.subscriptions where organization_id = $1", [org])).rows[0]).toEqual({ n: 0 });
+
+    // 8 jours plus tard : plus aucune écriture, la consultation reste possible.
+    await db.query("update public.organizations set created_at = now() - interval '8 days' where id = $1", [org]);
+    await expect(createClient(PAULINE, org, owner, "Après")).rejects.toThrow(/row-level security/);
+    await rows(PAULINE, "update public.clients set notes = 'Modifié' where id = $1", [fresh.id]);
+    expect((await one<{ notes: string | null }>(PAULINE, "select notes from public.clients where id = $1", [fresh.id])).notes).toBeNull();
+    expect((await rows(PAULINE, "select id from public.clients where organization_id = $1", [org])).length).toBe(1);
+
+    // Le propriétaire peut toujours la quitter, puis créer sa vraie agence (avec son essai gratuit).
+    await one(PAULINE, "select public.leave_demo_organization()");
+    const real = await createOrg(PAULINE, "Vraie agence de Pauline");
+    expect((await db.query<{ status: string }>("select status from public.subscriptions where organization_id = $1", [real])).rows[0]?.status).toBe("trialing");
+  });
+});
+
+describe("sécurité S6 : l'historique est écrit par la base, les ajouts à la main sont des notes", () => {
+  let org: string;
+  let lina: string;
+  const last = (where: string, params: unknown[]) =>
+    one<{ text: string; origin: string }>(KARL, `select text, origin from public.activity_events where ${where} order by at desc, id desc limit 1`, params);
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    lina = await memberId(LINA);
+  });
+
+  it("montants et dates écrits exactement comme l'application", async () => {
+    for (const [amount, currency] of [[100000, "XAF"], [1234567, "XOF"], [1234567, "EUR"], [5, "USD"], [-250000, "XAF"]] as const) {
+      const r = (await db.query<{ t: string }>("select private.format_money($1, $2) as t", [amount, currency])).rows[0]!;
+      expect(r.t).toBe(formatMoney(amount, currency));
+    }
+  });
+
+  it("fiche client, prospect, prestation et rendez-vous : lignes écrites par la base, d'origine « système »", async () => {
+    // Fiche client créée, modifiée, puis prospect enregistré.
+    const client = await one<{ id: string; reference: string }>(LINA,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to)
+       values ($1, 'student', 'Hugo', 'Historique', '+237690008803', 'CM', 'Douala', $2) returning id, reference`, [org, lina]);
+    expect(await last("client_id = $1", [client.id])).toEqual({ text: `Fiche client ${client.reference} créée.`, origin: "system" });
+    await rows(LINA, "update public.clients set notes = 'Préfère le matin' where id = $1", [client.id]);
+    expect(await last("client_id = $1", [client.id])).toEqual({ text: `Fiche client ${client.reference} modifiée.`, origin: "system" });
+    const prospect = await one<{ id: string; reference: string }>(LINA,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to, status, source, source_detail)
+       values ($1, 'student', 'Ida', 'Prospect', '+237690008804', 'CM', 'Douala', $2, 'prospect', 'facebook', 'Publicité') returning id, reference`, [org, lina]);
+    expect((await last("client_id = $1", [prospect.id])).text).toBe(`Prospect ${prospect.reference} enregistré (origine : Facebook — Publicité).`);
+
+    // Prestation ajoutée.
+    const travelCase = await createCase(LINA, org, client.id, lina);
+    await rows(LINA, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais de dossier', 'agency_fee', 150000, 'XAF')", [org, travelCase.id]);
+    expect(await last("case_id = $1", [travelCase.id])).toEqual({ text: `Prestation ajoutée : Frais de dossier (${formatMoney(150000, "XAF")}).`, origin: "system" });
+
+    // Rendez-vous programmé, modifié (pas pour un simple changement d'état), supprimé.
+    const startsAt = "2026-11-20T09:00:00Z";
+    const appt = await one<{ id: string }>(LINA,
+      `insert into public.appointments (organization_id, client_id, case_id, kind, title, starts_at, assigned_to, status)
+       values ($1, $2, $3, 'consultation', 'Point visa', $4, $5, 'planned') returning id`, [org, client.id, travelCase.id, startsAt, lina]);
+    const when = formatDate(startsAt, "Africa/Douala", "dateTime");
+    expect(await last("case_id = $1", [travelCase.id])).toEqual({ text: `Rendez-vous programmé : Point visa (Consultation, ${when}).`, origin: "system" });
+    await rows(LINA, "update public.appointments set status = 'confirmed' where id = $1", [appt.id]);
+    expect((await last("case_id = $1", [travelCase.id])).text).toBe(`Rendez-vous programmé : Point visa (Consultation, ${when}).`);
+    await rows(LINA, "update public.appointments set title = 'Point visa (déplacé)', starts_at = '2026-11-21T14:30:00Z' where id = $1", [appt.id]);
+    const moved = formatDate("2026-11-21T14:30:00Z", "Africa/Douala", "dateTime");
+    expect((await last("case_id = $1", [travelCase.id])).text).toBe(`Rendez-vous modifié : Point visa (déplacé) (Consultation, ${moved}).`);
+    await rows(LINA, "delete from public.appointments where id = $1", [appt.id]);
+    expect((await last("case_id = $1", [travelCase.id])).text).toBe(`Rendez-vous supprimé : Point visa (déplacé) (${moved}).`);
+
+    // Fiche supprimée (sans dossier).
+    await rows(KARL, "delete from public.clients where id = $1", [prospect.id]);
+    expect((await last("client_id is null and text like 'Fiche client%'", [])).text).toBe(`Fiche client ${prospect.reference} (Ida Prospect) supprimée définitivement.`);
+  });
+
+  it("une ligne inventée ajoutée à la main est marquée comme une note", async () => {
+    await rows(LINA, "insert into public.activity_events (organization_id, text) values ($1, 'Visa accordé par le consulat')", [org]);
+    expect(await last("text like '%Visa accordé par le consulat'", [])).toEqual({ text: "Note ajoutée à la main : Visa accordé par le consulat", origin: "note" });
   });
 });

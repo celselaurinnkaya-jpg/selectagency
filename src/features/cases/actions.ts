@@ -6,7 +6,6 @@ import { z } from "zod";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { loadTables, readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
-import { stepToRow } from "@/lib/data/rows";
 import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
@@ -14,7 +13,7 @@ import type { ApplicantTag } from "@/lib/domain/types";
 import { buildRequirements, documentType, DOCUMENT_TYPES, OTHER_DOCUMENT } from "@/features/documents/checklists";
 import { caseFinance } from "@/features/finance/calculations";
 import { instantiateSteps } from "@/features/workflows/instantiate";
-import { applyTransition, validateTransition, type TransitionInput } from "@/features/workflows/rules";
+import { validateTransition, type TransitionInput } from "@/features/workflows/rules";
 import { effectiveTemplate } from "@/features/workflows/custom";
 import { resolveTemplate } from "@/features/workflows/templates";
 import { activeMembers } from "@/lib/domain/members";
@@ -144,37 +143,38 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
   }
 
   const input: TransitionInput = { ...rest, acknowledgeBalance: acknowledgeBalance === "1" };
-  // Un conseiller sans accès à la finance ne voit pas le solde : la base ne lui renvoie aucune ligne.
+  // Vérification préalable pour un message précis sous le bon champ. La base refait toutes ces vérifications
+  // elle-même (apply_case_transition) : elles ne peuvent pas être contournées.
   const finance = caseFinance(travelCase.billingCurrency, data.charges, data.payments);
   const validation = validateTransition(data.steps, input, { balanceDueMinor: finance.balanceMinor });
   if (!validation.ok) {
     return { message: validation.error, fieldErrors: validation.field ? { [validation.field]: [validation.error] } : undefined, values };
   }
 
-  const now = new Date().toISOString();
-  const result = applyTransition(data.steps, input, { actorId: ctx.member.id, at: now });
-  const casePatch = result.closes
-    ? { status: "closed", closed_at: now, next_action: null, next_action_due_at: null, outcome: result.outcome ?? null }
-    : { next_action: result.to.label, ...(result.outcome ? { outcome: result.outcome } : {}) };
-
-  const { data: newVersion, error } = await ctx.supabase.rpc("apply_case_transition", {
+  // La base reçoit l'action demandée et calcule elle-même les étapes, l'issue, la clôture et l'historique.
+  const { data: applied, error } = await ctx.supabase.rpc("apply_case_transition", {
     p_case_id: caseId,
     p_version: version,
-    p_steps: result.steps.map(stepToRow),
-    p_case: casePatch,
-    p_event: result.description,
+    p_mode: input.mode,
+    p_to: input.to ?? null,
+    p_confirmation: input.confirmation ?? null,
+    p_evidence_ref: input.evidenceRef ?? null,
+    p_source_note: input.sourceNote ?? null,
+    p_reason: input.reason ?? null,
+    p_acknowledge_balance: input.acknowledgeBalance ?? false,
   });
   if (error) return { message: dbMessage(error), values };
+  const result = applied as { version: number; closes: boolean; to_label: string };
   // Si l'agence l'a activé et que l'étape concerne le client, la base a préparé un e-mail : il part après la réponse.
   const { data: queued } = await ctx.supabase
     .from("email_outbox")
     .select("id")
-    .eq("idempotency_key", `case_status:${caseId}:v${newVersion}`)
+    .eq("idempotency_key", `case_status:${caseId}:v${result.version}`)
     .maybeSingle();
   if (queued) sendQueuedEmailsAfterResponse(ctx);
   refresh();
   const mailNote = queued ? " Un e-mail part au client pour l'en informer (suivi dans l'onglet « Communications »)." : "";
-  return { ok: true, message: `${result.closes ? "Dossier clôturé." : `Étape en cours : « ${result.to.label} ».`}${mailNote}` };
+  return { ok: true, message: `${result.closes ? "Dossier clôturé." : `Étape en cours : « ${result.to_label} ».`}${mailNote}` };
 }
 
 const requirementSchema = z
@@ -213,23 +213,15 @@ export async function addRequirementAction(_prev: FormState, formData: FormData)
   if (requirements.some((r) => r.documentTypeCode === type.code || normalizeLabel(r.label) === normalizeLabel(type.label))) {
     return { message: "Cette pièce figure déjà dans la liste du dossier.", values };
   }
-  const { error } = await ctx.supabase.from("document_requirements").insert({
-    organization_id: ctx.organizationId,
-    case_id: travelCase.id,
-    document_type_code: type.code,
-    label: type.label,
-    category: type.category,
-    is_required: parsed.data.isRequired === "1",
-    status: "not_received",
+  // La base ajoute la pièce (toujours « non reçue »), refuse les doublons et écrit l'historique.
+  const { error } = await ctx.supabase.rpc("add_requirement", {
+    p_case_id: travelCase.id,
+    p_document_type_code: type.code,
+    p_label: type.label,
+    p_category: type.category,
+    p_is_required: parsed.data.isRequired === "1",
   });
   if (error) return { message: dbMessage(error), values };
-  await ctx.supabase.from("activity_events").insert({
-    organization_id: ctx.organizationId,
-    actor_id: ctx.member.id,
-    client_id: travelCase.clientId,
-    case_id: travelCase.id,
-    text: `Pièce ajoutée à la liste du dossier : ${type.label}.`,
-  });
   refresh();
   return { ok: true, message: `« ${type.label} » ajouté à la liste.` };
 }

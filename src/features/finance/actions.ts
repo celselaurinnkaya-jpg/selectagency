@@ -42,13 +42,7 @@ export async function addChargeAction(_prev: FormState, formData: FormData): Pro
     currency: travelCase.billingCurrency,
   });
   if (error) return { message: dbMessage(error), values };
-  await ctx.supabase.from("activity_events").insert({
-    organization_id: ctx.organizationId,
-    actor_id: ctx.member.id,
-    client_id: travelCase.clientId,
-    case_id: travelCase.id,
-    text: `Prestation ajoutée : ${parsed.data.label} (${formatMoney(amountMinor, travelCase.billingCurrency)}).`,
-  });
+  // L'historique (« Prestation ajoutée : … ») est écrit par la base.
   refresh();
   return { ok: true, message: "Prestation ajoutée." };
 }

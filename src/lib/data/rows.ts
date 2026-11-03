@@ -54,7 +54,7 @@ const columns = (...names: string[]) => ({ names, list: names.join(", ") as "*" 
 
 // Agence et membres ---------------------------------------------------------------------------
 
-export const ORGANIZATION = columns("id", "name", "city", "country_code", "currency", "timezone", "receipt_prefix", "is_demo");
+export const ORGANIZATION = columns("id", "name", "city", "country_code", "currency", "timezone", "receipt_prefix", "is_demo", "created_at");
 
 export function toAgency(r: Row): Agency {
   return {

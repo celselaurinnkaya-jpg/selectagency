@@ -87,7 +87,7 @@ async function Onboarding() {
             Découvrir d&apos;abord ?
           </h2>
           <p className="text-sm text-slate-600">
-            Une agence fictive, remplie de clients et de dossiers d&apos;exemple. Vous pourrez la quitter à tout moment pour créer la vôtre.
+            Une agence fictive, remplie de clients et de dossiers d&apos;exemple, utilisable pendant 7 jours. Vous pourrez la quitter à tout moment pour créer la vôtre.
           </p>
           <DemoAgencyButton />
         </section>

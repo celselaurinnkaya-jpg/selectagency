@@ -12,9 +12,11 @@ export function UnsubscribeClientView({ token }: { token: string }) {
   const [state, setState] = useState<UnsubscribeResult | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // Après une désinscription, le code de réinscription à usage unique reste dans la page : « Me réinscrire »
+  // l'utilise. Se désinscrire de nouveau en donne un nouveau.
   function apply(resubscribe: boolean) {
     startTransition(async () => {
-      setState(await toggleClientEmailSubscriptionAction(token, resubscribe));
+      setState(await toggleClientEmailSubscriptionAction(token, resubscribe, resubscribe ? state?.resubscribeCode : undefined));
     });
   }
 

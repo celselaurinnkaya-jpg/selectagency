@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canWrite, daysLeft, effectiveStatus } from "./subscription";
+import { canWrite, daysLeft, demoEndsAt, effectiveStatus } from "./subscription";
 
 const NOW = new Date("2026-10-30T10:00:00Z");
 
@@ -11,7 +11,11 @@ describe("abonnement", () => {
   });
 
   it("autorise l'écriture comme la base de données", () => {
-    expect(canWrite(true, undefined, NOW)).toBe(true);
+    // Démonstration : 7 jours après sa création, puis consultation seulement.
+    expect(demoEndsAt("2026-10-25T10:00:00Z")).toBe("2026-11-01T10:00:00.000Z");
+    expect(canWrite(true, undefined, NOW, demoEndsAt("2026-10-25T10:00:00Z"))).toBe(true);
+    expect(canWrite(true, undefined, NOW, demoEndsAt("2026-10-23T09:00:00Z"))).toBe(false);
+    expect(canWrite(true, undefined, NOW)).toBe(false);
     expect(canWrite(false, undefined, NOW)).toBe(false);
     expect(canWrite(false, { status: "trialing" }, NOW)).toBe(true);
     expect(canWrite(false, { status: "trialing", trialEndsAt: "2026-10-01T00:00:00Z" }, NOW)).toBe(false);

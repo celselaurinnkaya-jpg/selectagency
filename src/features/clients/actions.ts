@@ -207,13 +207,7 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     if (error) return { message: dbMessage(error, "La fiche est enregistrée, mais pas le numéro de la pièce d'identité."), values };
   }
 
-  await supabase.from("activity_events").insert({
-    organization_id: ctx.organizationId,
-    actor_id: ctx.member.id,
-    client_id: saved.id,
-    text: existing ? `Fiche client ${saved.reference} modifiée.` : `Fiche client ${saved.reference} créée.`,
-  });
-
+  // L'historique (« Fiche client … créée / modifiée ») est écrit par la base.
   // Partenaire : la base crée ou déplace la commission (refus si elle est déjà payée).
   const partnerError = await applyClientPartner(ctx, saved.id, existing?.partnerId, partner.partnerId);
 
@@ -254,12 +248,7 @@ export async function deleteClientAction(clientId: string): Promise<{ ok: boolea
   if (error) return { ok: false, message: dbMessage(error) };
   const client = deleted?.[0];
   if (!client) return { ok: false, message: "Client introuvable." };
-
-  await ctx.supabase.from("activity_events").insert({
-    organization_id: ctx.organizationId,
-    actor_id: ctx.member.id,
-    text: `Fiche client ${client.reference} (${client.first_name} ${client.last_name}) supprimée définitivement.`,
-  });
+  // L'historique (« Fiche client … supprimée définitivement ») est écrit par la base.
 
   revalidatePath("/clients");
   revalidatePath(`/clients/${clientId}`);

@@ -674,3 +674,109 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - les seules formes de clé trouvées sont la fausse clé des tests (`…secretTestKey999`) ;
   - `.env.example` ne contient que des valeurs publiques ;
   - rapport et journal enregistrés puis envoyés sur GitHub (`main`).
+
+---
+
+### Session 23 — 3 Novembre 2026 (Claude Code) — Sécurité : nouvel audit, sans modification (après « vas-y »)
+* **Point de départ** : constats de l'audit du 30/10 (Session 4) : E1, E2, M1, M2, M3, M4, E3.
+* **Preuves réelles sur le projet de test** (`securite-preuves.mjs`, hors projet ; agence d'essai, adresses `@example.com`, vraie base non touchée) : **7 failles confirmées**.
+  - **E1** : une agence « démonstration » créée directement par l'API (`create_organization` avec `p_is_demo = true`) n'a aucun abonnement et peut écrire sans limite de durée.
+  - **E2** : un membre peut, directement par l'API :
+    - passer un dossier à « clôturé / accordé » sans étapes ni preuve ;
+    - marquer l'étape « Visa accordé » faite et « confirmée » sans justificatif ;
+    - marquer une pièce « vérifiée » sans aucun fichier.
+  - **Nouveau** : un membre peut réinscrire aux e-mails un client qui s'était désinscrit, sans son accord. Le même mécanisme permet de changer directement l'apporteur d'un client, donc les commissions (lu dans le code, non essayé).
+  - **M1** : un membre peut ajouter une ligne d'historique au texte inventé (l'auteur reste bien le sien).
+* **Cause commune** : les règles de modification (RLS) laissent propriétaire, administrateur et conseiller modifier directement `cases`, `case_steps`, `document_requirements` et `clients`, et ajouter des lignes à `activity_events`. Les vérifications métier ne sont faites que par l'application. `apply_case_transition` et `review_requirement` acceptent ce que le navigateur leur envoie.
+* **M2** : sur le vrai site, seul `Strict-Transport-Security` est présent (ajouté par Vercel). Pas de protection contre l'affichage du site dans une autre page, ni contre la détection du type de fichier, ni de politique de référent.
+* **Inventaire de l'application** : aucune écriture directe sur `cases` ni `case_steps` ; sur `document_requirements`, seulement l'ajout d'une pièce ; sur `clients`, la modification de la fiche et la suppression ; 8 ajouts directs dans l'historique. Le blocage côté base est donc faisable sans réécrire l'application.
+* **Plan proposé**, en 6 petites étapes (S1 à S6) ; S1 attend « vas-y ».
+* **Fichiers modifiés** : aucun, hors ce journal.
+* **S1, dossiers et étapes, codée** (après « vas-y ») :
+  - Migration `20261103100000_securite_dossiers.sql` :
+    - `create_case` passe en SECURITY DEFINER : elle vérifie le rôle (propriétaire, administrateur, conseiller), l'agence et le client, et **impose l'état de départ** (première étape en cours, les autres à venir, aucune preuve) ;
+    - `apply_case_transition` est réécrite : elle reçoit l'**action demandée** (avancer, passer, revenir, avec preuve, motif, confirmation du solde) et applique elle-même les règles de `rules.ts` (étape suivante autorisée, preuve « déclarée » avec source ou « confirmée » avec justificatif, motif, solde), puis calcule les étapes, l'issue, la clôture et l'historique ;
+    - une décision exige une preuve même si le modèle d'étapes a été trafiqué ;
+    - les règles d'ajout et de modification directes de `cases` et `case_steps` sont retirées.
+  - Application : `transitionCaseAction` n'envoie plus que l'action. Sa vérification préalable est gardée pour afficher le message sous le bon champ.
+  - Tests : la fonction d'aide des tests avance désormais étape par étape ; 4 nouveaux tests de base. Résultat : `tsc` 0 erreur, ESLint 0 erreur, **152 tests réussis**.
+  - Un ancien test attendait une erreur technique (« foreign key ») pour le client d'une autre agence. Il attend maintenant le message clair « Le client choisi est introuvable. ».
+* **En attente** : migration à appliquer au projet de test, puis nouvel essai des failles et essai de l'application dans Chrome.
+* **S1 vérifiée sur le projet de test** (migration appliquée par l'utilisateur ; nouvelle `apply_case_transition` présente) :
+  - **essai des failles** relancé : les deux failles des dossiers (dossier mis « clôturé / accordé » et étape « Visa accordé » confirmée sans justificatif) sont désormais **protégées** (0 ligne modifiée) ; les autres restent ouvertes en attendant S2 à S6 ;
+  - **essai de l'application dans Chrome** (`s1-flow.mjs`, hors projet) : **12/12** :
+    - création d'un dossier par le vrai formulaire, avec la première étape en cours et les autres à venir ;
+    - étape suivante depuis l'écran ;
+    - décision sans preuve refusée avec un message clair et rien d'enregistré ; avec justificatif « confirmé », décision enregistrée, issue « accordé » et client prévenu par e-mail en bac à sable ;
+    - clôture depuis l'écran, l'issue étant conservée ;
+    - historique complet ; aucune erreur JavaScript.
+  - Premier passage interrompu par une erreur **du script d'essai** (colonne `outcome` non lue), corrigée.
+  - Serveur d'essai arrêté.
+* **Pas encore en ligne.** La mise en ligne demande `db push` sur le vrai projet puis l'envoi du code juste après : l'ancien site appelle l'ancienne forme de `apply_case_transition`.
+* **S2, pièces, codée** (après « vas-y ») : migration `20261103110000_securite_pieces.sql`.
+  - `review_requirement` passe en SECURITY DEFINER. Elle exige le rôle, un dossier actif, une pièce en attente **avec au moins un fichier**, et un motif pour « à corriger ». Le texte de l'historique est écrit par la base.
+  - Nouvelle fonction `add_requirement` : pièce toujours « non reçue », doublons refusés, historique écrit par la base.
+  - Les règles d'ajout et de modification directes de `document_requirements` sont retirées.
+  - L'application utilise `add_requirement`.
+* **S3, fiche client, codée** : migration `20261103120000_securite_clients.sql`.
+  - Une garde (`clients_guard`) refuse, lors d'une écriture directe d'un membre, tout changement de l'apporteur, du statut prospect / client, de la date de transformation, de l'agence, de la référence, du code de désinscription ou de la marque « démonstration ».
+  - L'agence peut désinscrire un client à sa demande, **jamais le réinscrire**.
+  - La page de désinscription remet au client un **code de réinscription à usage unique**. La base n'en garde que l'empreinte (`email_resubscribe_hash`), et « Me réinscrire » exige ce code. Le code du lien, que l'agence peut lire, ne permet plus de réinscrire.
+* **Tests** :
+  - deux anciens tests attendaient des erreurs techniques ; ils attendent maintenant les messages clairs ;
+  - 7 nouveaux tests de base (S2 : 3, S3 : 4) ;
+  - `tsc` 0 erreur, ESLint 0 erreur, **159 tests réussis**.
+* **En attente** : les 2 migrations à appliquer au projet de test, puis l'essai des failles et l'essai dans Chrome (`s23-flow.mjs`).
+* **S2 et S3 vérifiées sur le projet de test** (2 migrations appliquées par l'utilisateur et vérifiées) :
+  - **essai des failles** : pièce « vérifiée » sans fichier, client réinscrit directement par l'agence, et client réinscrit par la page publique avec le code du lien (cas ajouté à l'essai) sont **protégés**. Restent ouvertes, comme prévu : l'agence démonstration (S4) et l'historique inventé (S6) ;
+  - **essai de l'application dans Chrome** (`s23-flow.mjs`) : **14/14** :
+    - dépôt d'un fichier, « à corriger » avec motif, nouveau dépôt, « vérifiée », avec l'historique écrit par la base ;
+    - ajout d'une pièce « Autre » ;
+    - prospect enregistré avec code partenaire et rattaché au partenaire, puis « Transformer en client » ;
+    - modification ordinaire de la fiche ;
+    - désinscription puis réinscription juste après, sur la même page ;
+    - aucune erreur JavaScript.
+  - Le premier passage était à 13/14 : le script d'essai ne cliquait pas sur « Confirmer », alors que la transformation se fait en deux temps. Vérifié par un appel direct : `convert_prospect` fonctionne. Script corrigé.
+  - Contrôle de non-régression : `s1-flow.mjs` toujours à **12/12**. Serveur d'essai arrêté.
+* **S1 à S3 prêtes pour la mise en ligne** (sur l'accord de l'utilisateur) : 3 migrations à appliquer au vrai projet, puis l'envoi du code aussitôt.
+* **S4, agence démonstration, codée** (après « vas-y ») : migration `20261103130000_securite_demo.sql`.
+  - `org_can_write` : une démonstration n'accepte de nouvelles données que **7 jours** après sa création, puis elle est consultable seulement, comme un essai terminé.
+  - Son propriétaire peut toujours la quitter (`leave_demo_organization` ne dépend pas de ce droit) et créer sa vraie agence, avec son essai gratuit.
+  - Application :
+    - `canWrite` et `demoEndsAt` suivent la même règle ;
+    - la date de création de l'agence est lue ;
+    - le bandeau affiche « Utilisable 7 jours, jusqu'au … », puis « Démonstration terminée : … Créez votre agence pour continuer » ;
+    - la FAQ de l'accueil et la page de création mentionnent les 7 jours.
+* **S5, protections du site, codée** : `next.config.ts`.
+  - En-têtes ajoutés sur toutes les pages :
+    - `Content-Security-Policy` légère : `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`, `object-src 'none'` ;
+    - `X-Frame-Options: DENY` ;
+    - `X-Content-Type-Options: nosniff` ;
+    - `Referrer-Policy: strict-origin-when-cross-origin` ;
+    - `Permissions-Policy` (caméra, micro, position, paiement désactivés).
+  - `poweredByHeader: false`.
+  - Vérifié avant : l'application n'utilise ni cadre (iframe), ni caméra, ni formulaire vers un autre site.
+* **Tests** : 1 nouveau test de base (démonstration modifiable, puis consultable seulement après 8 jours, puis quittée et vraie agence créée) et un test de `canWrite`. `tsc` 0 erreur, ESLint 0 erreur, **160 tests réussis**.
+* **Préparation de l'essai réel** : deux agences démonstration d'essai créées sur le projet de test, l'une à vieillir par une ligne SQL de l'utilisateur.
+* **S4 et S5 vérifiées sur le projet de test** (migration appliquée par l'utilisateur ; la démo d'essai « Démo dmw044uofa » a été vieillie de 8 jours par sa ligne SQL) :
+  - **par l'API** : la démo vieillie refuse l'ajout d'un client (règle d'accès) mais reste consultable ; la démo récente fonctionne normalement ;
+  - **dans Chrome** (`s45-flow.mjs`) : **9/9** :
+    - en-têtes présents (`frame-ancestors 'none'`, `DENY`, `nosniff`, provenance, `Permissions-Policy`), `X-Powered-By` retiré ;
+    - bandeau « Utilisable 7 jours, jusqu'au … » sur la démo récente ;
+    - « Démonstration terminée » sur la démo vieillie, qui reste consultable, et « Quitter la démonstration » ramène à la création d'agence ;
+    - aucune erreur JavaScript.
+  - **Non-régression avec les nouveaux en-têtes** : `s1-flow.mjs` **12/12**, `s23-flow.mjs` **14/14** (formulaires, dépôts de fichiers, désinscription). Serveur d'essai arrêté.
+* **S1 à S5 prêtes pour la mise en ligne.**
+  - S6 (historique) est proposée pour plus tard : il faudrait que la base écrive elle-même toutes les lignes d'historique, soit 7 endroits de l'application à reprendre. Le risque est faible (ligne interne à l'agence, auteur affiché).
+* **S6, historique, codée** (demande : « finalise avec le S6, puis tu commences ») : migration `20261103140000_securite_historique.sql`.
+  - Les 7 lignes d'historique que l'application écrivait elle-même sont maintenant écrites par la base, au moment où la donnée change, avec le **même texte**. Il s'agit des rendez-vous programmés, modifiés (pas pour un simple changement d'état) ou supprimés, des fiches client ou prospect créées, modifiées ou supprimées, et des prestations ajoutées.
+  - La mise en forme des montants (`private.format_money`) et des dates est identique à l'application, au caractère près (espaces fines), ce qu'un test vérifie.
+  - Une ligne ajoutée directement par un membre est marquée `origin = 'note'`, et son texte commence par « Note ajoutée à la main : ».
+  - Application : les 7 écritures directes sont retirées, ainsi que la fonction d'aide `when` et un import devenus inutiles.
+  - Tests : deux anciens tests sont adaptés à ce nouveau comportement (marquage « note » ; la base écrit maintenant « Prospect … enregistré ») ; 3 nouveaux tests de base. `tsc` 0 erreur, ESLint 0 erreur, **163 tests réussis**.
+* **S6 vérifiée sur le projet de test** (migration appliquée par l'utilisateur) :
+  - **essai des failles** : la ligne d'historique inventée est enregistrée comme « Note ajoutée à la main : … » (origine `note`). Elle est **protégée** au sens où elle ne peut plus passer pour un événement réel.
+  - Les deux lignes « E1 » restent affichées comme faille : l'essai crée une démonstration et y écrit pendant ses 7 premiers jours, ce qui est permis. Le blocage après 7 jours a été vérifié avec la démo vieillie.
+  - **Non-régression dans Chrome** avec S6 : `s1-flow.mjs` 12/12, `s23-flow.mjs` 14/14.
+  - `s45-flow.mjs` : 6/8. Les 2 échecs viennent de l'essai : la démo vieillie avait déjà été quittée lors du passage précédent, donc son compte arrive sur la création d'agence. Les en-têtes et la démo récente sont toujours bons.
+* **Avant la mise en ligne** : `npm run build` réussi avec la vraie configuration (aucune trace du projet de test) ; recherche de secrets dans les fichiers modifiés.

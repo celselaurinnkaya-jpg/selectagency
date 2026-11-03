@@ -148,7 +148,7 @@ const FAQ = [
 
 const DEMO_FAQ = {
   q: "Puis-je essayer sans saisir mes propres données ?",
-  a: "Oui. À la création de votre compte, vous pouvez ouvrir une agence de démonstration remplie de données fictives, puis la quitter à tout moment.",
+  a: "Oui. À la création de votre compte, vous pouvez ouvrir une agence de démonstration remplie de données fictives, utilisable pendant 7 jours, puis la quitter à tout moment pour créer la vôtre.",
 };
 
 function SectionIntro({ eyebrow, title, text, className }: { eyebrow: string; title: string; text?: string; className?: string }) {

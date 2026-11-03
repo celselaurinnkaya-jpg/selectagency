@@ -3,7 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient, type SupabaseServerClient } from "@/lib/supabase/server";
 import { MEMBER, ORGANIZATION, PLAN, SUBSCRIPTION, toAgency, toMember, toPlan, toSubscription } from "@/lib/data/rows";
-import { canWrite } from "@/lib/domain/subscription";
+import { canWrite, demoEndsAt } from "@/lib/domain/subscription";
 import type { Agency, Member, Subscription } from "@/lib/domain/types";
 
 // Couche d'accès à la session (Data Access Layer). Toute lecture et toute Server Action commence ici :
@@ -24,6 +24,8 @@ export interface AgencyContext extends SessionUser {
   member: Member;
   /** Absent pour une agence de démonstration. */
   subscription?: Subscription;
+  /** Agence de démonstration : date à partir de laquelle elle n'est plus que consultable. */
+  demoEndsAt?: string;
   /** Faux quand l'abonnement est suspendu, résilié ou l'essai terminé : l'agence est en lecture seule. */
   writable: boolean;
 }
@@ -73,6 +75,7 @@ export const getAgencyContext = cache(async (): Promise<AgencyContext> => {
     subscription = toSubscription(subscriptionRow, planRow ? toPlan(planRow) : undefined);
   }
   const isDemo = Boolean(orgRow.is_demo);
+  const demoEnd = isDemo && orgRow.created_at ? demoEndsAt(String(orgRow.created_at)) : undefined;
 
   return {
     ...user,
@@ -81,6 +84,7 @@ export const getAgencyContext = cache(async (): Promise<AgencyContext> => {
     agency: toAgency(orgRow),
     member: toMember(memberRow),
     subscription,
-    writable: canWrite(isDemo, subscription, new Date()),
+    demoEndsAt: demoEnd,
+    writable: canWrite(isDemo, subscription, new Date(), demoEnd),
   };
 });

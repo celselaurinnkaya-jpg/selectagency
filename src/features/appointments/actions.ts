@@ -8,7 +8,6 @@ import { dbMessage } from "@/lib/data/errors";
 import { APPOINTMENT_KIND } from "@/lib/domain/labels";
 import { activeMembers } from "@/lib/domain/members";
 import type { AppointmentKind, AppointmentStatus } from "@/lib/domain/types";
-import { formatDate } from "@/lib/format";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 
@@ -67,9 +66,6 @@ function toColumns(input: AppointmentInput, timezone: string) {
   };
 }
 
-const when = (input: AppointmentInput, timezone: string) =>
-  formatDate(localDateTimeToIso(input.date, input.startTime || "00:00", timezone), timezone, input.startTime ? "dateTime" : "date");
-
 export async function createAppointmentAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
   const parsed = appointmentSchema.safeParse(values);
@@ -97,15 +93,7 @@ export async function createAppointmentAction(_prev: FormState, formData: FormDa
     ...toColumns(input, tz),
   });
   if (error) return { message: dbMessage(error), values };
-  if (clientId) {
-    await ctx.supabase.from("activity_events").insert({
-      organization_id: ctx.organizationId,
-      actor_id: ctx.member.id,
-      client_id: clientId,
-      case_id: travelCase?.id ?? null,
-      text: `Rendez-vous programmé : ${input.title} (${APPOINTMENT_KIND[input.kind]}, ${when(input, tz)}).`,
-    });
-  }
+  // L'historique (« Rendez-vous programmé : … ») est écrit par la base.
   refresh();
   return { ok: true, message: "Rendez-vous programmé." };
 }
@@ -135,15 +123,7 @@ export async function updateAppointmentAction(_prev: FormState, formData: FormDa
     .select("id");
   if (error) return { message: dbMessage(error), values };
   if (!updated?.length) return { message: NOT_FOUND, values };
-  if (appointment.caseId) {
-    await ctx.supabase.from("activity_events").insert({
-      organization_id: ctx.organizationId,
-      actor_id: ctx.member.id,
-      client_id: appointment.clientId ?? null,
-      case_id: appointment.caseId,
-      text: `Rendez-vous modifié : ${input.title} (${APPOINTMENT_KIND[input.kind]}, ${when(input, tz)}).`,
-    });
-  }
+  // L'historique (« Rendez-vous modifié : … ») est écrit par la base.
   refresh();
   return { ok: true, message: "Rendez-vous modifié." };
 }
@@ -164,15 +144,7 @@ export async function deleteAppointmentAction(_prev: FormState, formData: FormDa
     .select("id");
   if (error) return { message: dbMessage(error) };
   if (!deleted?.length) return { message: NOT_FOUND };
-  if (appointment.caseId) {
-    await ctx.supabase.from("activity_events").insert({
-      organization_id: ctx.organizationId,
-      actor_id: ctx.member.id,
-      client_id: appointment.clientId ?? null,
-      case_id: appointment.caseId,
-      text: `Rendez-vous supprimé : ${appointment.title} (${formatDate(appointment.startsAt, data.agency.timezone, appointment.allDay ? "date" : "dateTime")}).`,
-    });
-  }
+  // L'historique (« Rendez-vous supprimé : … ») est écrit par la base.
   refresh();
   return { ok: true, message: "Rendez-vous supprimé." };
 }

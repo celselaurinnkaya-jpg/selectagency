@@ -89,14 +89,7 @@ export async function saveProspectAction(raw: ProspectInput): Promise<FormState>
     .single();
   if (error) return { message: dbMessage(error) };
   const id = String(row.id);
-  const origin = `${CLIENT_SOURCE[input.source]}${input.sourceDetail ? ` — ${input.sourceDetail}` : ""}`;
-  await ctx.supabase.from("activity_events").insert({
-    organization_id: ctx.organizationId,
-    actor_id: ctx.member.id,
-    client_id: id,
-    text: `Prospect ${row.reference} enregistré (origine : ${origin}).`,
-  });
-
+  // L'historique (« Prospect … enregistré (origine : …) ») est écrit par la base.
   const partnerError = await applyClientPartner(ctx, id, undefined, partner.partnerId);
   if (partnerError) return { message: `Le prospect est enregistré, mais pas son partenaire : ${partnerError}`, redirectTo: `/clients/${id}` };
 

@@ -190,6 +190,7 @@ export const getShell = cache(async () => {
     agency: ctx.agency,
     member: ctx.member,
     isDemo: ctx.isDemo,
+    demoEndsAt: ctx.demoEndsAt,
     subscription: ctx.subscription,
     writable: ctx.writable,
     // Seuls les administrateurs SELECT voient le lien vers la console (rien n'est révélé aux autres).

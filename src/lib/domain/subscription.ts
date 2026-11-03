@@ -13,9 +13,20 @@ export function effectiveStatus(subscription: Subscription, now: Date): Effectiv
   return subscription.status;
 }
 
-/** L'agence peut-elle enregistrer de nouvelles données ? Sinon, elle reste consultable. */
-export function canWrite(isDemo: boolean, subscription: Subscription | undefined, now: Date): boolean {
-  if (isDemo) return true;
+/** Durée d'utilisation d'une agence de démonstration ; ensuite, elle reste consultable. */
+export const DEMO_DAYS = 7;
+
+/** Fin de la démonstration (création + 7 jours). */
+export function demoEndsAt(createdAt: string): string {
+  return new Date(new Date(createdAt).getTime() + DEMO_DAYS * 86_400_000).toISOString();
+}
+
+/**
+ * L'agence peut-elle enregistrer de nouvelles données ? Sinon, elle reste consultable.
+ * Une démonstration n'est modifiable que jusqu'à sa date de fin (`demoEnd`).
+ */
+export function canWrite(isDemo: boolean, subscription: Subscription | undefined, now: Date, demoEnd?: string): boolean {
+  if (isDemo) return Boolean(demoEnd) && now.getTime() < new Date(demoEnd!).getTime();
   if (!subscription) return false;
   const status = effectiveStatus(subscription, now);
   return status === "trialing" || status === "active" || status === "past_due";
