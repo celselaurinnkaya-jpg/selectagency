@@ -630,3 +630,12 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - `tsc` : 0 erreur, ESLint : 0 erreur, **148 tests réussis** ;
   - commit `a534f6b` sur la **branche locale `sauvegarde-2026-11-02`**, créée pour ne pas toucher à `main` (la branche de mise en ligne).
   - **Aucun envoi sur GitHub.**
+* **Fin du point 3** :
+  - l'utilisateur a appliqué la migration `20261102200000` au projet de test et collé la ligne SQL qui vieillit le dossier de l'agence d'essai « Agence rmvzyhziv » de 4 jours et fixe la fin de son essai à 5 jours ;
+  - tâche quotidienne appelée comme Vercel Cron : **4/4**. Relance automatique des pièces préparée (8 pièces) et acceptée par Brevo ; alerte « fin d'essai dans 7 jours » envoyée au propriétaire et acceptée ; second passage sans doublon ;
+  - registre Brevo vide pour les adresses d'essai, donc rien n'est réellement parti ; serveur d'essai arrêté.
+* **Rapport mis à jour** (`docs/RAPPORT_INTEGRATION_BREVO.md`) :
+  - chaque type d'e-mail client a maintenant été essayé au moins une fois en bac à sable ;
+  - les 3 points sont marqués réglés ;
+  - la liste de mise en ligne compte 4 migrations ;
+  - restent : la mise en ligne, le webhook réel, les autres alertes d'abonnement et la confirmation d'inscription.

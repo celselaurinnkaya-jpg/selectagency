@@ -6,7 +6,8 @@
 
 - **L'intégration est terminée et vérifiée**, en local et sur le projet Supabase de test (`select-agency-test`).
 - **Elle n'est pas encore en ligne.** Le vrai site (`www.myselectagency.com`) n'envoie aujourd'hui aucun e-mail aux clients des agences. Seuls les e-mails de compte (mot de passe oublié, confirmation d'adresse) passent déjà par Brevo, via Supabase.
-- **Tests** : 147 tests automatiques réussis, dont 33 propres aux e-mails. 4 essais complets dans l'application, sur le projet de test : 16/16, 16/16, 10/10 et 13/13.
+- **Tests** : 148 tests automatiques réussis, dont 34 propres aux e-mails. 6 essais complets dans l'application, sur le projet de test : 16/16, 16/16, 10/10, 13/13, 12/12 et 4/4. **Chaque type d'e-mail client a été essayé au moins une fois en bac à sable.**
+- **Sauvegarde** : tout le travail est enregistré dans Git sur la branche locale `sauvegarde-2026-11-02` (commit `a534f6b`). Rien n'a été envoyé sur GitHub.
 - **Preuves d'envoi réel** : un seul e-mail client a été réellement envoyé et **livré**, l'e-mail de démonstration « paiement reçu » avec son reçu PDF, envoyé à l'adresse de test fournie. Tous les autres essais ont été faits en **bac à sable** : Brevo vérifie le message et l'accepte, mais ne l'envoie à personne.
 
 **Vocabulaire utilisé dans ce rapport :**
@@ -46,7 +47,8 @@
 | `migrations/20261102140000_emails_dossiers.sql` | Avancement du dossier, relance des pièces. *Projet de test seulement.* |
 | `migrations/20261102160000_emails_planifies.sql` | Tâche quotidienne : rappels, relance automatique, alertes d'abonnement. *Projet de test seulement.* |
 | `migrations/20261102180000_emails_webhook.sql` | Webhook : e-mail retrouvé par son étiquette, statuts fiables. *Projet de test seulement.* |
-| `tests/database.test.ts` | 11 tests de base consacrés aux e-mails |
+| `migrations/20261102200000_emails_anciens.sql` | Bienvenue ou alerte d'abonnement restées plus de 3 jours en attente : annulées au lieu de partir en retard. *Projet de test seulement.* |
+| `tests/database.test.ts` | 12 tests de base consacrés aux e-mails |
 | `config.toml`, `templates/confirmation.html`, `templates/recovery.html` | Adresse du site, adresses de retour, modèles français des e-mails de compte |
 
 ### Module d'envoi (`src/lib/`)
@@ -104,9 +106,10 @@
 
 ## 5. Tests effectués
 
-### Tests automatiques (147 réussis, dont 33 propres aux e-mails)
+### Tests automatiques (148 réussis, dont 34 propres aux e-mails)
 
-- **Base de données** (PostgreSQL en mémoire, 11 tests sur les e-mails) :
+- **Base de données** (PostgreSQL en mémoire, 12 tests sur les e-mails) :
+  - messages de la plateforme trop anciens annulés ;
   - tout désactivé par défaut ;
   - droits par rôle ;
   - revérification avant l'envoi ;
@@ -131,14 +134,15 @@
 | Paiement reçu + reçu PDF | **Vrai envoi** de démonstration, deux fois, à l'adresse de test fournie (données inventées, aucune base touchée) | Registre Brevo : **2 livrés**, 1 ouvert. L'utilisateur l'a vu dans la boîte de réception (pas en spam), avec le bon expéditeur et un PDF lisible |
 | Paiement reçu, dans l'application | Bac à sable, sur le projet de test | Statut « envoyé » et numéro Brevo |
 | Document : reçu, récapitulatif | Bac à sable, par le bouton | Statut « envoyé », numéro Brevo, historique du client |
-| Document : facture, devis, confirmation de réservation | Tests automatiques seulement | Même bouton et même chemin d'envoi que le reçu |
+| Document : facture, devis, confirmation de réservation | Bac à sable, par le bouton | « Brevo l'a accepté », statut « envoyé », numéro Brevo |
 | Avancement : action attendue du client | Bac à sable, sur le projet de test | Statut « envoyé », numéro Brevo, avertissement affiché avant |
-| Avancement : décision, clôture | Tests automatiques seulement | — |
+| Avancement : décision (« Visa refusé », déclarée) et clôture | Bac à sable, par le formulaire d'étape | Avertissement avant l'enregistrement, statut « envoyé », numéro Brevo, lignes dans « Communications » |
 | Relance des pièces par le bouton | Bac à sable, sur le projet de test | Liste exacte, statut « envoyé », numéro Brevo |
-| Relance automatique des pièces | Tests automatiques seulement (il faudrait attendre 3 jours) | — |
+| Relance automatique des pièces | Bac à sable, par la tâche quotidienne (dossier vieilli de 4 jours par une ligne SQL sur le projet de test) | 8 pièces listées, statut « envoyé », pas de doublon au second passage |
 | Rappel de rendez-vous | Bac à sable, par la tâche quotidienne | Statut « envoyé », pas de doublon au second passage |
 | Bienvenue de l'agence | Bac à sable, par la tâche quotidienne | Comptée comme acceptée par Brevo |
-| Alertes d'abonnement | Tests automatiques seulement | — |
+| Alerte « fin d'essai dans 7 jours » | Bac à sable, par la tâche quotidienne (fin d'essai fixée à 5 jours sur le projet de test) | Envoyée au propriétaire, statut « envoyé », pas de doublon |
+| Autres alertes d'abonnement (veille, essai terminé, échéance, suspension) | Tests automatiques seulement | Même chemin d'envoi que l'alerte essayée |
 | Mot de passe oublié (compte) | **Vrai envoi** sur le compte de l'utilisateur | Reçu, en français, lien correct (confirmé par l'utilisateur) |
 | Confirmation d'inscription (compte) | Non testée en réel (même canal et modèle français installé) | — |
 | Webhook (livré, rejeté, indésirable, lots) | Rôle de Brevo joué localement, contre le projet de test | 13/13, deux fois |
@@ -147,12 +151,15 @@ Pour chaque essai en bac à sable, le registre Brevo a été relu en lecture seu
 
 ## 6. Problèmes restants et limites
 
-1. **Pas encore en ligne.** Tout ce qui précède tourne en local et sur le projet de test.
-2. **Code non sauvegardé dans Git.** De nombreux fichiers ne sont ni enregistrés dans Git (commit) ni envoyés sur GitHub. À enregistrer localement dès que possible ; l'envoi sur GitHub, lui, n'est fait que sur demande explicite.
-3. **Bienvenues en attente dans la vraie base.** Depuis l'application de la première migration, chaque nouvelle agence reçoit un e-mail de bienvenue en file, qui n'est jamais parti. À la mise en ligne, la tâche quotidienne les enverrait en retard : il faut les vérifier et annuler les plus anciens avant d'activer l'envoi.
+*Les trois points les plus importants du premier rapport sont réglés : la sauvegarde Git, les bienvenues en attente (annulées automatiquement après 3 jours) et les e-mails jamais essayés (tous essayés en bac à sable). Restent :*
+
+1. **Pas encore en ligne.** Tout ce qui précède tourne en local et sur le projet de test. Le travail est sauvegardé sur la branche locale `sauvegarde-2026-11-02`, à fusionner dans `main` au moment de la mise en ligne.
+2. *(Réglé)* Sauvegarde Git : commit `a534f6b`, rien sur GitHub.
+3. *(Réglé)* Bienvenues en attente dans la vraie base : avec la migration `20261102200000`, celles de plus de 3 jours seront annulées automatiquement au premier passage, avec leur raison.
 4. **Webhook réel non testé.** Brevo ne peut joindre que le site en ligne. Les champs exacts de l'écran Brevo (Intégrations → Webhooks, authentification par jeton) sont à confirmer à ce moment-là. La clé API actuelle n'a pas le droit de gérer les webhooks, et c'est voulu.
 5. **Tâche quotidienne une seule fois par jour** : c'est la limite de la formule gratuite de Vercel, avec une heure approximative. Les e-mails avec PDF bloqués par une panne repartent à la prochaine action de l'agence ou par le bouton « Envoyer les e-mails en attente » des réglages.
-6. **Certains e-mails n'ont été vérifiés que par des tests automatiques**, sans envoi même en bac à sable : décision et clôture du dossier, relance automatique, alertes d'abonnement, envoi d'une facture, d'un devis ou d'une confirmation de réservation, confirmation d'inscription.
+6. **Encore vérifiés seulement par des tests automatiques** : les alertes d'abonnement autres que « fin d'essai dans 7 jours » (même chemin d'envoi), et la confirmation d'inscription d'un compte. L'essayer demanderait de créer un compte sur le vrai site.
+   - Après une clôture, le message « Un e-mail part au client » ne reste pas affiché, car le formulaire laisse place à « Ce dossier est clôturé ». L'e-mail apparaît dans l'onglet « Communications ».
 7. **Une erreur passagère non expliquée** pendant un essai de l'étape 6 : un e-mail est resté en attente, puis il est reparti au passage suivant. Ce n'est pas une limite de Brevo (10 envois simultanés acceptés) ; c'est probablement une coupure de réseau.
 8. **Limite d'envoi de la formule Brevo** : la formule gratuite de Brevo est en général limitée à 300 e-mails par jour. Vérifiez la limite de votre compte avant le lancement.
 9. **Domaine sans boîte de réception** : personne ne peut écrire à `notifications@`. Les réponses aux e-mails d'agence vont à l'adresse de réponse de l'agence, et les e-mails de la plateforme n'ont pas d'adresse de réponse. La politique DMARC est souple (`p=none`) : à renforcer après quelques semaines d'envoi.
@@ -164,11 +171,11 @@ Pour chaque essai en bac à sable, le registre Brevo a été relu en lecture seu
 
 ## 7. Mise en ligne (uniquement sur demande explicite, pas à pas)
 
-1. **Sauvegarder le code dans Git** (commit en local).
+1. **Git** : c'est fait (branche locale `sauvegarde-2026-11-02`). Au moment de publier, la fusionner dans `main`.
 2. **Vraie base Supabase** :
-   - appliquer les migrations `20261102140000`, `20261102160000` et `20261102180000` ;
-   - enregistrer les deux empreintes (lignes SQL fournies à ce moment) ;
-   - vérifier puis annuler les anciennes bienvenues en attente.
+   - appliquer les migrations `20261102140000`, `20261102160000`, `20261102180000` et `20261102200000` ;
+   - enregistrer les deux empreintes (lignes SQL fournies à ce moment).
+   - Les anciennes bienvenues s'annuleront d'elles-mêmes.
 3. **Vercel** : ajouter `BREVO_API_KEY`, `BREVO_SENDER_EMAIL`, `CRON_SECRET`, et vérifier `NEXT_PUBLIC_SITE_URL`. Ne pas ajouter `BREVO_SANDBOX`.
 4. **Envoyer sur GitHub** pour publier sur Vercel, uniquement sur demande explicite, puis vérifier que la tâche quotidienne apparaît dans Vercel (Settings → Cron Jobs).
 5. **Brevo** : créer le webhook.
