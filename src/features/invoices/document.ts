@@ -1,4 +1,5 @@
 import type { Agency, Client, Invoice, InvoiceImageKind, InvoiceSettings, InvoiceStatus, TravelCase } from "@/lib/domain/types";
+import { caseKindLabel } from "@/features/workflows/templates";
 import type { InvoiceLine } from "./totals";
 
 // Contenu d'une facture tel qu'il est imprimé : le même objet alimente l'aperçu en direct du
@@ -81,7 +82,11 @@ export function formatDay(day: string): string {
   return new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`));
 }
 
-export const caseLabel = (travelCase: Pick<TravelCase, "reference" | "title">) => `${travelCase.reference} — ${travelCase.title}`;
+/** « DOS-2026-00001 — Master Lyon (Études en France — Campus France) » : la procédure d'études quand il y en a une. */
+export const caseLabel = (travelCase: Pick<TravelCase, "reference" | "title"> & Partial<Pick<TravelCase, "templateKey">>) => {
+  const procedure = caseKindLabel(travelCase.templateKey, "");
+  return `${travelCase.reference} — ${travelCase.title}${procedure ? ` (${procedure})` : ""}`;
+};
 
 /** Facture enregistrée, prête à afficher ou à mettre en PDF. */
 export function documentFromInvoice(input: {

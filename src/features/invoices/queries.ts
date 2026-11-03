@@ -6,7 +6,9 @@ import { INVOICE, INVOICE_ITEM, INVOICE_SETTINGS, toInvoice, toInvoiceItem, toIn
 import type { Invoice, InvoiceSettings, InvoiceStatus } from "@/lib/domain/types";
 import { dayKey } from "@/lib/format";
 import { loadServices } from "@/features/services/queries";
-import { caseLabel, documentFromInvoice, imageUrls, isOverdue, issuerParty, recipientParty } from "./document";
+import { caseLabel, documentFromInvoice, IMAGE_KINDS, imagePath, imageUrls, isOverdue, issuerParty, recipientParty } from "./document";
+import type { PdfImages } from "./pdf";
+import { BRANDING_BUCKET } from "./storage";
 
 // Factures de l'agence : lisibles par les rôles qui voient la finance (comme les devis).
 
@@ -16,6 +18,20 @@ export async function loadInvoiceSettings(ctx: AgencyContext): Promise<InvoiceSe
   const { data, error } = await ctx.supabase.from("invoice_settings").select(INVOICE_SETTINGS.list).eq("organization_id", ctx.organizationId).maybeSingle();
   if (error) throw new Error(`Lecture des réglages des factures impossible : ${error.message}`);
   return toInvoiceSettings(data);
+}
+
+/** Logo, cachet et signature en octets pour les PDF (factures, reçus), lus au nom de la personne connectée. */
+export async function loadBrandingImages(ctx: AgencyContext, settings: InvoiceSettings): Promise<PdfImages> {
+  const images: PdfImages = {};
+  await Promise.all(
+    IMAGE_KINDS.map(async (kind) => {
+      const path = imagePath(settings, kind);
+      if (!path) return;
+      const { data } = await ctx.supabase.storage.from(BRANDING_BUCKET).download(path);
+      if (data) images[kind] = new Uint8Array(await data.arrayBuffer());
+    }),
+  );
+  return images;
 }
 
 /** Plus récentes d'abord (date d'émission, puis numéro). Les lignes ne sont lues que sur demande. */

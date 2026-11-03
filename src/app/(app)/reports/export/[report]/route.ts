@@ -3,7 +3,7 @@ import { allowed, forbiddenMessage, type Permission } from "@/lib/auth/permissio
 import { readAgency } from "@/lib/data/agency";
 import { countryName } from "@/lib/countries";
 import { csvAmount, toCsv, type Cell } from "@/lib/csv";
-import { CASE_OUTCOME, CASE_STATUS, CATEGORY_LABELS, CLIENT_TYPE, PRIORITY } from "@/lib/domain/labels";
+import { CASE_OUTCOME, CASE_STATUS, CATEGORY_LABELS, CLIENT_TYPE, PAYMENT_STATUS, PRIORITY } from "@/lib/domain/labels";
 import { dayKey, formatDate } from "@/lib/format";
 import { summarizeCase } from "@/features/cases/summary";
 
@@ -62,12 +62,13 @@ export async function GET(_request: Request, { params }: RouteContext<"/reports/
       });
       break;
     case "paiements":
-      header = ["Reçu", "Date", "Client", "Dossier", "Montant", "Devise", "Moyen", "Référence de transaction", "Payé par", "Reçu par", "Statut", "Motif d'annulation"];
+      header = ["Reçu", "Date", "Client", "Dossier", "Montant", "Devise", "Moyen", "Référence de transaction", "Payé par", "Saisi par", "Statut", "Confirmé le", "Motif d'annulation"];
       rows = [...data.payments]
         .sort((a, b) => a.paidAt.localeCompare(b.paidAt))
         .map((p) => [
-          p.receiptNumber, formatDate(p.paidAt, tz, "dateTime"), clientName(p.clientId), caseRef(p.caseId), csvAmount(p.amountMinor, p.currency), p.currency,
-          p.methodLabel, p.transactionReference, p.payerName, memberName(p.receivedBy), p.status === "voided" ? "Annulé" : "Enregistré", p.voidReason,
+          p.receiptNumber ?? "", formatDate(p.paidAt, tz, "dateTime"), clientName(p.clientId), caseRef(p.caseId), csvAmount(p.amountMinor, p.currency), p.currency,
+          p.methodLabel, p.transactionReference, p.payerName, memberName(p.receivedBy), PAYMENT_STATUS[p.status].label,
+          p.confirmedAt ? formatDate(p.confirmedAt, tz, "dateTime") : "", p.voidReason,
         ]);
       break;
     case "depenses":

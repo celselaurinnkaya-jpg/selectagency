@@ -40,6 +40,7 @@ const KARL = user(12, "karl@agence-k.test", "Karl Biya");
 const LINA = user(13, "lina@agence-k.test", "Lina Atangana");
 const MAX = user(14, "max@agence-k.test", "Max Onana");
 const NOAH = user(15, "noah@agence-k.test", "Noah Ekotto");
+const OSCAR = user(16, "oscar@partenaire.test", "Oscar Mbida");
 
 let db: PGlite;
 
@@ -104,7 +105,7 @@ beforeAll(async () => {
   for (const file of readdirSync(join(root, "migrations")).sort()) {
     await db.exec(readFileSync(join(root, "migrations", file), "utf8"));
   }
-  for (const u of [ALICE, BRUNO, CARINE, VICTOR, DIANE, ERIC, FRANCK, GRACE, HUGO, IRENE, JULES, KARL, LINA, MAX, NOAH]) {
+  for (const u of [ALICE, BRUNO, CARINE, VICTOR, DIANE, ERIC, FRANCK, GRACE, HUGO, IRENE, JULES, KARL, LINA, MAX, NOAH, OSCAR]) {
     await db.query("insert into auth.users (id, email) values ($1, $2)", [u.id, u.email]);
   }
 }, 60_000);
@@ -341,6 +342,38 @@ describe("dossiers, étapes et paiements", () => {
     const event = await one<{ text: string }>(ERIC, "select text from public.activity_events where case_id = $1 order by at desc limit 1", [caseId]);
     expect(event.text).toBe(`Devis DEV-${YEAR}-00001 mis à jour.`);
   });
+
+  it("garde un paiement annoncé sans reçu jusqu'à sa vérification", async () => {
+    const charge = (
+      await one<{ id: string }>(ERIC, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Logement', 'agency_fee', 100000, 'XAF') returning id", [org, caseId])
+    ).id;
+    const record = (amount: number, pending: boolean) =>
+      one<{ r: { id: string; receipt_number: string | null; status: string } }>(
+        ERIC,
+        "select public.record_payment($1, $2, 'bank_transfer', 'Virement bancaire', 'VIR-9', 'Paul', now(), $3::jsonb, 'Paiement saisi.', $4) as r",
+        [caseId, amount, JSON.stringify([{ charge_id: charge, amount_minor: amount }]), pending],
+      ).then((x) => x.r);
+
+    const announced = await record(60000, true);
+    expect(announced).toMatchObject({ receipt_number: null, status: "pending" });
+    // Sa part est réservée : 60 000 annoncés + 50 000 dépasseraient les 100 000 de la prestation.
+    await expect(record(50000, false)).rejects.toThrow(/en attente de vérification compris/);
+
+    const confirm = (who: User) => one<{ r: { receipt_number: string } }>(who, "select public.confirm_payment($1, 'Paiement vérifié (reçu {recu}).') as r", [announced.id]).then((x) => x.r);
+    await expect(confirm(BRUNO)).rejects.toThrow(/introuvable/);
+    expect((await confirm(ERIC)).receipt_number).toBe(`REC-${YEAR}-00004`);
+    expect(await one(ERIC, "select status, confirmed_at is not null as confirmed from public.payments where id = $1", [announced.id])).toEqual({ status: "recorded", confirmed: true });
+    await expect(confirm(ERIC)).rejects.toThrow(/plus en attente/);
+    const event = await one<{ text: string }>(ERIC, "select text from public.activity_events where case_id = $1 order by at desc limit 1", [caseId]);
+    expect(event.text).toBe(`Paiement vérifié (reçu REC-${YEAR}-00004).`);
+
+    // Annoncé mais jamais arrivé : annulé sans reçu, sa part redevient disponible.
+    const lost = await record(40000, true);
+    await one(ERIC, "select public.void_payment($1, 'Virement jamais reçu', 'Paiement annulé.')", [lost.id]);
+    expect(await one(ERIC, "select status, receipt_number from public.payments where id = $1", [lost.id])).toEqual({ status: "voided", receipt_number: null });
+    expect((await record(40000, false)).receipt_number).toBe(`REC-${YEAR}-00005`);
+    expect(await one(ERIC, "select count(*)::int as n from public.payments where status = 'recorded' and confirmed_at is null")).toEqual({ n: 0 });
+  });
 });
 
 describe("invitations et rôles", () => {
@@ -530,7 +563,7 @@ describe("abonnements et console SELECT", () => {
     const agencies = await rows(GRACE_MFA, "select name, status, members from public.platform_agencies() where id = $1", [orgH]);
     expect(agencies).toEqual([{ name: "Agence H", status: "trialing", members: 2 }]);
     const overview = await one<{ o: { users: number } }>(GRACE_MFA, "select public.platform_overview() as o");
-    expect(overview.o.users).toBe(15);
+    expect(overview.o.users).toBe(16);
   });
 
   it("ne donne à la console aucun accès direct aux données des agences", async () => {
@@ -801,5 +834,896 @@ describe("services", () => {
     expect((await rows(KARL, "select id from public.clients where id in ($1, $2)", [clientId, otherClientId])).length).toBe(2);
     expect((await rows(KARL, "select id from public.cases where id = $1", [caseId])).length).toBe(1);
     expect((await lastEvent(otherClientId)).text).toBe("Service « Assurance voyage » supprimé de la liste de l'agence : client retiré de ce service.");
+  });
+
+  it("donne à chaque service ses étapes et fait avancer chaque client suivi", async () => {
+    const id = await saveService(KARL, "Logement à Lyon");
+    const steps = await rows<{ label: string }>(NOAH, "select label from public.service_steps where service_id = $1 order by position", [id]);
+    expect(steps.map((s) => s.label)).toEqual([
+      "Demande reçue", "Documents attendus", "Documents reçus", "Paiement vérifié (si nécessaire)", "Dossier transmis au partenaire",
+      "Réception confirmée", "Traitement en cours", "Résultat reçu", "Résultat transmis au client", "Service terminé",
+    ]);
+    const saveSteps = (who: User, labels: string[]) => one<{ n: number }>(who, "select public.save_service_steps($1, $2::text[]) as n", [id, labels]).then((r) => r.n);
+    await expect(saveSteps(LINA, ["Demande reçue"])).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(saveSteps(KARL, ["  ", ""])).rejects.toThrow(/au moins une étape/);
+    await expect(saveSteps(KARL, ["A"])).rejects.toThrow(/de 2 à 120 caractères/);
+    expect(await saveSteps(KARL, ["Demande reçue", "  Logement   trouvé ", "", "Clés remises"])).toBe(3);
+
+    const link = await addClient(LINA, id);
+    const mine = await rows<{ id: string; label: string }>(KARL, "select id, label from public.service_client_steps where service_client_id = $1 order by position", [link]);
+    expect(mine.map((s) => s.label)).toEqual(["Demande reçue", "Logement trouvé", "Clés remises"]);
+    // Une nouvelle liste d'étapes ne touche pas les suivis déjà en cours.
+    await saveSteps(KARL, ["Autre étape"]);
+    expect((await rows(KARL, "select id from public.service_client_steps where service_client_id = $1", [link])).length).toBe(3);
+    expect(await rows(BRUNO, "select id from public.service_client_steps")).toEqual([]);
+
+    const tick = (who: User, step: string, done: boolean) => one<{ s: string }>(who, "select public.set_service_client_step($1, $2) as s", [step, done]).then((r) => r.s);
+    await expect(tick(MAX, mine[0]!.id, true)).rejects.toThrow(/introuvable/);
+    await expect(tick(BRUNO, mine[0]!.id, true)).rejects.toThrow(/introuvable/);
+    expect(await tick(LINA, mine[0]!.id, true)).toBe("in_progress");
+    expect((await lastEvent()).text).toBe("Service « Logement à Lyon » : étape « Demande reçue » faite.");
+    await tick(LINA, mine[1]!.id, true);
+    expect(await tick(LINA, mine[2]!.id, true)).toBe("completed");
+    expect((await lastEvent()).text).toBe("Service « Logement à Lyon » : étape « Clés remises » faite (suivi terminé).");
+    expect(await tick(KARL, mine[1]!.id, false)).toBe("in_progress");
+    expect(await one(KARL, "select status from public.service_clients where id = $1", [link])).toEqual({ status: "in_progress" });
+    expect((await lastEvent()).text).toBe("Service « Logement à Lyon » : étape « Logement trouvé » à refaire (suivi en cours).");
+  });
+});
+
+describe("prospects", () => {
+  let org: string;
+  let karl: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    karl = await memberId(KARL);
+  });
+
+  const newProspect = (lastName: string) =>
+    one<{ id: string; status: string; source: string }>(
+      LINA,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to, status, source, source_detail)
+       values ($1, 'student', 'Inès', $2, '+237690000777', 'CM', 'Yaoundé', $3, 'prospect', 'facebook', 'Publicité rentrée') returning id, status, source`,
+      [org, lastName, karl],
+    );
+  const state = (id: string) => one<{ status: string; converted: boolean }>(KARL, "select status, converted_at is not null as converted from public.clients where id = $1", [id]);
+  const lastEvent = (id: string) => one<{ text: string }>(KARL, "select text from public.activity_events where client_id = $1 order by at desc, id desc limit 1", [id]);
+
+  it("transforme un prospect en client sur la même fiche, une seule fois", async () => {
+    const prospect = await newProspect("Mballa");
+    expect(prospect).toMatchObject({ status: "prospect", source: "facebook" });
+    const convert = (who: User) => one(who, "select public.convert_prospect($1, 'Prospect devenu client.')", [prospect.id]);
+    await expect(convert(BRUNO)).rejects.toThrow(/introuvable/);
+    await expect(convert(NOAH)).rejects.toThrow(/introuvable/);
+    await convert(LINA);
+    expect(await state(prospect.id)).toEqual({ status: "client", converted: true });
+    expect((await lastEvent(prospect.id)).text).toBe("Prospect devenu client.");
+    await expect(convert(LINA)).rejects.toThrow(/déjà cliente/);
+    await expect(as(KARL, (tx) => tx.query("update public.clients set status = 'prospect' where id = $1", [prospect.id]))).rejects.toThrow(/clients_converted_check/);
+    await expect(as(KARL, (tx) => tx.query("update public.clients set source = 'radio' where id = $1", [prospect.id]))).rejects.toThrow(/clients_source_check/);
+  });
+
+  it("devient client dès son premier dossier ou son ajout à un service", async () => {
+    const withCase = await newProspect("Essomba");
+    const travelCase = await createCase(KARL, org, withCase.id, karl);
+    expect(await state(withCase.id)).toEqual({ status: "client", converted: true });
+    expect(await one(KARL, "select text, case_id from public.activity_events where client_id = $1 and text like 'Prospect%'", [withCase.id])).toEqual({
+      text: "Prospect devenu client : premier dossier ouvert.", case_id: travelCase.id,
+    });
+
+    const withService = await newProspect("Fouda");
+    const service = (await one<{ id: string }>(KARL, "select public.save_service($1, null, 'Logement étudiant', '', null, null, true) as id", [org])).id;
+    await one(LINA, "select public.add_service_client($1, $2, null, 'in_progress', '') as id", [service, withService.id]);
+    expect(await state(withService.id)).toEqual({ status: "client", converted: true });
+    expect((await one<{ n: number }>(KARL, "select count(*)::int as n from public.activity_events where client_id = $1 and text like 'Prospect devenu client%'", [withService.id])).n).toBe(1);
+    // Un client existant reste tel quel : aucune conversion ni événement en double.
+    await createCase(KARL, org, withService.id, karl);
+    expect((await one<{ n: number }>(KARL, "select count(*)::int as n from public.activity_events where client_id = $1 and text like 'Prospect devenu client%'", [withService.id])).n).toBe(1);
+  });
+});
+
+describe("modèles d'étapes personnalisés", () => {
+  let org: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+  });
+
+  const steps = (extra: Record<string, unknown>[] = []) => [
+    { key: "new_candidate", label: "Premier rendez-vous", kind: "agency_action" },
+    ...extra,
+    { key: "closed", label: "Dossier clôturé", kind: "closure" },
+  ];
+  const save = (who: User, value: unknown, key = "campus_france") => one(who, "select public.save_workflow_template($1, $2, $3::jsonb)", [org, key, JSON.stringify(value)]);
+
+  it("garde la version de l'agence, la contrôle et peut revenir au modèle de départ", async () => {
+    await expect(save(LINA, steps())).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(save(BRUNO, steps())).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(save(KARL, [{ key: "a", label: "Seule étape", kind: "agency_action" }])).rejects.toThrow(/de 2 à 60 étapes/);
+    await expect(save(KARL, steps([{ key: "x", label: "Envoi", kind: "agency_action" }]).reverse())).rejects.toThrow(/clôture du dossier/);
+    await expect(save(KARL, steps([{ key: "closed", label: "Doublon", kind: "agency_action" }]))).rejects.toThrow(/même clé/);
+    await expect(save(KARL, steps([{ key: "x", label: "E", kind: "agency_action" }]))).rejects.toThrow(/de 2 à 120 caractères/);
+    await expect(save(KARL, steps([{ key: "x", label: "Envoi", kind: "magie" }]))).rejects.toThrow(/type connu/);
+    await expect(save(KARL, steps(), "Campus France")).rejects.toThrow(/Modèle inconnu/);
+
+    await save(KARL, steps([{ key: "custom_1", label: "Traduction des diplômes", kind: "client_action", optional: true }]));
+    await save(KARL, steps([{ key: "custom_1", label: "Traduction et légalisation", kind: "client_action" }]));
+    const saved = await rows<{ template_key: string; n: number }>(NOAH, "select template_key, jsonb_array_length(steps) as n from public.workflow_templates");
+    expect(saved).toEqual([{ template_key: "campus_france", n: 3 }]);
+    expect(await rows(BRUNO, "select template_key from public.workflow_templates")).toEqual([]);
+    await expect(as(KARL, (tx) => tx.query("delete from public.workflow_templates"))).rejects.toThrow(/permission denied/);
+
+    await expect(one(LINA, "select public.reset_workflow_template($1, 'campus_france')", [org])).rejects.toThrow(/propriétaire et les administrateurs/);
+    await one(KARL, "select public.reset_workflow_template($1, 'campus_france')", [org]);
+    expect(await rows(KARL, "select template_key from public.workflow_templates")).toEqual([]);
+  });
+});
+
+describe("partenaires et commissions", () => {
+  let org: string;
+  let karl: string;
+  let partner: string;
+  let clientId: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    karl = await memberId(KARL);
+  });
+
+  const savePartner = (who: User, name: string, code: string, id: string | null = null) =>
+    one<{ id: string }>(who, "select public.save_partner($1, $2, $3, $4, '+237690001234', 'amina@exemple.test', 25000, 'XAF', '', true) as id", [org, id, name, code]).then((r) => r.id);
+  const commission = () => one<{ id: string; status: string; amount: number }>(KARL, "select id, status, amount_minor::int as amount from public.partner_commissions where client_id = $1", [clientId]);
+
+  it("rattache les clients apportés et suit leur commission jusqu'au versement", async () => {
+    await expect(savePartner(LINA, "Amina Ngo", "AMINA26")).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(savePartner(KARL, "Amina Ngo", "a")).rejects.toThrow(/de 3 à 20 lettres/);
+    partner = await savePartner(KARL, "  Amina   Ngo ", " amina-26 ");
+    expect(await one(NOAH, "select name, code from public.partners where id = $1", [partner])).toEqual({ name: "Amina Ngo", code: "AMINA-26" });
+    await expect(savePartner(KARL, "Autre", "AMINA-26")).rejects.toThrow(/déjà utilisé/);
+    expect(await rows(BRUNO, "select id from public.partners")).toEqual([]);
+
+    clientId = (await createClient(KARL, org, karl, "Bilong")).id;
+    await expect(one(NOAH, "select public.set_client_partner($1, $2)", [clientId, partner])).rejects.toThrow(/introuvable/);
+    await one(LINA, "select public.set_client_partner($1, $2)", [clientId, partner]);
+    expect(await commission()).toMatchObject({ status: "pending", amount: 25000 });
+    expect(await rows(NOAH, "select id from public.partner_commissions")).toEqual([]);
+    const commissionId = (await commission()).id;
+    await expect(one(MAX, "select public.pay_commission($1, now(), 'Orange Money', 'OM-1')", [commissionId])).rejects.toThrow(/« à payer »/);
+
+    // Premier paiement confirmé : la commission devient « à payer ».
+    const travelCase = await createCase(KARL, org, clientId, karl);
+    const charge = (await one<{ id: string }>(KARL, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Accompagnement', 'agency_fee', 300000, 'XAF') returning id", [org, travelCase.id])).id;
+    const pay = await one<{ r: { id: string } }>(KARL, "select public.record_payment($1, 100000, 'cash', 'Espèces', '', 'Paul', now(), $2::jsonb, 'Paiement (reçu {recu}).') as r", [travelCase.id, JSON.stringify([{ charge_id: charge, amount_minor: 100000 }])]);
+    expect((await commission()).status).toBe("approved");
+
+    await expect(one(LINA, "select public.update_commission($1, 30000)", [commissionId])).rejects.toThrow(/introuvable/);
+    await one(MAX, "select public.update_commission($1, 30000)", [commissionId]);
+    await one(MAX, "select public.pay_commission($1, now(), 'Orange Money', 'OM-1')", [commissionId]);
+    expect(await commission()).toMatchObject({ status: "paid", amount: 30000 });
+    await expect(one(KARL, "select public.set_client_partner($1, null)", [clientId])).rejects.toThrow(/déjà payée/);
+    await expect(one(MAX, "select public.cancel_commission($1, 'Erreur')", [commissionId])).rejects.toThrow(/déjà payée ou annulée/);
+    // Un paiement annulé ensuite ne revient pas sur une commission déjà versée.
+    await one(KARL, "select public.void_payment($1, 'Erreur de saisie', 'Annulé.')", [pay.r.id]);
+    expect((await commission()).status).toBe("paid");
+  });
+
+  it("ouvre au partenaire un espace limité à ses clients et ses commissions", async () => {
+    const token = (await one<{ t: string }>(KARL, "select public.create_partner_access($1, 'oscar@partenaire.test') as t", [partner])).t;
+    await expect(one(LINA, "select public.create_partner_access($1, 'oscar@partenaire.test')", [partner])).rejects.toThrow(/propriétaire et les administrateurs/);
+    expect(await one(null, "select agency_name, partner_name, email from public.get_partner_access($1)", [token])).toMatchObject({ partner_name: "Amina Ngo", email: "oscar@partenaire.test" });
+    await expect(one(BRUNO, "select public.accept_partner_access($1)", [token])).rejects.toThrow(/autre adresse/);
+    await one(OSCAR, "select public.accept_partner_access($1)", [token]);
+    await expect(one(OSCAR, "select public.accept_partner_access($1)", [token])).rejects.toThrow(/déjà utilisé/);
+
+    expect((await one<{ p: boolean }>(OSCAR, "select public.is_partner() as p")).p).toBe(true);
+    const portal = (await one<{ p: { partner_name: string; clients: { label: string; progress: string; commission_status: string; amount_minor: number }[] }[] }>(OSCAR, "select public.partner_portal() as p")).p;
+    expect(portal).toHaveLength(1);
+    expect(portal[0]!.partner_name).toBe("Amina Ngo");
+    expect(portal[0]!.clients).toEqual([expect.objectContaining({ label: "Paul B.", progress: "Dossier en cours", commission_status: "paid", amount_minor: 30000 })]);
+    // Ni téléphone, ni nom complet, ni paiements du client ; aucune table de l'agence lisible.
+    expect(JSON.stringify(portal)).not.toMatch(/\+237|Bilong|100000/);
+    for (const table of ["clients", "cases", "payments", "partners", "partner_commissions", "document_requirements"]) {
+      expect(await rows(OSCAR, `select 1 from public.${table}`)).toEqual([]);
+    }
+
+    await one(KARL, "select public.revoke_partner_access($1)", [partner]);
+    expect((await one<{ p: unknown[] }>(OSCAR, "select public.partner_portal() as p")).p).toEqual([]);
+  });
+});
+
+describe("documents : solde des reçus et confirmations de réservation", () => {
+  let org: string;
+  let karl: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    karl = await memberId(KARL);
+  });
+
+  it("fige sur chaque reçu le reste à payer du dossier", async () => {
+    const client = await createClient(KARL, org, karl, "Ekane");
+    const travelCase = await createCase(KARL, org, client.id, karl);
+    const charge = (await one<{ id: string }>(KARL, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Accompagnement', 'agency_fee', 300000, 'XAF') returning id", [org, travelCase.id])).id;
+    const pay = (amount: number, pending = false) =>
+      one<{ r: { id: string } }>(KARL, "select public.record_payment($1, $2, 'cash', 'Espèces', '', 'Paul', now(), $3::jsonb, 'Paiement.', $4) as r", [travelCase.id, amount, JSON.stringify([{ charge_id: charge, amount_minor: amount }]), pending]).then((x) => x.r.id);
+    const balance = (id: string) => one<{ b: string | null }>(KARL, "select balance_after_minor::text as b from public.payments where id = $1", [id]).then((x) => x.b);
+
+    const first = await pay(100000);
+    expect(await balance(first)).toBe("200000");
+    const announced = await pay(50000, true);
+    expect(await balance(announced)).toBeNull();
+    await one(KARL, "select public.confirm_payment($1, 'Vérifié (reçu {recu}).')", [announced]);
+    expect(await balance(announced)).toBe("150000");
+    const last = await pay(150000);
+    expect(await balance(last)).toBe("0");
+    // Le premier reçu garde son chiffre, même après les paiements suivants.
+    expect(await balance(first)).toBe("200000");
+  });
+
+  it("numérote les confirmations de réservation et les réserve à l'agence", async () => {
+    const client = await createClient(KARL, org, karl, "Mvogo");
+    const service = (await one<{ id: string }>(KARL, "select public.save_service($1, null, 'Billet d''avion', '', null, null, true) as id", [org])).id;
+    const link = (await one<{ id: string }>(LINA, "select public.add_service_client($1, $2, null, 'in_progress', '') as id", [service, client.id])).id;
+    const save = (who: User, provider: string, reference: string, start: string | null = "2027-09-01", end: string | null = "2027-09-02", id: string | null = null) =>
+      one<{ r: { id: string; number: string } }>(who, "select public.save_booking($1, $2, $3, $4, $5::date, $6::date, 'Aéroport de Douala', 'Vol direct, 23 kg de bagages', 450000, 'XAF') as r", [id, link, provider, reference, start, end]).then((x) => x.r);
+
+    await expect(save(NOAH, "Air France", "ABC123")).rejects.toThrow(/introuvable/);
+    await expect(save(BRUNO, "Air France", "ABC123")).rejects.toThrow(/introuvable/);
+    await expect(save(LINA, " ", "")).rejects.toThrow(/prestataire ou la référence/);
+    await expect(save(LINA, "Air France", "ABC123", "2027-09-02", "2027-09-01")).rejects.toThrow(/date de fin/);
+    const booking = await save(LINA, "Air France", "ABC123");
+    expect(booking.number).toBe(`CONF-${YEAR}-00001`);
+    expect((await one<{ text: string }>(KARL, "select text from public.activity_events where client_id = $1 order by at desc, id desc limit 1", [client.id])).text).toBe(
+      `Confirmation de réservation CONF-${YEAR}-00001 préparée (service « Billet d'avion »).`,
+    );
+    expect((await save(LINA, "Air France", "XYZ789", null, null, booking.id)).number).toBe(`CONF-${YEAR}-00001`);
+    expect(await one(NOAH, "select reference, amount_minor::int as amount from public.service_bookings where id = $1", [booking.id])).toEqual({ reference: "XYZ789", amount: 450000 });
+    expect(await rows(BRUNO, "select id from public.service_bookings")).toEqual([]);
+    await expect(as(KARL, (tx) => tx.query("delete from public.service_bookings"))).rejects.toThrow(/permission denied/);
+    await expect(one(NOAH, "select public.delete_booking($1)", [booking.id])).rejects.toThrow(/introuvable/);
+    await one(LINA, "select public.delete_booking($1)", [booking.id]);
+    expect(await rows(KARL, "select id from public.service_bookings")).toEqual([]);
+  });
+});
+
+describe("e-mails transactionnels (Brevo) : file d'envoi, réglages, désinscription et livraison", () => {
+  let org: string;
+  let karl: string;
+
+  const WORKER_SECRET = "worker-secret-0123456789abcdef-test";
+  const WEBHOOK_SECRET = "webhook-secret-0123456789abcdef-test";
+
+  // Crée un client avec e-mail, un dossier et un frais de 300 000 XAF ; renvoie de quoi encaisser.
+  async function clientWithCharge(email: string, phone: string) {
+    const client = await one<{ id: string }>(
+      KARL,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, email, phone_e164, residence_country, city, assigned_to)
+       values ($1, 'student', 'Awa', 'Nkolo', $2, $3, 'CM', 'Yaoundé', $4) returning id`,
+      [org, email, phone, karl],
+    );
+    const travelCase = await createCase(KARL, org, client.id, karl);
+    const charge = (
+      await one<{ id: string }>(
+        KARL,
+        "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais de dossier', 'agency_fee', 300000, 'XAF') returning id",
+        [org, travelCase.id],
+      )
+    ).id;
+    const pay = (amount: number) =>
+      one<{ r: { id: string } }>(
+        KARL,
+        "select public.record_payment($1, $2, 'cash', 'Espèces', '', 'Awa', now(), $3::jsonb, 'Paiement (reçu {recu}).') as r",
+        [travelCase.id, amount, JSON.stringify([{ charge_id: charge, amount_minor: amount }])],
+      ).then((x) => x.r.id);
+    return { clientId: client.id, caseId: travelCase.id, pay };
+  }
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    karl = await memberId(KARL);
+    // Seules les empreintes SHA-256 des secrets sont stockées.
+    await db.query(
+      `insert into private.system_secrets (key, secret_sha256) values
+         ('email_worker', encode(sha256(convert_to($1, 'UTF8')), 'hex')),
+         ('brevo_webhook', encode(sha256(convert_to($2, 'UTF8')), 'hex'))
+       on conflict (key) do update set secret_sha256 = excluded.secret_sha256`,
+      [WORKER_SECRET, WEBHOOK_SECRET],
+    );
+  });
+
+  it("désactive tous les e-mails clients par défaut : un paiement confirmé n'inscrit rien", async () => {
+    const settings = await one(KARL, "select * from public.email_settings where organization_id = $1", [org]);
+    expect(settings).toMatchObject({
+      notify_payment_confirmed: false,
+      notify_appointment_reminder: false,
+      notify_case_status: false,
+      notify_missing_documents: false,
+    });
+    expect(settings).not.toHaveProperty("notify_subscription");
+
+    const { pay } = await clientWithCharge("paul.defaut@client.test", "+237690001122");
+    const paymentId = await pay(50000);
+    expect(await rows(KARL, "select id from public.email_outbox where payment_id = $1", [paymentId])).toEqual([]);
+
+    // Une agence qui enregistre ses réglages sans cocher une case la garde désactivée.
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ sender_name: "Agence K" })]);
+    expect((await one<{ on: boolean }>(KARL, "select notify_payment_confirmed as on from public.email_settings where organization_id = $1", [org])).on).toBe(false);
+  });
+
+  it("enregistre les réglages d'e-mails par agence et contrôle les rôles", async () => {
+    await expect(one(LINA, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ sender_name: "Agence K" })])).rejects.toThrow(
+      /propriétaire et les administrateurs/,
+    );
+    await expect(
+      one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ reply_to_email: "invalide" })]),
+    ).rejects.toThrow(/adresse e-mail de réponse est invalide/);
+
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [
+      org,
+      JSON.stringify({
+        sender_name: "  Agence Karl Voyages  ",
+        reply_to_email: "Contact@Agence-K.test",
+        notify_payment_confirmed: true,
+        notify_case_status: true,
+      }),
+    ]);
+
+    const settings = await one(NOAH, "select sender_name, reply_to_email, notify_payment_confirmed, notify_case_status from public.email_settings where organization_id = $1", [org]);
+    expect(settings).toEqual({
+      sender_name: "Agence Karl Voyages",
+      reply_to_email: "contact@agence-k.test",
+      notify_payment_confirmed: true,
+      notify_case_status: true,
+    });
+    expect(await rows(BRUNO, "select organization_id from public.email_settings where organization_id = $1", [org])).toEqual([]);
+  });
+
+  it("n'inscrit un e-mail de paiement qu'à la confirmation, sans doublon, et suit la livraison Brevo", async () => {
+    const client = await one<{ id: string; email_unsubscribe_token: string }>(
+      KARL,
+      `insert into public.clients (organization_id, client_type, first_name, last_name, email, phone_e164, residence_country, city, assigned_to)
+       values ($1, 'student', 'Inès', 'Tchoumi', 'ines@client.test', '+237690009988', 'CM', 'Douala', $2)
+       returning id, email_unsubscribe_token::text`,
+      [org, karl],
+    );
+    const travelCase = await createCase(KARL, org, client.id, karl);
+    const charge = (
+      await one<{ id: string }>(
+        KARL,
+        "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais de dossier', 'agency_fee', 250000, 'XAF') returning id",
+        [org, travelCase.id],
+      )
+    ).id;
+
+    // 1. Paiement annoncé (« pending ») : aucun e-mail dans la file d'envoi.
+    const pendingPay = (
+      await one<{ r: { id: string } }>(
+        KARL,
+        "select public.record_payment($1, 100000, 'mobile_money', 'Orange Money', 'OM-99', 'Inès', now(), $2::jsonb, 'Annoncé.', true) as r",
+        [travelCase.id, JSON.stringify([{ charge_id: charge, amount_minor: 100000 }])],
+      )
+    ).r.id;
+    expect(await rows(KARL, "select id from public.email_outbox where payment_id = $1", [pendingPay])).toEqual([]);
+
+    // 2. Confirmation du paiement : un e-mail payment_confirmed est inscrit dans la file et noté « queued » dans les communications.
+    await one(KARL, "select public.confirm_payment($1, 'Confirmé (reçu {recu}).')", [pendingPay]);
+    const queued = await rows<{ id: string; kind: string; status: string; recipient_email: string; payload: { balance_after_minor: number } }>(
+      KARL,
+      "select id, kind, status, recipient_email, payload from public.email_outbox where payment_id = $1",
+      [pendingPay],
+    );
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      kind: "payment_confirmed",
+      status: "queued",
+      recipient_email: "ines@client.test",
+    });
+    expect(queued[0]!.payload.balance_after_minor).toBe(150000);
+
+    const commBefore = await one<{ status: string; channel: string }>(
+      KARL,
+      "select status, channel from public.communication_logs where email_outbox_id = $1",
+      [queued[0]!.id],
+    );
+    expect(commBefore).toEqual({ status: "queued", channel: "email" });
+
+    // 3. Réclamation et envoi par l'agence : « sent » après acceptation Brevo, puis « delivered » uniquement via le webhook.
+    await expect(rows(BRUNO, "select * from public.claim_agency_emails($1, 5)", [org])).rejects.toThrow(/Accès refusé/);
+    const claimed = await rows<{ id: string; status: string; attempts: number }>(KARL, "select id, status, attempts from public.claim_agency_emails($1, 5)", [org]);
+    const target = claimed.find((c) => c.id === queued[0]!.id)!;
+    expect(target).toMatchObject({ status: "sending", attempts: 1 });
+
+    await one(KARL, "select public.complete_agency_email($1, true, '<brevo-msg-001@smtp-relay.mailin.fr>', null)", [target.id]);
+    expect(await one(KARL, "select status, brevo_message_id from public.email_outbox where id = $1", [target.id])).toEqual({
+      status: "sent",
+      brevo_message_id: "<brevo-msg-001@smtp-relay.mailin.fr>",
+    });
+    expect((await one<{ status: string }>(KARL, "select status from public.communication_logs where email_outbox_id = $1", [target.id])).status).toBe("sent");
+
+    // 4. Webhook Brevo : secret invalide refusé, secret valide marque « delivered ».
+    await expect(one(null, "select public.apply_brevo_webhook('mauvais-secret', '<brevo-msg-001@smtp-relay.mailin.fr>', 'delivered', null)")).rejects.toThrow(
+      /Secret webhook invalide/,
+    );
+    const applied = await one<{ ok: boolean }>(
+      null,
+      "select public.apply_brevo_webhook($1, '<brevo-msg-001@smtp-relay.mailin.fr>', 'delivered', null) as ok",
+      [WEBHOOK_SECRET],
+    );
+    expect(applied.ok).toBe(true);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [target.id])).status).toBe("delivered");
+    expect((await one<{ status: string }>(KARL, "select status from public.communication_logs where email_outbox_id = $1", [target.id])).status).toBe("delivered");
+
+    // 5. Désinscription du client : bloque les relances mais laisse passer l'envoi d'un document demandé.
+    const unsub = await one<{ r: { first_name: string; unsubscribed: boolean } }>(
+      null,
+      "select public.unsubscribe_client_email($1::uuid) as r",
+      [client.email_unsubscribe_token],
+    );
+    expect(unsub.r).toMatchObject({ first_name: "Inès", unsubscribed: true });
+
+    await expect(
+      one(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid())", [travelCase.id]),
+    ).rejects.toThrow(/désinscrit/);
+
+    const docOutbox = await one<{ id: string }>(
+      LINA,
+      "select public.queue_agency_email($1, 'document_send', 'doc:1', $2, $3, null, 'Votre récapitulatif', '{}'::jsonb, 'Récapitulatif (PDF)') as id",
+      [org, client.id, travelCase.id],
+    );
+    expect(docOutbox.id).toBeTruthy();
+    // Même clé d'idempotence : aucun doublon créé.
+    const dupOutbox = await one<{ id: string | null }>(
+      LINA,
+      "select public.queue_agency_email($1, 'document_send', 'doc:1', $2, $3, null, 'Votre récapitulatif', '{}'::jsonb, 'Récapitulatif (PDF)') as id",
+      [org, client.id, travelCase.id],
+    );
+    expect(dupOutbox.id).toBeNull();
+  });
+
+  it("refuse la file d'envoi aux rôles sans dossiers et toute confirmation de paiement manuelle", async () => {
+    await expect(rows(NOAH, "select * from public.claim_agency_emails($1, 5)", [org])).rejects.toThrow(/Accès refusé/);
+    const ines = await one<{ id: string }>(KARL, "select id from public.clients where email = 'ines@client.test'");
+    await expect(
+      one(LINA, "select public.queue_agency_email($1, 'payment_confirmed', 'faux:1', $2, null, null, 'Reçu', '{}'::jsonb, null)", [org, ines.id]),
+    ).rejects.toThrow(/non autorisé/);
+    // Relances et avancement : uniquement par leurs fonctions, qui tirent le contenu de la base.
+    for (const kind of ["missing_documents", "case_status_changed"]) {
+      await expect(
+        one(LINA, "select public.queue_agency_email($1, $2, 'faux:2', $3, null, null, 'Visa accordé', '{}'::jsonb, null)", [org, kind, ines.id]),
+      ).rejects.toThrow(/non autorisé/);
+    }
+    // Un dossier d'un autre client ne peut pas être joint.
+    const other = await clientWithCharge("autre.client@client.test", "+237690003344");
+    await expect(
+      one(LINA, "select public.queue_agency_email($1, 'document_send', 'doc:x', $2, $3, null, 'Doc', '{}'::jsonb, null)", [org, ines.id, other.caseId]),
+    ).rejects.toThrow(/n'appartient pas à ce client/);
+    // Un envoi demandé par un membre est marqué comme non automatique.
+    const doc = await one<{ is_automatic: boolean }>(KARL, "select is_automatic from public.email_outbox where idempotency_key = 'doc:1'");
+    expect(doc.is_automatic).toBe(false);
+  });
+
+  it("revérifie juste avant l'envoi : paiement annulé ou notification désactivée = e-mail annulé, jamais envoyé", async () => {
+    const { pay } = await clientWithCharge("awa@client.test", "+237690005566");
+    const p1 = await pay(100000);
+    const p2 = await pay(100000);
+    const queued = await rows<{ payment_id: string; status: string }>(
+      KARL,
+      "select payment_id, status from public.email_outbox where payment_id = any($1::uuid[]) order by created_at",
+      [[p1, p2]],
+    );
+    expect(queued.map((q) => q.status)).toEqual(["queued", "queued"]);
+
+    // Paiement annulé entre l'inscription et l'envoi : l'e-mail est annulé, l'autre part.
+    await one(KARL, "select public.void_payment($1, 'Erreur de saisie', 'Annulé.')", [p1]);
+    const claimed = await rows<{ id: string; payment_id: string | null }>(KARL, "select id, payment_id from public.claim_agency_emails($1, 25)", [org]);
+    expect(claimed.some((c) => c.payment_id === p1)).toBe(false);
+    const sendingP2 = claimed.find((c) => c.payment_id === p2)!;
+    expect(sendingP2).toBeTruthy();
+    const cancelled = await one<{ status: string; last_error: string }>(KARL, "select status, last_error from public.email_outbox where payment_id = $1", [p1]);
+    expect(cancelled).toEqual({ status: "cancelled", last_error: "Annulé : le paiement n'est plus confirmé." });
+    expect(
+      (await one<{ status: string }>(KARL, "select cl.status from public.communication_logs cl join public.email_outbox e on e.id = cl.email_outbox_id where e.payment_id = $1", [p1])).status,
+    ).toBe("cancelled");
+
+    // Erreur définitive (adresse refusée) : échec immédiat, pas de nouvelle tentative.
+    await one(KARL, "select public.complete_agency_email($1, false, null, 'Brevo (400) : adresse invalide', true)", [sendingP2.id]);
+    expect(await one(KARL, "select status, attempts from public.email_outbox where id = $1", [sendingP2.id])).toEqual({ status: "failed", attempts: 1 });
+    // Une seconde clôture du même envoi est sans effet.
+    await one(KARL, "select public.complete_agency_email($1, true, '<double@brevo>', null)", [sendingP2.id]);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [sendingP2.id])).status).toBe("failed");
+
+    // Notification désactivée par l'agence après l'inscription : annulée avant l'envoi.
+    const p3 = await pay(50000);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where payment_id = $1", [p3])).status).toBe("queued");
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_payment_confirmed: false })]);
+    await rows(KARL, "select id from public.claim_agency_emails($1, 25)", [org]);
+    expect(await one(KARL, "select status, last_error from public.email_outbox where payment_id = $1", [p3])).toEqual({
+      status: "cancelled",
+      last_error: "Annulé : cette notification est désactivée par l'agence.",
+    });
+  });
+
+  it("planificateur et webhook : secrets vérifiés par empreinte, statuts de livraison fiables", async () => {
+    // Le secret n'est jamais stocké en clair.
+    const cols = await db.query<{ column_name: string }>(
+      "select column_name from information_schema.columns where table_schema = 'private' and table_name = 'system_secrets'",
+    );
+    expect(cols.rows.map((c) => c.column_name).sort()).toEqual(["key", "secret_sha256", "updated_at"]);
+
+    await expect(one(null, "select * from public.claim_system_emails('mauvais-secret-mauvais-secret-0000', 5)")).rejects.toThrow(/Secret système invalide/);
+    await expect(one(null, "select * from public.claim_system_emails($1, 5)", [WORKER_SECRET.slice(0, 20)])).rejects.toThrow(/Secret système invalide/);
+
+    // Un e-mail demandé par l'agence (sans PDF : relance des pièces), envoyé par le planificateur.
+    const ines = await one<{ id: string }>(KARL, "select id from public.clients where email = 'ines@client.test'");
+    await db.query("update public.clients set email_opt_out = false, email_opt_out_at = null where id = $1", [ines.id]);
+    const inesCase = await one<{ id: string }>(KARL, "select id from public.cases where client_id = $1 and status = 'active' limit 1", [ines.id]);
+    const queuedId = (await one<{ id: string }>(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid()) as id", [inesCase.id])).id;
+    const claimed = await rows<{ id: string }>(null, "select id from public.claim_system_emails($1, 50)", [WORKER_SECRET]);
+    expect(claimed.some((c) => c.id === queuedId)).toBe(true);
+    await one(null, "select public.complete_system_email($1, $2, true, '<msg-webhook@brevo>', null)", [WORKER_SECRET, queuedId]);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [queuedId])).status).toBe("sent");
+
+    const hook = (event: string, reason: string | null = null) =>
+      one(null, "select public.apply_brevo_webhook($1, '<msg-webhook@brevo>', $2, $3)", [WEBHOOK_SECRET, event, reason]);
+
+    // Report temporaire : le statut ne change pas.
+    await hook("soft_bounce", "Boîte pleine");
+    expect(await one(KARL, "select status, last_event, last_error from public.email_outbox where id = $1", [queuedId])).toEqual({
+      status: "sent",
+      last_event: "soft_bounce",
+      last_error: "Boîte pleine",
+    });
+    // Signalé comme indésirable : le client est désinscrit, et l'e-mail ne repasse jamais « livré ».
+    await hook("spam");
+    await hook("delivered");
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [queuedId])).status).toBe("complained");
+    expect((await one<{ email_opt_out: boolean }>(KARL, "select email_opt_out from public.clients where id = $1", [ines.id])).email_opt_out).toBe(true);
+
+    // Événement arrivé avant l'enregistrement de l'identifiant Brevo : retrouvé par l'étiquette « outbox-<id> ».
+    const early = await clientWithCharge("livraison.rapide@client.test", "+237690004401");
+    const earlyId = (await one<{ id: string }>(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid()) as id", [early.caseId])).id;
+    await rows(null, "select id from public.claim_system_emails($1, 50)", [WORKER_SECRET]);
+    const tagged = (event: string, messageId: string | null, outboxId: string, reason: string | null = null) =>
+      one<{ ok: boolean }>(null, "select public.apply_brevo_webhook($1, $2, $3, $4, $5) as ok", [WEBHOOK_SECRET, messageId, event, reason, outboxId]).then((r) => r.ok);
+    expect(await tagged("delivered", "<msg-rapide@brevo>", earlyId)).toBe(true);
+    expect(await one(KARL, "select status, brevo_message_id, last_event, last_error from public.email_outbox where id = $1", [earlyId])).toEqual({
+      status: "delivered",
+      brevo_message_id: "<msg-rapide@brevo>",
+      last_event: "delivered",
+      last_error: null,
+    });
+    // La clôture qui arrive ensuite ne change rien ; un report temporaire n'écrit plus d'erreur sur un e-mail livré.
+    await one(null, "select public.complete_system_email($1, $2, true, '<msg-rapide@brevo>', null)", [WORKER_SECRET, earlyId]);
+    expect(await tagged("soft_bounce", "<msg-rapide@brevo>", earlyId, "Boîte pleine")).toBe(true);
+    expect(await one(KARL, "select status, last_error from public.email_outbox where id = $1", [earlyId])).toEqual({ status: "delivered", last_error: null });
+    expect((await one<{ status: string }>(KARL, "select status from public.communication_logs where email_outbox_id = $1", [earlyId])).status).toBe("delivered");
+    // Une étiquette ne permet jamais de remplacer un identifiant Brevo différent.
+    expect(await tagged("hard_bounce", "<autre-message@brevo>", earlyId)).toBe(false);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [earlyId])).status).toBe("delivered");
+    // Mauvais secret : refus.
+    await expect(one(null, "select public.apply_brevo_webhook('mauvais-secret-mauvais-secret-0000', '<x>', 'delivered', null, null)")).rejects.toThrow(/Secret webhook invalide/);
+  });
+
+  // Fait avancer un dossier jusqu'à l'étape `key`, comme l'écran du dossier (verrou de version compris).
+  async function moveTo(caseId: string, key: string, casePatch: Record<string, unknown> = {}) {
+    const { version } = await one<{ version: number }>(KARL, "select version from public.cases where id = $1", [caseId]);
+    const steps = await rows<{ id: string; key: string; kind: string; status: string }>(KARL, "select id, key, kind, status from public.case_steps where case_id = $1", [caseId]);
+    const patch = steps
+      .filter((s) => s.status === "in_progress" || s.key === key)
+      .map((s) => ({ id: s.id, status: s.key === key ? (s.kind === "closure" ? "done" : "in_progress") : "done" }));
+    return one<{ v: number }>(KARL, "select public.apply_case_transition($1, $2, $3::jsonb, $4::jsonb, 'Étape') as v", [
+      caseId,
+      version,
+      JSON.stringify(patch),
+      JSON.stringify({ next_action: key, ...casePatch }),
+    ]).then((r) => r.v);
+  }
+  const caseEmails = (caseId: string) =>
+    rows<{ id: string; status: string; is_automatic: boolean; subject: string; payload: Record<string, unknown>; last_error: string | null }>(
+      KARL,
+      "select id, status, is_automatic, subject, payload, last_error from public.email_outbox where case_id = $1 and kind = 'case_status_changed' order by created_at, id",
+      [caseId],
+    );
+
+  it("avancement du dossier : seulement si l'agence l'a activé, et seulement quand le client est concerné", async () => {
+    const { clientId, caseId } = await clientWithCharge("suivi@client.test", "+237690007788");
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_case_status: false })]);
+    // Désactivé : même une action attendue du client n'envoie rien.
+    await moveTo(caseId, "documents");
+    expect(await caseEmails(caseId)).toEqual([]);
+
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_case_status: true })]);
+    // Étape de travail de l'agence : rien.
+    await moveTo(caseId, "application_prep");
+    expect(await caseEmails(caseId)).toEqual([]);
+
+    // Action attendue du client (ici, retour à la collecte des documents) : un e-mail, contenu tiré de la base.
+    const v = await moveTo(caseId, "documents");
+    const [docs] = await caseEmails(caseId);
+    expect(docs).toMatchObject({ status: "queued", is_automatic: true });
+    expect(docs!.subject).toMatch(/^Action attendue pour votre dossier /);
+    expect(docs!.payload).toMatchObject({ event: "client_action", step_label: "Collecte des documents", case_version: v, client_first_name: "Awa" });
+    const log = await one<{ status: string; summary: string }>(KARL, "select status, summary from public.communication_logs where email_outbox_id = $1", [docs!.id]);
+    expect(log).toEqual({ status: "queued", summary: "Avancement du dossier envoyé par e-mail : Collecte des documents" });
+
+    // Le dossier a encore changé avant l'envoi (attente d'un organisme : rien à dire) : l'information dépassée est annulée.
+    await moveTo(caseId, "study_procedure");
+    expect(await caseEmails(caseId)).toHaveLength(1);
+    await rows(KARL, "select id from public.claim_agency_emails($1, 50)", [org]);
+    expect((await caseEmails(caseId))[0]).toMatchObject({
+      status: "cancelled",
+      last_error: "Annulé : le dossier a encore changé depuis (nouvelle étape ou retour en arrière).",
+    });
+
+    // Décision enregistrée : un e-mail, toujours d'actualité au moment de l'envoi.
+    await moveTo(caseId, "visa_refused", { outcome: "refused" });
+    const decision = (await caseEmails(caseId))[1]!;
+    expect(decision.payload).toMatchObject({ event: "decision", status_label: "Visa refusé", outcome: "refused" });
+    expect(decision.subject).toMatch(/^Mise à jour de votre dossier /);
+    const claimed = await rows<{ id: string }>(KARL, "select id from public.claim_agency_emails($1, 50)", [org]);
+    expect(claimed.map((c) => c.id)).toContain(decision.id);
+
+    // Clôture : un dernier e-mail.
+    await moveTo(caseId, "closed", { status: "closed", closed_at: new Date().toISOString() });
+    expect((await caseEmails(caseId))[2]!.payload).toMatchObject({ event: "closure", status_label: "Dossier clôturé" });
+    expect(await caseEmails(caseId)).toHaveLength(3);
+
+    // Client désinscrit, ou sans adresse : rien.
+    const optedOut = await clientWithCharge("plus.de.mails@client.test", "+237690007799");
+    await db.query("update public.clients set email_opt_out = true where id = $1", [optedOut.clientId]);
+    await moveTo(optedOut.caseId, "documents");
+    expect(await caseEmails(optedOut.caseId)).toEqual([]);
+    const noEmail = await clientWithCharge("sans.adresse@client.test", "+237690007711");
+    await db.query("update public.clients set email = null where id = $1", [noEmail.clientId]);
+    await moveTo(noEmail.caseId, "documents");
+    expect(await caseEmails(noEmail.caseId)).toEqual([]);
+    expect(clientId).toBeTruthy();
+  });
+
+  it("relance des pièces manquantes : liste tirée de la base, droits, désinscription et dossier clôturé", async () => {
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_missing_documents: false })]);
+    const { caseId } = await clientWithCharge("pieces@client.test", "+237690009900");
+    const reqs = await rows<{ id: string; label: string }>(KARL, "select id, label from public.document_requirements where case_id = $1 and is_required order by created_at, id", [caseId]);
+    expect(reqs.length).toBeGreaterThanOrEqual(3);
+    const [toCorrect, validated, optional] = reqs;
+    await db.query("update public.document_requirements set status = 'to_correct', review_comment = 'Photo illisible' where id = $1", [toCorrect!.id]);
+    await db.query("update public.document_requirements set status = 'validated' where id = $1", [validated!.id]);
+    await db.query("update public.document_requirements set is_required = false where id = $1", [optional!.id]);
+    const expected = reqs.length - 2;
+
+    const id = (await one<{ id: string }>(LINA, "select public.queue_missing_documents_email($1, '11111111-1111-4111-8111-111111111111') as id", [caseId])).id;
+    const sent = await one<{ kind: string; is_automatic: boolean; subject: string; payload: { missing_documents: { label: string; status: string; comment: string }[] } }>(
+      KARL,
+      "select kind, is_automatic, subject, payload from public.email_outbox where id = $1",
+      [id],
+    );
+    expect(sent).toMatchObject({ kind: "missing_documents", is_automatic: false });
+    expect(sent.subject).toMatch(/^Pièces attendues pour votre dossier /);
+    const docs = sent.payload.missing_documents;
+    expect(docs).toHaveLength(expected);
+    expect(docs[0]).toEqual({ label: toCorrect!.label, status: "to_correct", comment: "Photo illisible" });
+    expect(docs.map((d) => d.label)).not.toContain(validated!.label);
+    expect(docs.map((d) => d.label)).not.toContain(optional!.label);
+    const log = await one<{ summary: string }>(KARL, "select summary from public.communication_logs where email_outbox_id = $1", [id]);
+    expect(log.summary).toBe(`Relance des pièces manquantes par e-mail (${expected} pièce${expected > 1 ? "s" : ""})`);
+
+    // Même demande : pas de doublon. Rôles sans dossiers : refusé.
+    expect((await one<{ id: string | null }>(LINA, "select public.queue_missing_documents_email($1, '11111111-1111-4111-8111-111111111111') as id", [caseId])).id).toBeNull();
+    for (const who of [MAX, NOAH]) {
+      await expect(one(who, "select public.queue_missing_documents_email($1, gen_random_uuid())", [caseId])).rejects.toThrow(/pas le droit/);
+    }
+
+    // Demandée par un membre : part même si la relance automatique est désactivée.
+    const claimed = await rows<{ id: string }>(KARL, "select id from public.claim_agency_emails($1, 50)", [org]);
+    expect(claimed.map((c) => c.id)).toContain(id);
+
+    // Plus aucune pièce manquante : refusé.
+    const second = (await one<{ id: string }>(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid()) as id", [caseId])).id;
+    await db.query("update public.document_requirements set status = 'validated' where case_id = $1 and is_required", [caseId]);
+    await expect(one(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid())", [caseId])).rejects.toThrow(/Aucune pièce obligatoire/);
+
+    // Dossier clôturé : refusé, et la relance encore en file est annulée.
+    await db.query("update public.cases set status = 'closed', closed_at = now() where id = $1", [caseId]);
+    await expect(one(LINA, "select public.queue_missing_documents_email($1, gen_random_uuid())", [caseId])).rejects.toThrow(/n'est plus en cours/);
+    await rows(KARL, "select id from public.claim_agency_emails($1, 50)", [org]);
+    expect(await one(KARL, "select status, last_error from public.email_outbox where id = $1", [second])).toEqual({
+      status: "cancelled",
+      last_error: "Annulé : le dossier n'est plus en cours.",
+    });
+  });
+
+  const schedule = () => one<{ r: { reminders: number; relances: number; notices: number } }>(null, "select public.schedule_system_emails($1) as r", [WORKER_SECRET]).then((x) => x.r);
+  // Demain à l'heure donnée, dans le fuseau de l'agence (Africa/Douala).
+  const tomorrowAt = (time: string, days = 1) => `((now() at time zone 'Africa/Douala')::date + ${days} + time '${time}') at time zone 'Africa/Douala'`;
+  async function appointment(clientId: string, caseId: string | null, opts: { kind?: string; status?: string; when?: string; title?: string } = {}) {
+    return (
+      await one<{ id: string }>(
+        KARL,
+        `insert into public.appointments (organization_id, client_id, case_id, kind, title, starts_at, location, assigned_to, status)
+         values ($1, $2, $3, $4, $5, ${opts.when ?? tomorrowAt("10:00")}, 'Agence de Douala', $6, $7) returning id`,
+        [org, clientId, caseId, opts.kind ?? "consultation", opts.title ?? "Point sur le dossier", karl, opts.status ?? "planned"],
+      )
+    ).id;
+  }
+  const reminderOf = (appointmentId: string) =>
+    rows<{ id: string; status: string; last_error: string | null; payload: Record<string, unknown> }>(
+      KARL,
+      "select id, status, last_error, payload from public.email_outbox where appointment_id = $1 and kind = 'appointment_reminder' order by created_at, id",
+      [appointmentId],
+    );
+
+  it("tâche planifiée : secret exigé, rappel la veille seulement pour les vrais rendez-vous, revérifié avant l'envoi", async () => {
+    await expect(one(null, "select public.schedule_system_emails('mauvais-secret-mauvais-secret-0000')")).rejects.toThrow(/Secret système invalide/);
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_appointment_reminder: false })]);
+    const { clientId, caseId } = await clientWithCharge("rdv@client.test", "+237690006601");
+    const rdv = await appointment(clientId, caseId);
+    const deadline = await appointment(clientId, caseId, { kind: "document_deadline", title: "Date limite des pièces" });
+    const later = await appointment(clientId, caseId, { when: tomorrowAt("10:00", 2) });
+    const cancelled = await appointment(clientId, caseId, { status: "cancelled" });
+    const optedOut = await clientWithCharge("rdv.desinscrit@client.test", "+237690006602");
+    await db.query("update public.clients set email_opt_out = true where id = $1", [optedOut.clientId]);
+    const rdvOptedOut = await appointment(optedOut.clientId, optedOut.caseId);
+
+    // Réglage désactivé : aucun rappel.
+    await schedule();
+    expect(await reminderOf(rdv)).toEqual([]);
+
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_appointment_reminder: true })]);
+    await schedule();
+    await schedule();
+    const [reminder] = await reminderOf(rdv);
+    expect(await reminderOf(rdv)).toHaveLength(1);
+    expect(reminder!.payload).toMatchObject({ appointment_title: "Point sur le dossier", all_day: false, location: "Agence de Douala", client_first_name: "Awa" });
+    expect(new Date(String(reminder!.payload.starts_at)).getTime()).toBeGreaterThan(Date.now());
+    for (const other of [deadline, later, cancelled, rdvOptedOut]) expect(await reminderOf(other)).toEqual([]);
+    const log = await one<{ actor_id: string | null; summary: string }>(KARL, "select actor_id, summary from public.communication_logs where email_outbox_id = $1", [reminder!.id]);
+    expect(log).toEqual({ actor_id: null, summary: "Rappel de rendez-vous envoyé par e-mail : Point sur le dossier" });
+
+    // Rendez-vous déplacé avant l'envoi : l'ancien rappel est annulé, un nouveau est préparé pour la nouvelle heure.
+    await one(KARL, `update public.appointments set starts_at = ${tomorrowAt("15:00")} where id = $1 returning id`, [rdv]);
+    const claimed = await rows<{ id: string; kind: string }>(null, "select id, kind from public.claim_system_emails($1, 50)", [WORKER_SECRET]);
+    expect(claimed.map((c) => c.id)).not.toContain(reminder!.id);
+    expect((await reminderOf(rdv))[0]).toMatchObject({ status: "cancelled", last_error: "Annulé : le rendez-vous a été déplacé, annulé ou est déjà passé." });
+    await schedule();
+    const moved = (await reminderOf(rdv))[1]!;
+    expect(moved.status).toBe("queued");
+    expect((await rows<{ id: string }>(null, "select id from public.claim_system_emails($1, 50)", [WORKER_SECRET])).map((c) => c.id)).toContain(moved.id);
+
+    // La tâche planifiée ne prend jamais un e-mail qui doit joindre un PDF : il part depuis l'agence.
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_payment_confirmed: true })]);
+    const pay = await clientWithCharge("recu.planifie@client.test", "+237690006603");
+    const paymentId = await pay.pay(10000);
+    const paymentMail = await one<{ id: string }>(KARL, "select id from public.email_outbox where payment_id = $1", [paymentId]);
+    expect((await rows<{ id: string }>(null, "select id from public.claim_system_emails($1, 50)", [WORKER_SECRET])).map((c) => c.id)).not.toContain(paymentMail.id);
+    expect((await one<{ status: string }>(KARL, "select status from public.email_outbox where id = $1", [paymentMail.id])).status).toBe("queued");
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_payment_confirmed: false, notify_appointment_reminder: true })]);
+  });
+
+  it("relance automatique des pièces : dossier qui attend le client, sans nouvelle depuis 3 jours, une fois par semaine, 3 fois au plus", async () => {
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_missing_documents: true })]);
+    const waiting = await clientWithCharge("relance.auto@client.test", "+237690006604");
+    await moveTo(waiting.caseId, "documents");
+    const internal = await clientWithCharge("relance.interne@client.test", "+237690006605");
+    const age = (caseId: string, days: number) =>
+      db.exec(`alter table public.cases disable trigger cases_touch;
+               update public.cases set updated_at = now() - interval '${days} days' where id = '${caseId}';
+               alter table public.cases enable trigger cases_touch;`);
+    const relances = (caseId: string) =>
+      rows<{ id: string; is_automatic: boolean; payload: { missing_documents: unknown[] } }>(
+        KARL,
+        "select id, is_automatic, payload from public.email_outbox where case_id = $1 and kind = 'missing_documents' and status <> 'cancelled' order by created_at, id",
+        [caseId],
+      );
+
+    // Dossier modifié récemment : on laisse le temps au client.
+    await schedule();
+    expect(await relances(waiting.caseId)).toEqual([]);
+
+    await age(waiting.caseId, 4);
+    await age(internal.caseId, 4); // en attente d'une action de l'agence : jamais relancé
+    await schedule();
+    const [first] = await relances(waiting.caseId);
+    expect(first).toMatchObject({ is_automatic: true });
+    expect(first!.payload.missing_documents.length).toBeGreaterThan(0);
+    expect(await relances(internal.caseId)).toEqual([]);
+    expect((await one<{ summary: string }>(KARL, "select summary from public.communication_logs where email_outbox_id = $1", [first!.id])).summary).toMatch(/^Relance automatique des pièces manquantes \(\d+ pièces?\)$/);
+
+    // Au plus une relance par semaine…
+    await schedule();
+    expect(await relances(waiting.caseId)).toHaveLength(1);
+    // … et 3 relances automatiques au plus (chaque relance est vieillie d'une semaine).
+    const olderThanAWeek = () =>
+      db.query(
+        "update public.email_outbox set created_at = created_at - interval '8 days', idempotency_key = idempotency_key || ':' || gen_random_uuid() where case_id = $1 and kind = 'missing_documents'",
+        [waiting.caseId],
+      );
+    for (let i = 0; i < 3; i++) {
+      await olderThanAWeek();
+      await schedule();
+    }
+    expect(await relances(waiting.caseId)).toHaveLength(3);
+
+    // Réglage désactivé : plus rien.
+    await one(KARL, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_missing_documents: false, notify_appointment_reminder: true })]);
+    const quiet = await clientWithCharge("relance.off@client.test", "+237690006606");
+    await moveTo(quiet.caseId, "documents");
+    await age(quiet.caseId, 4);
+    await schedule();
+    expect(await relances(quiet.caseId)).toEqual([]);
+  });
+
+  it("messages de la plateforme restés en attente plus de 3 jours : annulés au lieu de partir en retard", async () => {
+    const platformMail = (key: string, kind: string, age: string) =>
+      db
+        .query<{ id: string }>(
+          `insert into public.email_outbox (organization_id, kind, idempotency_key, recipient_email, recipient_name, subject, payload, created_at)
+           values ($1, $2, $3, $4, 'Karl Biya', 'Message', '{}'::jsonb, now() - $5::interval) returning id`,
+          [org, kind, key, KARL.email, age],
+        )
+        .then((r) => r.rows[0]!.id);
+    const oldWelcome = await platformMail("agency_welcome:ancien", "agency_welcome", "10 days");
+    const oldNotice = await platformMail("subscription_notice:ancien", "subscription_notice", "4 days");
+    const freshWelcome = await platformMail("agency_welcome:recent", "agency_welcome", "1 hour");
+    const claimed = (await rows<{ id: string }>(null, "select id from public.claim_system_emails($1, 50)", [WORKER_SECRET])).map((c) => c.id);
+    expect(claimed).toContain(freshWelcome);
+    for (const id of [oldWelcome, oldNotice]) {
+      expect(claimed).not.toContain(id);
+      expect((await db.query("select status, last_error from public.email_outbox where id = $1", [id])).rows[0]).toEqual({
+        status: "cancelled",
+        last_error: "Annulé : message trop ancien pour être encore utile.",
+      });
+    }
+  });
+
+  it("alertes d'abonnement : au propriétaire, une seule fois par étape, sans lien de désinscription", async () => {
+    const original = (
+      await db.query<{ status: string; trial_ends_at: string | null; current_period_end: string | null }>(
+        "select status, trial_ends_at, current_period_end from public.subscriptions where organization_id = $1",
+        [org],
+      )
+    ).rows[0]!;
+    const setSub = (sql: string) => db.query(`update public.subscriptions set ${sql} where organization_id = $1`, [org]);
+    const notices = async () =>
+      (
+        await db.query<{ recipient_email: string; client_id: string | null; payload: Record<string, unknown> }>(
+          "select recipient_email, client_id, payload from public.email_outbox where organization_id = $1 and kind = 'subscription_notice' and payload ? 'stage' order by created_at, id",
+          [org],
+        )
+      ).rows;
+
+    try {
+      await setSub("status = 'trialing', trial_ends_at = now() + interval '20 days'");
+      await schedule();
+      expect(await notices()).toEqual([]);
+
+      await setSub("trial_ends_at = now() + interval '5 days'");
+      await schedule();
+      await schedule();
+      expect(await notices()).toHaveLength(1);
+      const [week] = await notices();
+      expect(week).toMatchObject({ recipient_email: KARL.email, client_id: null });
+      expect(week!.payload).toMatchObject({ stage: "trial_7d", owner_name: KARL.name, notice_title: "Votre essai gratuit se termine bientôt" });
+      expect(week!.payload).not.toHaveProperty("unsubscribe_token");
+
+      await setSub("trial_ends_at = now() + interval '12 hours'");
+      await schedule();
+      await setSub("trial_ends_at = now() - interval '1 hour'");
+      await schedule();
+      await setSub("status = 'suspended'");
+      await schedule();
+      await setSub("status = 'active', trial_ends_at = null, current_period_end = now() + interval '3 days'");
+      await schedule();
+      await schedule();
+      expect((await notices()).map((n) => n.payload.stage)).toEqual(["trial_7d", "trial_1d", "trial_ended", "suspended", "renewal_7d"]);
+      expect((await notices()).find((n) => n.payload.stage === "suspended")!.payload.deadline_at).toBeNull();
+    } finally {
+      await db.query("update public.subscriptions set status = $2, trial_ends_at = $3, current_period_end = $4 where organization_id = $1", [
+        org,
+        original.status,
+        original.trial_ends_at,
+        original.current_period_end,
+      ]);
+    }
   });
 });

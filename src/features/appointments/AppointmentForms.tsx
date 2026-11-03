@@ -117,22 +117,27 @@ export function AppointmentForm({
   defaultMemberId,
   defaultDate,
   fixedCaseId,
+  fixedClientId,
 }: {
   members: Option[];
   cases?: Option[];
   defaultMemberId: string;
   defaultDate: string;
   fixedCaseId?: string;
+  /** Fiche sans dossier (prospect) : le rendez-vous est lié à la personne. */
+  fixedClientId?: string;
 }) {
   const [state, action, pending] = useActionState(createAppointmentAction, initialFormState);
+  const fixed = fixedCaseId || fixedClientId;
   return (
     <form action={action} className="space-y-3" noValidate>
       {fixedCaseId && <input type="hidden" name="caseId" value={fixedCaseId} />}
+      {fixedClientId && <input type="hidden" name="clientId" value={fixedClientId} />}
       <AppointmentFields
         prefix="rdv"
         state={state}
         members={members}
-        cases={fixedCaseId ? undefined : cases}
+        cases={fixed ? undefined : cases}
         defaults={{ assignedTo: defaultMemberId, date: defaultDate }}
         statuses={INITIAL_STATUSES}
       />

@@ -4,11 +4,12 @@ import { refresh } from "next/cache";
 import { z } from "zod";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
+import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { dbMessage } from "@/lib/data/errors";
 import { formatMoney } from "@/lib/format";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
-import { chargeProgress } from "./calculations";
+import { availableToPay, chargeProgress } from "./calculations";
 import { allocateFifo, parseAmount, PAYMENT_METHODS } from "./payments";
 
 // Prestations convenues et encaissements d'un dossier. Montants en unités mineures, devise du dossier.
@@ -60,6 +61,8 @@ const paymentSchema = z.object({
   payerName: z.string().trim().max(120).optional(),
   paidDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indiquez la date du paiement."),
   paidTime: z.union([z.literal(""), z.string().regex(/^\d{2}:\d{2}$/)]).optional(),
+  // « pending » : annoncé (virement, Mobile Money) mais pas encore vu sur le compte de l'agence.
+  status: z.enum(["recorded", "pending"], { error: "Précisez si l'argent a bien été reçu." }),
 });
 
 export async function recordPaymentAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -80,8 +83,10 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
   const amountMinor = parseAmount(input.amount, currency);
   if (!amountMinor) return { message: "Certains champs sont à corriger.", fieldErrors: { amount: [`Montant invalide en ${currency}.`] }, values };
 
-  const progress = chargeProgress(data.charges, data.payments);
+  // Les paiements à vérifier réservent leur part, comme dans la base (record_payment).
+  const progress = availableToPay(chargeProgress(data.charges, data.payments));
   const remaining = progress.reduce((sum, c) => sum + c.remainingMinor, 0);
+  const waiting = data.payments.some((p) => p.status === "pending");
   const allocations = allocateFifo(amountMinor, progress);
   if (!allocations) {
     return {
@@ -89,8 +94,10 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
       fieldErrors: {
         amount: [
           remaining
-            ? `Le montant dépasse le reste à payer (${formatMoney(remaining, currency)}). Ajoutez d'abord la prestation correspondante.`
-            : "Toutes les prestations du dossier sont soldées : ajoutez d'abord la prestation correspondante.",
+            ? `Le montant dépasse le reste à payer (${formatMoney(remaining, currency)}${waiting ? ", paiements à vérifier déduits" : ""}). Ajoutez d'abord la prestation correspondante.`
+            : waiting
+              ? "Le reste à payer est déjà couvert par des paiements à vérifier : confirmez-les ou annulez-les d'abord."
+              : "Toutes les prestations du dossier sont soldées : ajoutez d'abord la prestation correspondante.",
         ],
       },
       values,
@@ -98,6 +105,9 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
   }
 
   const method = PAYMENT_METHODS.find((m) => m.value === input.method)!;
+  const pending = input.status === "pending";
+  const amount = formatMoney(amountMinor, currency);
+  const reference = input.transactionReference ? `, réf. ${input.transactionReference}` : "";
   const { data: created, error } = await ctx.supabase.rpc("record_payment", {
     p_case_id: travelCase.id,
     p_amount_minor: amountMinor,
@@ -107,12 +117,46 @@ export async function recordPaymentAction(_prev: FormState, formData: FormData):
     p_payer_name: input.payerName ?? "",
     p_paid_at: localDateTimeToIso(input.paidDate, input.paidTime || "12:00", data.agency.timezone),
     p_allocations: allocations.map((a) => ({ charge_id: a.chargeId, amount_minor: a.amountMinor })),
-    p_event: `Paiement de ${formatMoney(amountMinor, currency)} enregistré (${method.label}, reçu {recu}).`,
+    p_event: pending
+      ? `Paiement de ${amount} annoncé (${method.label}${reference}) : à vérifier avant de délivrer le reçu.`
+      : `Paiement de ${amount} enregistré (${method.label}, reçu {recu}).`,
+    p_pending: pending,
   });
   if (error) return { message: dbMessage(error), values };
-  const receipt = created as { id: string; receipt_number: string };
+  const receipt = created as { id: string; receipt_number: string | null };
   refresh();
+  // Paiement reçu : si l'agence l'a activé, le client reçoit la confirmation avec son reçu PDF.
+  if (!pending) sendQueuedEmailsAfterResponse(ctx);
+  if (pending) {
+    return {
+      ok: true,
+      message: `Paiement de ${amount} noté « à vérifier ». Il ne compte pas encore dans les soldes : confirmez-le quand l'argent est arrivé, le reçu sera créé à ce moment.`,
+    };
+  }
   return { ok: true, message: `Paiement enregistré : reçu ${receipt.receipt_number}.`, redirectTo: `/finance/receipts/${receipt.id}` };
+}
+
+/** Paiement à vérifier arrivé sur le compte : il compte dans les soldes et reçoit son numéro de reçu. */
+export async function confirmPaymentAction(paymentId: string): Promise<FormState> {
+  const id = z.uuid().safeParse(paymentId);
+  if (!id.success) return { message: "Paiement introuvable." };
+  const { data, ctx } = await readAgency({ payments: (q) => q.eq("id", id.data) });
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
+  const payment = data.payments[0];
+  if (!payment) return { message: "Paiement introuvable." };
+  if (payment.status !== "pending") return { message: "Ce paiement n'est plus en attente de vérification." };
+
+  const reference = payment.transactionReference ? `, réf. ${payment.transactionReference}` : "";
+  const { data: confirmed, error } = await ctx.supabase.rpc("confirm_payment", {
+    p_payment_id: payment.id,
+    p_event: `Paiement de ${formatMoney(payment.amountMinor, payment.currency)} vérifié (${payment.methodLabel}${reference}) : reçu {recu}.`,
+  });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  // Paiement vérifié : si l'agence l'a activé, le client reçoit la confirmation avec son reçu PDF.
+  sendQueuedEmailsAfterResponse(ctx);
+  const receipt = confirmed as { receipt_number: string };
+  return { ok: true, message: `Réception confirmée : reçu ${receipt.receipt_number} créé.`, redirectTo: `/finance/receipts/${payment.id}` };
 }
 
 // Annulation : le reçu garde son numéro et reste consultable, marqué « annulé » avec son motif.
@@ -126,18 +170,25 @@ export async function voidPaymentAction(_prev: FormState, formData: FormData): P
   const parsed = voidSchema.safeParse(values);
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Certains champs sont à corriger.", values };
   const { data, ctx } = await readAgency({ payments: (q) => q.eq("id", parsed.data.paymentId) });
-  if (!allowed(ctx, "payment.void")) return { message: forbiddenMessage(ctx, "payment.void"), values };
   const payment = data.payments[0];
+  // Un paiement encore à vérifier n'a pas de reçu : un conseiller peut l'annuler (comme la base).
+  const permission = payment?.status === "pending" ? "finance.write" : "payment.void";
+  if (!allowed(ctx, permission)) return { message: forbiddenMessage(ctx, permission), values };
   if (!payment) return { message: "Paiement introuvable.", values };
 
+  const amount = formatMoney(payment.amountMinor, payment.currency);
   const { error } = await ctx.supabase.rpc("void_payment", {
     p_payment_id: payment.id,
     p_reason: parsed.data.reason,
-    p_event: `Paiement de ${formatMoney(payment.amountMinor, payment.currency)} annulé (reçu ${payment.receiptNumber}) : ${parsed.data.reason}`,
+    p_event: payment.receiptNumber
+      ? `Paiement de ${amount} annulé (reçu ${payment.receiptNumber}) : ${parsed.data.reason}`
+      : `Paiement annoncé de ${amount} annulé (${payment.methodLabel}, sans reçu) : ${parsed.data.reason}`,
   });
   if (error) return { message: dbMessage(error), values };
   refresh();
-  return { ok: true, message: `Reçu ${payment.receiptNumber} annulé. Le montant ne compte plus dans les soldes.` };
+  return payment.receiptNumber
+    ? { ok: true, message: `Reçu ${payment.receiptNumber} annulé. Le montant ne compte plus dans les soldes.` }
+    : { ok: true, message: `Paiement annoncé de ${amount} annulé. Sa part du reste à payer est de nouveau disponible.` };
 }
 
 // Dépenses : fonctionnement de l'agence, ou somme reversée à un tiers pour le compte d'un client.

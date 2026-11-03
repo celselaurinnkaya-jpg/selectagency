@@ -42,6 +42,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
       />
       <ClientForm
         client={client}
+        partnerCode={detail.partner?.code}
         defaultCountry={client.residenceCountry || agency.countryCode}
         defaultMemberId={client.assignedTo || currentMemberId}
         countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name }))}

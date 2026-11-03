@@ -26,9 +26,9 @@ describe("saisie des montants", () => {
 
 describe("répartition d'un paiement", () => {
   const charges = [
-    { charge: charge("frais", 100000), allocatedMinor: 100000, remainingMinor: 0 },
-    { charge: charge("visa", 50000), allocatedMinor: 0, remainingMinor: 50000 },
-    { charge: charge("dossier", 30000), allocatedMinor: 10000, remainingMinor: 20000 },
+    { charge: charge("frais", 100000), allocatedMinor: 100000, remainingMinor: 0, pendingMinor: 0 },
+    { charge: charge("visa", 50000), allocatedMinor: 0, remainingMinor: 50000, pendingMinor: 0 },
+    { charge: charge("dossier", 30000), allocatedMinor: 10000, remainingMinor: 20000, pendingMinor: 0 },
   ];
 
   it("solde les prestations dans l'ordre, en sautant celles déjà payées", () => {

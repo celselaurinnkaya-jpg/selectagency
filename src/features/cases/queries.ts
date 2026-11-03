@@ -1,13 +1,16 @@
 import "server-only";
+import { getAgencyContext } from "@/lib/auth/context";
 import { allowed } from "@/lib/auth/permissions";
 import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
 import { DOCUMENT_FILE, toDocumentFile } from "@/lib/data/rows";
 import type { CaseCategory, CaseStatus, StepKind } from "@/lib/domain/types";
 import { chargeProgress } from "@/features/finance/calculations";
-import { loadInvoices } from "@/features/invoices/queries";
+import { imageUrls } from "@/features/invoices/document";
+import { loadInvoices, loadInvoiceSettings } from "@/features/invoices/queries";
 import { loadQuotes, quoteTotal } from "@/features/quotes/queries";
 import { backOptions, forwardOptions, requiresConfirmation } from "@/features/workflows/rules";
 import { summarizeCase } from "./summary";
+import { caseSummarySpec } from "./summary-document";
 import { activeMembers } from "@/lib/domain/members";
 
 export interface CaseFilters {
@@ -86,6 +89,8 @@ export async function getCaseDetail(id: string) {
   const steps = [...data.steps].sort((a, b) => a.position - b.position);
   const payments = [...data.payments].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
   const current = summary.current;
+  // E-mail « avancement du dossier » activé par l'agence (désactivé par défaut).
+  const { data: emailSettings } = await ctx.supabase.from("email_settings").select("notify_case_status").eq("organization_id", ctx.organizationId).maybeSingle();
 
   return {
     summary,
@@ -99,6 +104,7 @@ export async function getCaseDetail(id: string) {
       documentsRead: allowed(ctx, "documents.read"),
     },
     organizationId: ctx.organizationId,
+    notifyCaseStatus: Boolean(emailSettings?.notify_case_status),
     steps,
     transitions: current
       ? {
@@ -128,10 +134,48 @@ export async function getCaseFormOptions(clientId?: string) {
     clients: data.clients
       .filter((c) => !c.archivedAt)
       .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr"))
-      .map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName} (${c.reference})`, residenceCountry: c.residenceCountry })),
+      .map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName} (${c.reference})${c.status === "prospect" ? " — prospect, deviendra client" : ""}`, residenceCountry: c.residenceCountry })),
     members: activeMembers(data.members).filter((m) => m.role !== "accountant" && m.role !== "viewer"),
     currentMemberId: data.currentMemberId,
     preselectedClientId: data.clients.some((c) => c.id === clientId) ? clientId : undefined,
     currency: data.agency.currency,
+  };
+}
+
+/**
+ * Récapitulatif imprimable d'un dossier. La situation financière n'y figure que si elle est demandée
+ * (au choix à chaque document) et que le rôle de la personne connectée permet de la voir.
+ */
+export async function getCaseSummaryDocument(id: string, withFinance: boolean) {
+  const detail = await getCaseDetail(id);
+  if (!detail) return null;
+  const ctx = await getAgencyContext();
+  const settings = await loadInvoiceSettings(ctx);
+  const { summary, steps, requirements, appointments, agency, now, members, permissions } = detail;
+  const { travelCase, client } = summary;
+  const finance = withFinance && permissions.financeRead ? summary.finance : undefined;
+  return {
+    travelCase,
+    client,
+    settings,
+    canSeeFinance: permissions.financeRead,
+    withFinance: !!finance,
+    images: imageUrls(settings),
+    spec: caseSummarySpec({
+      travelCase,
+      client,
+      steps,
+      requirements,
+      appointments,
+      finance,
+      advisor: members.find((m) => m.id === travelCase.assignedTo)?.fullName,
+      agency,
+      settings,
+      now,
+      isDemo: ctx.isDemo,
+    }),
+    // Clients fictifs de la démonstration : leur numéro ne doit jamais être contacté.
+    phoneDigits: client.isDemoFixture ? undefined : (client.whatsappE164 ?? client.phoneE164).replace(/\D/g, ""),
+    email: client.isDemoFixture ? undefined : client.email,
   };
 }

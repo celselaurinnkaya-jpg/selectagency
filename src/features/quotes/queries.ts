@@ -4,6 +4,9 @@ import type { AgencyContext } from "@/lib/auth/context";
 import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
 import { QUOTE, QUOTE_ITEM, toQuote, toQuoteItem } from "@/lib/data/rows";
 import type { Quote } from "@/lib/domain/types";
+import { imageUrls } from "@/features/invoices/document";
+import { loadInvoiceSettings } from "@/features/invoices/queries";
+import { quoteSpec } from "./document";
 
 // Devis des dossiers (lisibles par les rôles qui voient la finance, comme les prestations).
 
@@ -41,16 +44,29 @@ export async function getQuote(id: string) {
   if (!row) return null;
   const items = (await fetchRows(ctx, "quote_items", QUOTE_ITEM.list, (q) => q.eq("quote_id", id), ["position"])).map(toQuoteItem);
   const quote = toQuote(row, items);
-  const { cases = [], clients = [] } = await loadTables(ctx, { cases: (q) => q.eq("id", quote.caseId), clients: (q) => q.eq("id", quote.clientId) });
+  const [{ cases = [], clients = [] }, settings] = await Promise.all([
+    loadTables(ctx, { cases: (q) => q.eq("id", quote.caseId), clients: (q) => q.eq("id", quote.clientId) }),
+    loadInvoiceSettings(ctx),
+  ]);
+  const travelCase = cases[0]!;
+  const client = clients[0]!;
+  const author = data.members.find((m) => m.id === quote.createdBy);
+  const total = quoteTotal(quote);
   return {
     quote,
-    total: quoteTotal(quote),
+    total,
     agency: data.agency,
     isDemo: ctx.isDemo,
     now,
-    travelCase: cases[0]!,
-    client: clients[0]!,
-    author: data.members.find((m) => m.id === quote.createdBy),
+    travelCase,
+    client,
+    author,
+    settings,
+    spec: quoteSpec({ quote, total, client, travelCase, agency: data.agency, settings, author, isDemo: ctx.isDemo }),
+    images: imageUrls(settings),
     canWrite: allowed(ctx, "finance.write"),
+    // Clients fictifs de la démonstration : leur numéro ne doit jamais être contacté.
+    phoneDigits: client.isDemoFixture ? undefined : (client.whatsappE164 ?? client.phoneE164).replace(/\D/g, ""),
+    email: client.isDemoFixture ? undefined : client.email,
   };
 }

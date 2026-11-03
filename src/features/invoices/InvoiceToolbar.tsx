@@ -6,6 +6,7 @@ import { Download, MessageCircle, Pencil, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { FormMessage } from "@/components/shared/form";
 import type { InvoiceStatus } from "@/lib/domain/types";
+import { EmailDocumentButton } from "@/features/printables/EmailDocumentButton";
 import { initialFormState } from "@/lib/form-state";
 import { deleteInvoiceAction, logInvoiceSharedAction, setInvoiceStatusAction } from "./actions";
 
@@ -32,6 +33,8 @@ export function InvoiceToolbar({
   canDelete,
   phoneDigits,
   message,
+  email,
+  directEmail = false,
 }: {
   invoiceId: string;
   number: string;
@@ -40,6 +43,10 @@ export function InvoiceToolbar({
   canDelete: boolean;
   phoneDigits?: string;
   message: string;
+  /** Adresse e-mail de la fiche du client. */
+  email?: string;
+  /** Envoi direct par e-mail possible sur ce serveur (Brevo configuré). */
+  directEmail?: boolean;
 }) {
   const [statusState, statusAction, statusPending] = useActionState(setInvoiceStatusAction, initialFormState);
   const [deleteError, setDeleteError] = useState<string>();
@@ -106,6 +113,10 @@ export function InvoiceToolbar({
           <MessageCircle aria-hidden />
           {sharing ? "Préparation du PDF…" : "Envoyer par WhatsApp"}
         </Button>
+        {/* Une facture brouillon ou annulée ne part pas par e-mail. */}
+        {directEmail && (status === "issued" || status === "paid") && (
+          <EmailDocumentButton kind="invoice" id={invoiceId} number={number} email={email} />
+        )}
         {editable && (
           <Button asChild variant="outline">
             <Link href={`/finance/invoices/${invoiceId}/edit`}>

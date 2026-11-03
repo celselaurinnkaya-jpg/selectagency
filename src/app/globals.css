@@ -179,7 +179,13 @@
 }
 
 @media print {
+  /* Factures et reçus : format A4, quelle que soit l'imprimante par défaut. */
   @page {
-    margin: 16mm;
+    size: A4;
+    margin: 12mm;
+  }
+  /* Documents imprimés : texte un peu plus serré (tailles en rem), comme le PDF, pour tenir sur une page. */
+  html {
+    font-size: 14px;
   }
 }

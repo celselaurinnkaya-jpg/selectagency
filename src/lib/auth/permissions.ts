@@ -17,6 +17,8 @@ export const PERMISSIONS = {
   "team.transfer": ["owner"],
   "settings.manage": ["owner", "admin"],
   "services.manage": ["owner", "admin"],
+  "partners.manage": ["owner", "admin"],
+  "commission.manage": ["owner", "admin", "accountant"],
   "billing.read": ["owner", "admin"],
   "reports.export": ["owner", "admin"],
   "finance.export": ["owner", "admin", "accountant"],
@@ -35,7 +37,7 @@ export const READ_ONLY_MESSAGE =
 
 // Écritures bloquées par la base quand l'abonnement ne permet plus d'écrire. La gestion de l'équipe
 // reste ouverte : retirer l'accès d'une personne partie ne doit jamais être bloqué.
-const WRITES = new Set<Permission>(["operations.write", "client.delete", "finance.write", "payment.void", "invoice.delete", "settings.manage", "services.manage"]);
+const WRITES = new Set<Permission>(["operations.write", "client.delete", "finance.write", "payment.void", "invoice.delete", "settings.manage", "services.manage", "partners.manage", "commission.manage"]);
 
 /** Droit du rôle, et pour une écriture, abonnement qui permet d'écrire. */
 export function allowed(ctx: { member: { role: MemberRole }; writable: boolean }, permission: Permission): boolean {

@@ -10,6 +10,7 @@ import { formatDay } from "@/features/invoices/document";
 import { InvoiceDocument } from "@/features/invoices/InvoiceDocument";
 import { InvoiceToolbar } from "@/features/invoices/InvoiceToolbar";
 import { getInvoice } from "@/features/invoices/queries";
+import { emailSendingEnabled } from "@/lib/email/brevo";
 
 export const metadata: Metadata = { title: "Facture" };
 
@@ -71,6 +72,8 @@ async function Invoice({ params, searchParams }: PageProps<"/finance/invoices/[i
         )}
         <div className="mb-6">
           <InvoiceToolbar
+            directEmail={emailSendingEnabled()}
+            email={client.email}
             invoiceId={inv.id}
             number={inv.number}
             status={inv.status}

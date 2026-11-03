@@ -4,10 +4,12 @@ import {
   CalendarDays,
   FileText,
   FolderKanban,
+  Handshake,
   LayoutDashboard,
   LifeBuoy,
   ListChecks,
   Settings,
+  Target,
   UserCog,
   Users,
   Wallet,
@@ -25,6 +27,7 @@ export interface NavItem {
 // Le quotidien d'abord, l'administration de l'agence ensuite, puis l'aide de l'équipe SELECT.
 export const NAV_MAIN: NavItem[] = [
   { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard, match: ["/dashboard"] },
+  { label: "Prospects", href: "/prospects", icon: Target, match: ["/prospects"] },
   { label: "Clients", href: "/clients", icon: Users, match: ["/clients"] },
   { label: "Dossiers", href: "/cases", icon: FolderKanban, match: ["/cases"] },
   { label: "Documents", href: "/documents", icon: FileText, match: ["/documents"] },
@@ -32,6 +35,7 @@ export const NAV_MAIN: NavItem[] = [
   { label: "Rendez-vous", href: "/appointments", icon: CalendarDays, match: ["/appointments"] },
   { label: "Tâches", href: "/tasks", icon: ListChecks, match: ["/tasks"] },
   { label: "Finance", href: "/finance", icon: Wallet, match: ["/finance"] },
+  { label: "Partenaires", href: "/partners", icon: Handshake, match: ["/partners"] },
   { label: "Rapports", href: "/reports", icon: BarChart3, match: ["/reports"] },
 ];
 

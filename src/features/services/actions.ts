@@ -130,3 +130,88 @@ export async function removeServiceClientAction(linkId: string): Promise<FormSta
   refresh();
   return { ok: true, message: "Client retiré du service." };
 }
+
+const stepsSchema = z.object({
+  serviceId: z.uuid(),
+  labels: z
+    .array(z.string().trim().max(120, "Chaque étape compte 120 caractères au plus."))
+    .transform((labels) => labels.filter(Boolean))
+    .pipe(z.array(z.string().min(2, "Chaque étape compte 2 caractères au moins.")).min(1, "Gardez au moins une étape.").max(30, "Trente étapes au plus.")),
+});
+
+/** Nouvelle liste d'étapes du service : les clients déjà suivis gardent la leur. */
+export async function saveServiceStepsAction(serviceId: string, labels: string[]): Promise<FormState> {
+  const parsed = stepsSchema.safeParse({ serviceId, labels });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Étapes invalides." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "services.manage")) return { message: forbiddenMessage(ctx, "services.manage") };
+  const { error } = await ctx.supabase.rpc("save_service_steps", { p_service_id: parsed.data.serviceId, p_labels: parsed.data.labels });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: `Étapes enregistrées (${parsed.data.labels.length}). Elles s'appliquent aux clients ajoutés à partir de maintenant.` };
+}
+
+/** Cocher ou décocher une étape d'un client suivi ; la base met l'état du suivi à jour. */
+export async function setServiceStepAction(stepId: string, done: boolean): Promise<FormState> {
+  const id = z.uuid().safeParse(stepId);
+  if (!id.success) return { message: "Étape introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  const { data, error } = await ctx.supabase.rpc("set_service_client_step", { p_step_id: id.data, p_done: done });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: data === "completed" ? "Toutes les étapes sont faites : le suivi est terminé." : undefined };
+}
+
+const day = z.union([z.literal(""), z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide.")]);
+
+const bookingSchema = z.object({
+  bookingId: z.union([z.literal(""), z.uuid()]),
+  linkId: z.uuid(),
+  provider: z.string().trim().max(120),
+  reference: z.string().trim().max(80),
+  startDate: day,
+  endDate: day,
+  place: z.string().trim().max(200),
+  details: z.string().trim().max(1500),
+  amount: z.string().trim(),
+  currency: z.enum(CURRENCY_OPTIONS.map((c) => c.code) as [string, ...string[]], { error: "Devise non prise en charge." }),
+});
+
+export type BookingInput = z.input<typeof bookingSchema>;
+
+/** Confirmation de réservation : la base attribue le numéro CONF-… et note l'historique du client. */
+export async function saveBookingAction(input: BookingInput): Promise<FormState> {
+  const parsed = bookingSchema.safeParse(input);
+  if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors };
+  const b = parsed.data;
+  if (!b.provider && !b.reference) return { message: "Certains champs sont à corriger.", fieldErrors: { provider: ["Indiquez au moins le prestataire ou la référence de réservation."] } };
+  const amountMinor = b.amount ? parseAmount(b.amount, b.currency) : null;
+  if (b.amount && amountMinor === null) return { message: "Certains champs sont à corriger.", fieldErrors: { amount: [`Montant invalide en ${b.currency}.`] } };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  const { data, error } = await ctx.supabase.rpc("save_booking", {
+    p_booking_id: b.bookingId || null,
+    p_service_client_id: b.linkId,
+    p_provider: b.provider,
+    p_reference: b.reference,
+    p_start_date: b.startDate || null,
+    p_end_date: b.endDate || null,
+    p_place: b.place,
+    p_details: b.details,
+    p_amount_minor: amountMinor,
+    p_currency: amountMinor === null ? null : b.currency,
+  });
+  if (error) return { message: dbMessage(error) };
+  const saved = data as { id: string; number: string };
+  return { ok: true, message: `Confirmation ${saved.number} enregistrée.`, redirectTo: `/services/confirmations/${saved.id}?ok=${b.bookingId ? "modifiee" : "creee"}` };
+}
+
+export async function deleteBookingAction(bookingId: string, backTo: string): Promise<FormState> {
+  if (!z.uuid().safeParse(bookingId).success) return { message: "Confirmation introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  const { error } = await ctx.supabase.rpc("delete_booking", { p_booking_id: bookingId });
+  if (error) return { message: dbMessage(error) };
+  return { ok: true, redirectTo: backTo.startsWith("/") && !backTo.startsWith("//") ? backTo : "/services" };
+}

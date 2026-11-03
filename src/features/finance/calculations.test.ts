@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Charge, Expense, Payment } from "@/lib/domain/types";
-import { agencyFinance, caseFinance, chargeProgress } from "./calculations";
+import { agencyFinance, availableToPay, caseFinance, chargeProgress } from "./calculations";
 
 const charges: Charge[] = [
   { id: "fee", caseId: "c1", label: "Accompagnement", chargeType: "agency_fee", amountMinor: 800000, currency: "XAF" },
@@ -35,6 +35,18 @@ describe("finances d'un dossier", () => {
   it("donne le reste à payer par prestation", () => {
     const progress = chargeProgress(charges, [payment("p1", 850000, [{ chargeId: "fee", amountMinor: 800000 }, { chargeId: "visa", amountMinor: 50000 }])]);
     expect(progress.map((p) => p.remainingMinor)).toEqual([0, 15000]);
+  });
+
+  it("tient les paiements à vérifier hors des soldes, mais réserve leur part", () => {
+    const payments = [
+      payment("p1", 300000, [{ chargeId: "fee", amountMinor: 300000 }]),
+      payment("p2", 200000, [{ chargeId: "fee", amountMinor: 200000 }], "pending"),
+    ];
+    expect(caseFinance("XAF", charges, payments)).toMatchObject({ paidMinor: 300000, balanceMinor: 565000, pendingMinor: 200000 });
+    const progress = chargeProgress(charges, payments);
+    expect(progress[0]).toMatchObject({ allocatedMinor: 300000, remainingMinor: 500000, pendingMinor: 200000 });
+    expect(availableToPay(progress).map((p) => p.remainingMinor)).toEqual([300000, 65000]);
+    expect(agencyFinance(charges, payments, [], {})[0]?.receivedMinor).toBe(300000);
   });
 });
 

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireSessionUser } from "@/lib/auth/context";
 import { dbMessage } from "@/lib/data/errors";
+import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { isDemoEnabled } from "@/lib/env";
 import { CURRENCY_OPTIONS, dayKey, TIMEZONE_OPTIONS } from "@/lib/format";
 import { formValues, type FormState } from "@/lib/form-state";
@@ -38,6 +39,8 @@ export async function createAgencyAction(_prev: FormState, formData: FormData): 
     p_job_title: input.jobTitle ?? "",
   });
   if (error) return { message: dbMessage(error), values };
+  // E-mail de bienvenue au propriétaire de la nouvelle agence (envoyé après la réponse).
+  sendQueuedEmailsAfterResponse();
   redirect("/dashboard?ok=agence-creee");
 }
 

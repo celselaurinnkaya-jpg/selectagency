@@ -12,6 +12,8 @@ import type { ServiceClientStatus } from "@/lib/domain/types";
 import { formatDate, formatMoney, initials } from "@/lib/format";
 import { getService, SERVICE_STATUS_ORDER } from "@/features/services/queries";
 import { DeleteServiceButton, EnrollForm, ServiceClientActions } from "@/features/services/ServiceForms";
+import { ServiceProgress } from "@/features/services/ServiceSteps";
+import { BookingPanel } from "@/features/services/BookingForms";
 
 export const metadata: Metadata = { title: "Service" };
 
@@ -27,7 +29,7 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getService(id);
   if (!detail) notFound();
-  const { service, rows, counts, candidates, cases, agency, permissions } = detail;
+  const { service, steps, rows, counts, candidates, cases, agency, permissions } = detail;
   const tz = agency.timezone;
   const filter = SERVICE_STATUS_ORDER.find((s) => s === query.etat);
   const shown = filter ? rows.filter((r) => r.link.status === filter) : rows;
@@ -90,6 +92,27 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
           <StatCard label="Terminés" value={counts.completed} hint="Service rendu" icon={CheckCircle2} tone="success" href={`${base}?etat=completed`} />
         </div>
 
+        <Section
+          title="Étapes du suivi"
+          action={
+            permissions.manage ? (
+              <Link href={`${base}/edit#etapes`} className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+                Modifier les étapes
+              </Link>
+            ) : undefined
+          }
+        >
+          <ol className="flex flex-wrap gap-2 text-sm">
+            {steps.map((step) => (
+              <li key={step.id} className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1 pr-3 pl-1">
+                <span className="flex size-6 items-center justify-center rounded-full bg-navy-800 text-xs font-semibold text-citron-400 tabular-nums">{step.position}</span>
+                {step.label}
+              </li>
+            ))}
+          </ol>
+          <p className="mt-3 text-sm text-slate-600">Chaque client ajouté reçoit ces étapes ; quand toutes sont faites, son suivi passe « Terminé ».</p>
+        </Section>
+
         {permissions.enroll && (
           <Section title="Ajouter un client">
             {!service.isActive ? (
@@ -146,7 +169,7 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
             />
           ) : (
             <ul className="space-y-3">
-              {shown.map(({ link, client, cases: clientCases, linkedCase, balances, addedBy }) => {
+              {shown.map(({ link, client, cases: clientCases, linkedCase, balances, addedBy, progress, bookings }) => {
                 const fullName = `${client.firstName} ${client.lastName}`;
                 const clientUrl = `/clients/${client.id}`;
                 return (
@@ -218,6 +241,8 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
                       </div>
                     </dl>
                     {link.note && <p className="rounded-lg bg-surface px-3 py-2 text-sm whitespace-pre-line text-slate-700">{link.note}</p>}
+                    <ServiceProgress steps={progress.steps} canEdit={permissions.enroll && link.status !== "cancelled"} timezone={tz} />
+                    <BookingPanel linkId={link.id} bookings={bookings} defaultCurrency={agency.currency} canEdit={permissions.enroll} />
 
                     <div className="flex flex-col gap-2 border-t border-slate-100 pt-3 lg:flex-row lg:items-center lg:justify-between">
                       <div className="flex flex-wrap gap-2">

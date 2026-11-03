@@ -5,8 +5,8 @@ import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, Notice, PageHeader, Section } from "@/components/shared/ui";
 import { countryName } from "@/lib/countries";
-import { CATEGORY_LABELS, ROLE, STEP_KIND } from "@/lib/domain/labels";
-import type { CaseCategory, StepKind } from "@/lib/domain/types";
+import { CATEGORY_LABELS, CLIENT_SOURCE, ROLE, STEP_KIND } from "@/lib/domain/labels";
+import type { CaseCategory, ClientSource, StepKind } from "@/lib/domain/types";
 import { formatMoney } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getReports } from "@/features/finance/queries";
@@ -72,6 +72,16 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
           <BarList emptyLabel="Aucun dossier ouvert sur la période." items={r.byDestination.map((x) => ({ label: countryName(x.key), value: x.count }))} />
         </Section>
       </div>
+
+      <Section title="Origine des nouveaux contacts">
+        <p className="mb-3 text-sm text-slate-600">
+          {r.contacts.total} nouveau(x) contact(s) · {r.contacts.converted} prospect(s) devenu(s) client(s) · {r.period.label.toLowerCase()}
+        </p>
+        <BarList
+          emptyLabel="Aucun nouveau contact sur la période."
+          items={r.contacts.bySource.map((x) => ({ label: x.key === "unknown" ? "Non précisée" : CLIENT_SOURCE[x.key as ClientSource], value: x.count }))}
+        />
+      </Section>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Section title="Évolution mensuelle" className="lg:col-span-2">

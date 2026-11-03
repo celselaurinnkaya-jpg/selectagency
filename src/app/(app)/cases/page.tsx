@@ -14,6 +14,7 @@ import { CASE_STATUS, CATEGORY_LABELS, CATEGORY_SHORT_LABELS, PRIORITY, STEP_KIN
 import type { CaseCategory, CaseStatus, StepKind } from "@/lib/domain/types";
 import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { listCases } from "@/features/cases/queries";
+import { caseKindLabel } from "@/features/workflows/templates";
 import type { CaseSummary } from "@/features/cases/summary";
 
 export const metadata: Metadata = { title: "Dossiers" };
@@ -198,7 +199,7 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
                         {s.travelCase.title}
                       </Link>
                       <span className="block text-xs text-slate-500">
-                        <span className="font-mono">{s.travelCase.reference}</span> · {CATEGORY_SHORT_LABELS[s.travelCase.category]} · {countryName(s.travelCase.destinationCountry)}
+                        <span className="font-mono">{s.travelCase.reference}</span> · {caseKindLabel(s.travelCase.templateKey, CATEGORY_SHORT_LABELS[s.travelCase.category])} · {countryName(s.travelCase.destinationCountry)}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">

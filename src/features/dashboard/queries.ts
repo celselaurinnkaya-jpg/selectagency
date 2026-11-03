@@ -2,14 +2,14 @@ import "server-only";
 import { allowed } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { EVENT, toEvent } from "@/lib/data/rows";
-import { dayKey } from "@/lib/format";
+import { dayKey, formatMoney } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { agencyFinance } from "@/features/finance/calculations";
 import { summarizeCase } from "@/features/cases/summary";
 
 export interface ToHandleItem {
   id: string;
-  kind: "task" | "document" | "next_action" | "appointment";
+  kind: "task" | "document" | "next_action" | "appointment" | "payment";
   title: string;
   context: string;
   dueAt?: string;
@@ -71,6 +71,18 @@ export async function getDashboard(periodKey?: string) {
         overdue: false,
         href: `/cases/${r.caseId}?tab=documents`,
       })),
+    // Paiements annoncés par des clients : à confirmer (le reçu est créé à ce moment) ou à annuler.
+    ...data.payments
+      .filter((p) => p.status === "pending")
+      .map((p) => ({
+        id: p.id,
+        kind: "payment" as const,
+        title: `Paiement à vérifier : ${formatMoney(p.amountMinor, p.currency)} (${p.methodLabel})`,
+        context: [caseRef(p.caseId), clientName(p.clientId)].filter(Boolean).join(" · "),
+        dueAt: p.paidAt,
+        overdue: false,
+        href: `/finance/receipts/${p.id}`,
+      })),
     ...active
       // Pas de doublon : une tâche ouverte sur le dossier couvre déjà son action en retard.
       .filter((s) => s.isOverdue && !data.tasks.some((t) => t.caseId === s.travelCase.id && (t.status === "todo" || t.status === "in_progress") && dayKey(t.dueAt, tz) <= today))
@@ -114,7 +126,8 @@ export async function getDashboard(periodKey?: string) {
     period,
     isEmpty: data.clients.length === 0,
     kpis: {
-      clients: data.clients.filter((c) => !c.archivedAt).length,
+      clients: data.clients.filter((c) => !c.archivedAt && c.status !== "prospect").length,
+      prospects: data.clients.filter((c) => !c.archivedAt && c.status === "prospect").length,
       activeCases: active.length,
       waitingClient: active.filter((s) => s.waitingOn === "client_action").length,
       waitingThirdParty: active.filter((s) => s.waitingOn === "external_event").length,

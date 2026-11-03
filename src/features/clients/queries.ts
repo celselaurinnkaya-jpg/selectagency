@@ -1,8 +1,9 @@
 import "server-only";
 import { allowed } from "@/lib/auth/permissions";
-import { loadTables, readAgency } from "@/lib/data/agency";
-import { CLIENT_SENSITIVE } from "@/lib/data/rows";
+import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
+import { CLIENT_SENSITIVE, PARTNER, toPartner } from "@/lib/data/rows";
 import type { ClientType } from "@/lib/domain/types";
+import { dayKey } from "@/lib/format";
 import { summarizeCase } from "@/features/cases/summary";
 import { loadClientServices } from "@/features/services/queries";
 
@@ -19,7 +20,9 @@ export async function listClients(filters: ClientFilters) {
   const query = filters.q ? normalize(filters.q.trim()) : "";
   const digits = filters.q?.replace(/\D/g, "") ?? "";
 
-  const rows = data.clients
+  // Les prospects ont leur propre page : la liste des clients ne montre que les clients.
+  const clients = data.clients.filter((c) => c.status !== "prospect");
+  const rows = clients
     .filter((c) => !c.archivedAt)
     .filter((c) => !filters.type || c.clientType === filters.type)
     .filter((c) => !filters.country || c.residenceCountry === filters.country)
@@ -50,8 +53,9 @@ export async function listClients(filters: ClientFilters) {
     canWrite: allowed(ctx, "operations.write"),
     canDelete: allowed(ctx, "client.delete"),
     canSeeFinance: allowed(ctx, "finance.read"),
-    countries: [...new Set(data.clients.map((c) => c.residenceCountry))],
-    total: data.clients.filter((c) => !c.archivedAt).length,
+    countries: [...new Set(clients.map((c) => c.residenceCountry))],
+    total: clients.filter((c) => !c.archivedAt).length,
+    prospects: data.clients.filter((c) => c.status === "prospect" && !c.archivedAt).length,
   };
 }
 
@@ -64,6 +68,7 @@ export async function getClientDetail(id: string) {
     payments: (q) => q.eq("client_id", id),
     events: (q) => q.eq("client_id", id),
     communications: (q) => q.eq("client_id", id),
+    tasks: (q) => q.eq("client_id", id),
   });
   const client = data.clients[0];
   if (!client) return null;
@@ -71,7 +76,7 @@ export async function getClientDetail(id: string) {
   // Étapes, pièces et prestations des dossiers du client (pour les soldes et les pièces manquantes),
   // et services qu'il suit.
   const caseIds = data.cases.map((k) => k.id);
-  const [related, services] = await Promise.all([
+  const [related, services, partner] = await Promise.all([
     caseIds.length
       ? loadTables(ctx, {
           steps: (q) => q.in("case_id", caseIds),
@@ -80,6 +85,7 @@ export async function getClientDetail(id: string) {
         })
       : {},
     loadClientServices(ctx, id),
+    client.partnerId ? fetchRows(ctx, "partners", PARTNER.list, (q) => q.eq("id", client.partnerId!)).then(([row]) => (row ? toPartner(row) : undefined)) : undefined,
   ]);
   Object.assign(data, related);
 
@@ -110,5 +116,9 @@ export async function getClientDetail(id: string) {
     communications: [...data.communications].sort((a, b) => b.at.localeCompare(a.at)),
     caseReferences: new Map(cases.map((k) => [k.id, k.reference])),
     services,
+    partner,
+    // Relances : tâches ouvertes liées à la fiche, la plus proche d'abord.
+    followUps: data.tasks.filter((t) => t.status === "todo" || t.status === "in_progress").sort((a, b) => a.dueAt.localeCompare(b.dueAt)),
+    today: dayKey(now, data.agency.timezone),
   };
 }

@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
@@ -11,7 +10,10 @@ import { dbMessage } from "@/lib/data/errors";
 import { clientToRow } from "@/lib/data/rows";
 import { formValues, type FormState } from "@/lib/form-state";
 import type { Client } from "@/lib/domain/types";
-import { findDuplicates } from "./duplicates";
+import { CLIENT_SOURCE } from "@/lib/domain/labels";
+import { duplicateLabel, findDuplicates } from "./duplicates";
+import { toE164 } from "./phone";
+import { applyClientPartner, resolvePartnerCode } from "@/features/partners/link";
 import { activeMembers } from "@/lib/domain/members";
 
 // Validation côté serveur : une Server Action est un point d'accès public, on ne fait jamais
@@ -48,24 +50,13 @@ const clientSchema = z.object({
   guardian2Whatsapp: z.string().trim().max(40).optional(),
 
   // Suivi par l'agence
+  source: z.union([z.literal(""), z.enum(Object.keys(CLIENT_SOURCE) as [string, ...string[]])]).optional(),
+  sourceDetail: z.string().trim().max(120).optional(),
+  partnerCode: z.string().trim().max(20).optional(),
   assignedTo: z.string().min(1, "Choisissez le conseiller."),
   notes: z.string().trim().max(2000).optional(),
   confirmDuplicate: z.literal("1").optional(),
 });
-
-/** Numéro au format international (+237…). Sans validation possible, on garde les seuls chiffres. */
-function toE164(raw: string | undefined, country: string): string | null {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (country && country.length === 2) {
-    const parsed = parsePhoneNumberFromString(trimmed, country as CountryCode);
-    if (parsed?.isValid()) return parsed.number;
-  }
-  const parsedDirect = parsePhoneNumberFromString(trimmed.startsWith("+") ? trimmed : `+${trimmed}`);
-  if (parsedDirect?.isValid()) return parsedDirect.number;
-  const digits = trimmed.replace(/\D/g, "");
-  return digits.length >= 6 && digits.length <= 15 ? `+${digits}` : null;
-}
 
 export async function saveClientAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const rawResidence = formData.get("residenceCountry")?.toString().trim();
@@ -148,6 +139,9 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
   if (clientId && !existing) {
     return { message: "Ce client n'existe pas ou a été supprimé.", values };
   }
+  // Code partenaire : contrôlé avant tout enregistrement.
+  const partner = await resolvePartnerCode(ctx, input.partnerCode);
+  if ("error" in partner) return { message: "Certains champs sont à corriger.", fieldErrors: { partnerCode: [partner.error] }, values };
 
   const fields: Parameters<typeof clientToRow>[0] = {
     clientType: input.clientType,
@@ -172,6 +166,8 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     isSelfResponsible: isSelf,
     guardian1,
     guardian2,
+    source: (input.source || undefined) as Client["source"],
+    sourceDetail: input.sourceDetail || undefined,
   };
 
   const supabase = ctx.supabase;
@@ -189,11 +185,7 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     if (duplicates.length > 0 && !input.confirmDuplicate) {
       return {
         message: "Un client semblable existe déjà. Vérifiez avant de créer une nouvelle fiche.",
-        duplicates: duplicates.map((d) => ({
-          id: d.client.id,
-          label: `${d.client.firstName} ${d.client.lastName} (${d.client.reference})`,
-          reasons: d.reasons,
-        })),
+        duplicates: duplicates.map((d) => ({ id: d.client.id, label: duplicateLabel(d.client), reasons: d.reasons })),
         values,
       };
     }
@@ -222,9 +214,12 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     text: existing ? `Fiche client ${saved.reference} modifiée.` : `Fiche client ${saved.reference} créée.`,
   });
 
+  // Partenaire : la base crée ou déplace la commission (refus si elle est déjà payée).
+  const partnerError = await applyClientPartner(ctx, saved.id, existing?.partnerId, partner.partnerId);
+
   revalidatePath("/clients");
   revalidatePath(`/clients/${saved.id}`);
-  redirect(`/clients/${saved.id}?ok=${existing ? "client-modifie" : "client-cree"}`);
+  redirect(`/clients/${saved.id}?ok=${existing ? "client-modifie" : "client-cree"}${partnerError ? "&partenaire=refuse" : ""}`);
 }
 
 export const createClientAction = saveClientAction;

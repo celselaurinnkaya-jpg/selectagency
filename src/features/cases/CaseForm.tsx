@@ -9,6 +9,7 @@ import { describedBy, FormField, FormMessage, selectClass } from "@/components/s
 import { initialFormState } from "@/lib/form-state";
 import { APPLICANT_TAGS, CATEGORY_LABELS, PRIORITY } from "@/lib/domain/labels";
 import type { CaseCategory } from "@/lib/domain/types";
+import { templatesForCategory } from "@/features/workflows/templates";
 import { createCaseAction } from "./actions";
 
 interface Option {
@@ -141,6 +142,16 @@ function CaseFormFields({ clients, members, destinations, defaultClientId, defau
         <fieldset className="space-y-4 rounded-2xl bg-surface p-4 sm:p-5">
           <legend className="sr-only">Études</legend>
           <h2 className="text-base font-semibold text-navy-800">Projet d&apos;études</h2>
+          <FormField id="templateKey" label="Procédure" required hint="Chaque procédure a ses propres étapes. Un même client peut avoir un dossier par procédure.">
+            {/* La clé recrée la liste avec le choix envoyé : après une erreur, la procédure choisie est conservée. */}
+            <select key={v.templateKey ?? "study_abroad"} id="templateKey" name="templateKey" defaultValue={v.templateKey ?? "study_abroad"} className={selectClass} {...describedBy("templateKey", undefined, "hint")}>
+              {templatesForCategory("study_abroad").map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </FormField>
           <div className="grid gap-4 sm:grid-cols-3">
             <FormField id="institution" label="Établissement visé">
               <Input id="institution" name="institution" defaultValue={v.institution} />

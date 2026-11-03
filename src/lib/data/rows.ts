@@ -9,6 +9,8 @@ import type {
   CommunicationLog,
   DocumentFile,
   DocumentRequirement,
+  EmailOutboxItem,
+  EmailSettings,
   Expense,
   Invoice,
   InvoiceItem,
@@ -19,7 +21,12 @@ import type {
   Plan,
   Quote,
   QuoteItem,
+  Partner,
+  PartnerCommission,
   ServiceClient,
+  ServiceBooking,
+  ServiceClientStep,
+  ServiceStep,
   Subscription,
   SupportMessage,
   SupportTicket,
@@ -84,7 +91,7 @@ export const CLIENT = columns(
   "id", "reference", "client_type", "first_name", "last_name", "email", "phone_e164", "whatsapp_e164",
   "residence_country", "city", "preferred_language", "registered_at", "assigned_to", "passport_last4", "notes",
   "archived_at", "is_demo_fixture", "gender", "birth_date", "nationality", "marital_status", "id_doc_type",
-  "address", "service_motive", "is_self_responsible", "guardian1", "guardian2",
+  "address", "service_motive", "is_self_responsible", "guardian1", "guardian2", "status", "source", "source_detail", "converted_at", "partner_id", "email_opt_out",
 );
 
 /** Numéro complet de la pièce d'identité (table à part, non lisible par le comptable ni la lecture seule). */
@@ -119,11 +126,20 @@ export function toClient(r: Row): Client {
     isSelfResponsible: r.is_self_responsible === null ? undefined : Boolean(r.is_self_responsible),
     guardian1: opt(r.guardian1 as Client["guardian1"] | null),
     guardian2: opt(r.guardian2 as Client["guardian2"] | null),
+    status: r.status === "prospect" ? "prospect" : "client",
+    source: optStr(r.source) as Client["source"],
+    sourceDetail: optStr(r.source_detail),
+    convertedAt: optIso(r.converted_at),
+    partnerId: optStr(r.partner_id),
+    emailOptOut: Boolean(r.email_opt_out),
   };
 }
 
-/** Colonnes modifiables d'une fiche client (création et modification). */
-export function clientToRow(c: Omit<Client, "id" | "reference" | "registeredAt" | "isDemoFixture" | "archivedAt">): Row {
+/**
+ * Colonnes modifiables d'une fiche client (création et modification). Le statut prospect / client
+ * ne change jamais par ce chemin : il se pose à la création d'un prospect et se lève par convert_prospect.
+ */
+export function clientToRow(c: Omit<Client, "id" | "reference" | "registeredAt" | "isDemoFixture" | "archivedAt" | "status" | "convertedAt" | "partnerId" | "emailOptOut">): Row {
   return {
     client_type: c.clientType,
     first_name: c.firstName,
@@ -147,6 +163,8 @@ export function clientToRow(c: Omit<Client, "id" | "reference" | "registeredAt" 
     is_self_responsible: c.isSelfResponsible ?? true,
     guardian1: nul(c.guardian1),
     guardian2: nul(c.guardian2),
+    source: nul(c.source),
+    source_detail: nul(c.sourceDetail),
   };
 }
 
@@ -416,7 +434,7 @@ export function chargeToRow(c: Charge): Row {
 
 export const PAYMENT = columns(
   "id", "case_id", "client_id", "amount_minor", "currency", "method_kind", "method_label", "transaction_reference",
-  "payer_name", "paid_at", "received_by", "status", "receipt_number", "voided_at", "voided_by", "void_reason",
+  "payer_name", "paid_at", "received_by", "status", "receipt_number", "confirmed_at", "confirmed_by", "balance_after_minor", "voided_at", "voided_by", "void_reason",
 );
 
 export const ALLOCATION = columns("id", "payment_id", "charge_id", "amount_minor");
@@ -435,7 +453,10 @@ export function toPayment(r: Row, allocations: PaymentAllocation[]): Payment {
     paidAt: iso(r.paid_at),
     receivedBy: str(r.received_by),
     status: r.status as Payment["status"],
-    receiptNumber: str(r.receipt_number),
+    receiptNumber: optStr(r.receipt_number),
+    confirmedAt: optIso(r.confirmed_at),
+    confirmedBy: optStr(r.confirmed_by),
+    balanceAfterMinor: r.balance_after_minor === null || r.balance_after_minor === undefined ? undefined : Number(r.balance_after_minor),
     allocations,
     voidedAt: optIso(r.voided_at),
     voidedBy: optStr(r.voided_by),
@@ -461,7 +482,7 @@ export function paymentToRow(p: Payment): Row {
     paid_at: p.paidAt,
     received_by: p.receivedBy,
     status: p.status,
-    receipt_number: p.receiptNumber,
+    receipt_number: nul(p.receiptNumber),
   };
 }
 
@@ -507,7 +528,9 @@ export function eventToRow(e: ActivityEvent): Row {
   return { id: e.id, at: e.at, actor_id: e.actorId, client_id: nul(e.clientId), case_id: nul(e.caseId), text: e.text };
 }
 
-export const COMMUNICATION = columns("id", "at", "client_id", "case_id", "channel", "status", "summary", "actor_id");
+export const COMMUNICATION = columns(
+  "id", "at", "client_id", "case_id", "channel", "status", "summary", "actor_id", "email_outbox_id", "recipient_email",
+);
 
 export function toCommunication(r: Row): CommunicationLog {
   return {
@@ -518,7 +541,67 @@ export function toCommunication(r: Row): CommunicationLog {
     channel: r.channel as CommunicationLog["channel"],
     status: r.status as CommunicationLog["status"],
     summary: str(r.summary),
-    actorId: str(r.actor_id),
+    actorId: optStr(r.actor_id),
+    emailOutboxId: optStr(r.email_outbox_id),
+    recipientEmail: optStr(r.recipient_email),
+  };
+}
+
+export const EMAIL_SETTINGS = columns(
+  "organization_id", "sender_name", "reply_to_email",
+  "notify_payment_confirmed", "notify_appointment_reminder",
+  "notify_case_status", "notify_missing_documents",
+);
+
+export function toEmailSettings(r?: Row | null): EmailSettings {
+  return {
+    senderName: str(r?.sender_name),
+    replyToEmail: str(r?.reply_to_email),
+    // Décision du 2 novembre 2026 : tout est désactivé tant que l'agence ne l'a pas activé.
+    notifyPaymentConfirmed: Boolean(r?.notify_payment_confirmed),
+    notifyAppointmentReminder: Boolean(r?.notify_appointment_reminder),
+    notifyCaseStatus: Boolean(r?.notify_case_status),
+    notifyMissingDocuments: Boolean(r?.notify_missing_documents),
+  };
+}
+
+export const EMAIL_OUTBOX = columns(
+  "id", "organization_id", "client_id", "case_id", "payment_id", "appointment_id",
+  "kind", "idempotency_key", "recipient_email", "recipient_name", "sender_name", "reply_to_email",
+  "subject", "payload", "status", "brevo_message_id", "attempts", "max_attempts",
+  "next_attempt_at", "last_error", "created_by", "created_at", "sent_at", "delivered_at",
+  "is_automatic", "last_event", "last_event_at",
+);
+
+export function toEmailOutboxItem(r: Row): EmailOutboxItem {
+  return {
+    id: str(r.id),
+    organizationId: str(r.organization_id),
+    clientId: optStr(r.client_id),
+    caseId: optStr(r.case_id),
+    paymentId: optStr(r.payment_id),
+    appointmentId: optStr(r.appointment_id),
+    kind: r.kind as EmailOutboxItem["kind"],
+    idempotencyKey: str(r.idempotency_key),
+    recipientEmail: str(r.recipient_email),
+    recipientName: str(r.recipient_name),
+    senderName: str(r.sender_name),
+    replyToEmail: optStr(r.reply_to_email),
+    subject: str(r.subject),
+    payload: (r.payload as Record<string, unknown> | null) ?? {},
+    status: r.status as EmailOutboxItem["status"],
+    brevoMessageId: optStr(r.brevo_message_id),
+    attempts: Number(r.attempts ?? 0),
+    maxAttempts: Number(r.max_attempts ?? 3),
+    nextAttemptAt: iso(r.next_attempt_at),
+    lastError: optStr(r.last_error),
+    createdBy: optStr(r.created_by),
+    createdAt: iso(r.created_at),
+    sentAt: optIso(r.sent_at),
+    deliveredAt: optIso(r.delivered_at),
+    isAutomatic: r.is_automatic === undefined ? true : Boolean(r.is_automatic),
+    lastEvent: optStr(r.last_event),
+    lastEventAt: optIso(r.last_event_at),
   };
 }
 
@@ -664,6 +747,90 @@ export function toServiceClient(r: Row): ServiceClient {
   };
 }
 
+export const PARTNER = columns(
+  "id", "name", "code", "phone", "email", "commission_minor", "currency", "notes", "is_active", "user_id", "access_token", "access_email", "created_at",
+);
+
+export function toPartner(r: Row): Partner {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    code: str(r.code),
+    phone: optStr(r.phone),
+    email: optStr(r.email),
+    commissionMinor: Number(r.commission_minor),
+    currency: str(r.currency),
+    notes: str(r.notes),
+    isActive: Boolean(r.is_active),
+    hasAccess: r.user_id !== null && r.user_id !== undefined,
+    accessToken: optStr(r.access_token),
+    accessEmail: optStr(r.access_email),
+    createdAt: iso(r.created_at),
+  };
+}
+
+export const PARTNER_COMMISSION = columns(
+  "id", "partner_id", "client_id", "amount_minor", "currency", "status", "approved_at", "paid_at", "paid_method", "paid_reference", "cancel_reason", "created_at",
+);
+
+export function toPartnerCommission(r: Row): PartnerCommission {
+  return {
+    id: str(r.id),
+    partnerId: str(r.partner_id),
+    clientId: str(r.client_id),
+    amountMinor: Number(r.amount_minor),
+    currency: str(r.currency),
+    status: r.status as PartnerCommission["status"],
+    approvedAt: optIso(r.approved_at),
+    paidAt: optIso(r.paid_at),
+    paidMethod: optStr(r.paid_method),
+    paidReference: optStr(r.paid_reference),
+    cancelReason: optStr(r.cancel_reason),
+    createdAt: iso(r.created_at),
+  };
+}
+
+export const SERVICE_BOOKING = columns(
+  "id", "service_client_id", "number", "provider", "reference", "start_date", "end_date", "place", "details", "amount_minor", "currency", "created_by", "created_at",
+);
+
+export function toServiceBooking(r: Row): ServiceBooking {
+  return {
+    id: str(r.id),
+    serviceClientId: str(r.service_client_id),
+    number: str(r.number),
+    provider: str(r.provider),
+    reference: str(r.reference),
+    startDate: optStr(r.start_date),
+    endDate: optStr(r.end_date),
+    place: str(r.place),
+    details: str(r.details),
+    amountMinor: r.amount_minor === null || r.amount_minor === undefined ? undefined : Number(r.amount_minor),
+    currency: optStr(r.currency),
+    createdBy: str(r.created_by),
+    createdAt: iso(r.created_at),
+  };
+}
+
+export const SERVICE_STEP = columns("id", "service_id", "position", "label");
+
+export function toServiceStep(r: Row): ServiceStep {
+  return { id: str(r.id), serviceId: str(r.service_id), position: Number(r.position), label: str(r.label) };
+}
+
+export const SERVICE_CLIENT_STEP = columns("id", "service_client_id", "position", "label", "done_at", "done_by");
+
+export function toServiceClientStep(r: Row): ServiceClientStep {
+  return {
+    id: str(r.id),
+    serviceClientId: str(r.service_client_id),
+    position: Number(r.position),
+    label: str(r.label),
+    doneAt: optIso(r.done_at),
+    doneBy: optStr(r.done_by),
+  };
+}
+
 // Abonnement et support -------------------------------------------------------------------------
 
 export const SUBSCRIPTION = columns("organization_id", "plan_id", "status", "trial_ends_at", "current_period_end");
@@ -748,9 +915,16 @@ export const READ_COLUMNS = {
   invoice_settings: INVOICE_SETTINGS,
   services: SERVICE,
   service_clients: SERVICE_CLIENT,
+  service_steps: SERVICE_STEP,
+  service_client_steps: SERVICE_CLIENT_STEP,
+  partners: PARTNER,
+  service_bookings: SERVICE_BOOKING,
+  partner_commissions: PARTNER_COMMISSION,
   subscriptions: SUBSCRIPTION,
   plans: PLAN,
   subscription_payments: SUBSCRIPTION_PAYMENT,
   support_tickets: TICKET,
   support_messages: TICKET_MESSAGE,
+  email_settings: EMAIL_SETTINGS,
+  email_outbox: EMAIL_OUTBOX,
 } as const;

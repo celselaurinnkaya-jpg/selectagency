@@ -30,11 +30,25 @@ async function Onboarding() {
   const { data: membership } = await user.supabase.from("members").select("id").eq("user_id", user.userId).limit(1).maybeSingle();
   if (membership) redirect("/dashboard");
 
-  const [{ data: invitations }, { data: access }] = await Promise.all([user.supabase.rpc("my_invitations"), user.supabase.rpc("platform_access")]);
+  const [{ data: invitations }, { data: access }, { data: isPartner }] = await Promise.all([
+    user.supabase.rpc("my_invitations"),
+    user.supabase.rpc("platform_access"),
+    user.supabase.rpc("is_partner"),
+  ]);
   const pending = (invitations ?? []) as { token: string; agency_name: string; role: MemberRole; expires_at: string }[];
+  // Partenaire d'une agence, sans invitation à rejoindre une équipe : son espace l'attend.
+  if (isPartner && pending.length === 0 && access === "none") redirect("/partenaire");
 
   return (
     <div className="space-y-6">
+      {isPartner && (
+        <Card className="space-y-2">
+          <p className="text-sm text-slate-700">Votre compte a un espace partenaire : vos clients recommandés et vos commissions.</p>
+          <Link href="/partenaire" className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+            Ouvrir mon espace partenaire
+          </Link>
+        </Card>
+      )}
       {access !== "none" && (
         <Card className="space-y-2">
           <p className="text-sm text-slate-700">Votre compte fait partie de l&apos;équipe SELECT : la console de la plateforme n&apos;a pas besoin d&apos;agence.</p>

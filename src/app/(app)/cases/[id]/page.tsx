@@ -16,9 +16,12 @@ import {
   CASE_OUTCOME,
   CASE_STATUS,
   CATEGORY_LABELS,
+  COMMUNICATION_CHANNEL,
+  COMMUNICATION_STATUS,
   CONFIRMATION,
   INVOICE_OVERDUE,
   INVOICE_STATUS,
+  PAYMENT_STATUS,
   PRIORITY,
   QUOTE_STATUS,
   REQUIREMENT_STATUS,
@@ -34,13 +37,16 @@ import { buildMessageTemplates } from "@/features/communications/templates";
 import { CHECKLIST_DISCLAIMER, DOCUMENT_TYPES } from "@/features/documents/checklists";
 import { AddRequirementForm, RemoveFileButton, RequirementEditor, ReviewDocumentForm } from "@/features/documents/DocumentForms";
 import { DocumentUpload } from "@/features/documents/DocumentUpload";
+import { MissingDocumentsEmailButton } from "@/features/documents/MissingDocumentsEmailButton";
+import { emailSendingEnabled } from "@/lib/email/brevo";
 import { AppointmentActions, AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { appointmentValues } from "@/features/appointments/values";
-import { AddChargeForm, RecordPaymentForm } from "@/features/finance/FinanceForms";
+import { AddChargeForm, PendingPaymentActions, RecordPaymentForm } from "@/features/finance/FinanceForms";
 import { formatDay, isOverdue } from "@/features/invoices/document";
 import { QuoteForm } from "@/features/quotes/QuoteForms";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
 import { WORKFLOW_DISCLAIMER } from "@/features/workflows/templates";
+import { caseKindLabel } from "@/features/workflows/templates";
 import { activeMembers } from "@/lib/domain/members";
 
 export const metadata: Metadata = { title: "Dossier" };
@@ -96,7 +102,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getCaseDetail(id);
   if (!detail) notFound();
-  const { summary, agency, now, members, permissions, organizationId, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications } = detail;
+  const { summary, agency, now, members, permissions, organizationId, notifyCaseStatus, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications } = detail;
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
@@ -112,6 +118,14 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   // Les actions ne sont proposées qu'aux rôles qui peuvent les faire (la base refuserait de toute façon).
   const canEdit = isActive && permissions.write;
   const balanceLabel = finance.balanceMinor ? formatMoney(finance.balanceMinor, finance.currency) : undefined;
+  // E-mails au client : envoi activé sur le serveur, et client joignable (adresse, pas de désinscription).
+  const directEmail = emailSendingEnabled();
+  const clientReachable = directEmail && Boolean(client.email) && !client.emailOptOut;
+  // Étapes qui préviennent le client (même règle que la base) : action attendue de sa part, décision, clôture.
+  const notifiedKeys =
+    notifyCaseStatus && clientReachable
+      ? steps.filter((s) => s.kind === "client_action" || s.kind === "closure" || (s.kind === "outcome" && s.outcome && s.outcome !== "pending")).map((s) => s.key)
+      : [];
 
   return (
     <>
@@ -131,8 +145,16 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
             <Link href={`/clients/${client.id}`} className="font-medium text-navy-700 hover:underline">
               {client.firstName} {client.lastName}
             </Link>{" "}
-            · {CATEGORY_LABELS[c.category]} · {countryName(c.destinationCountry)} · conseiller : {memberName(c.assignedTo)}
+            · {caseKindLabel(c.templateKey, CATEGORY_LABELS[c.category])} · {countryName(c.destinationCountry)} · conseiller : {memberName(c.assignedTo)}
           </>
+        }
+        actions={
+          <Button asChild variant="outline">
+            <Link href={`${base}/recapitulatif`}>
+              <FileText aria-hidden />
+              Récapitulatif à remettre
+            </Link>
+          </Button>
         }
       />
 
@@ -252,6 +274,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   canSkip={transitions.canSkip}
                   needsConfirmation={transitions.needsConfirmation}
                   balanceDue={balanceLabel}
+                  notifiedKeys={notifiedKeys}
                 />
               ) : (
                 <p className="text-sm text-slate-600">
@@ -265,6 +288,20 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
 
       {tab === "documents" && (
         <div className="space-y-6">
+          {canEdit && directEmail && missing.length > 0 && (
+            <Card className="space-y-3">
+              <p className="text-sm text-slate-700">
+                <strong className="text-navy-800 tabular-nums">{missing.length}</strong> pièce{missing.length > 1 ? "s" : ""} obligatoire
+                {missing.length > 1 ? "s" : ""} manque{missing.length > 1 ? "nt" : ""} encore. Envoyez la liste au client, au nom de votre agence.
+              </p>
+              <MissingDocumentsEmailButton
+                caseId={c.id}
+                email={client.email}
+                optedOut={client.emailOptOut}
+                items={missing.map((r) => ({ label: r.label, status: r.status, comment: r.status === "to_correct" ? r.reviewComment : undefined }))}
+              />
+            </Card>
+          )}
           <Section title="Pièces du dossier">
             <ul className="space-y-2">
               {requirements.map((r) => {
@@ -388,13 +425,19 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
           <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Frais de l'agence" value={formatMoney(finance.agreedAgencyMinor, finance.currency)} hint="Revenus propres convenus" icon={Wallet} />
             <StatCard label="Montants pour des tiers" value={formatMoney(finance.agreedThirdPartyMinor, finance.currency)} hint="À reverser (frais officiels…)" icon={Wallet} />
-            <StatCard label="Encaissé" value={formatMoney(finance.paidMinor, finance.currency)} icon={Wallet} tone="success" />
+            <StatCard
+              label="Encaissé"
+              value={formatMoney(finance.paidMinor, finance.currency)}
+              hint={finance.pendingMinor ? `+ ${formatMoney(finance.pendingMinor, finance.currency)} à vérifier` : "Paiements confirmés"}
+              icon={Wallet}
+              tone="success"
+            />
             <StatCard label={finance.overpaidMinor ? "Trop-perçu" : "Solde dû"} value={formatMoney(finance.overpaidMinor || finance.balanceMinor, finance.currency)} icon={Wallet} tone={finance.balanceMinor ? "warning" : "success"} />
           </div>
           <Section title="Prestations convenues">
             {charges.length === 0 && <p className="mb-3 text-sm text-slate-600">Aucune prestation : ajoutez ce qui a été convenu avec le client avant d&apos;enregistrer un paiement.</p>}
             <ul className="space-y-2">
-              {charges.map(({ charge, allocatedMinor, remainingMinor }) => (
+              {charges.map(({ charge, allocatedMinor, remainingMinor, pendingMinor }) => (
                 <li key={charge.id}>
                   <Card className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <span className="min-w-0">
@@ -412,6 +455,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                       <span className="block font-semibold text-slate-900">{formatMoney(charge.amountMinor, charge.currency)}</span>
                       <span className="block text-xs text-slate-500">
                         payé {formatMoney(allocatedMinor, charge.currency)} · reste {formatMoney(remainingMinor, charge.currency)}
+                        {pendingMinor > 0 && <span className="text-orange-800"> · dont {formatMoney(pendingMinor, charge.currency)} à vérifier</span>}
                       </span>
                     </span>
                   </Card>
@@ -500,6 +544,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   caseId={c.id}
                   currency={c.billingCurrency}
                   remainingLabel={formatMoney(charges.reduce((sum, x) => sum + x.remainingMinor, 0), c.billingCurrency)}
+                  pendingLabel={finance.pendingMinor ? formatMoney(finance.pendingMinor, c.billingCurrency) : undefined}
                   defaultDate={dayKey(now, tz)}
                   defaultPayer={`${client.firstName} ${client.lastName}`}
                 />
@@ -513,20 +558,23 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               <ul className="space-y-2">
                 {payments.map((p) => (
                   <li key={p.id}>
-                    <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                      <span>
-                        <span className="block font-semibold tabular-nums text-slate-900">
-                          {formatMoney(p.amountMinor, p.currency)}
-                          {p.status === "voided" && <StatusBadge className="ml-2" spec={{ label: "Annulé", tone: "danger" }} />}
+                    <Card className="space-y-2">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="flex flex-wrap items-center gap-2 font-semibold tabular-nums text-slate-900">
+                            {formatMoney(p.amountMinor, p.currency)}
+                            {p.status !== "recorded" && <StatusBadge spec={PAYMENT_STATUS[p.status]} />}
+                          </span>
+                          <span className="block text-xs text-slate-500">
+                            {formatDate(p.paidAt, tz, "dateTime")} · {p.methodLabel}
+                            {p.transactionReference && ` · réf. ${p.transactionReference}`} · {p.status === "pending" ? "saisi" : "reçu"} par {memberName(p.receivedBy)}
+                          </span>
                         </span>
-                        <span className="block text-xs text-slate-500">
-                          {formatDate(p.paidAt, tz, "dateTime")} · {p.methodLabel}
-                          {p.transactionReference && ` · réf. ${p.transactionReference}`} · reçu par {memberName(p.receivedBy)}
-                        </span>
-                      </span>
-                      <Link href={`/finance/receipts/${p.id}`} className="text-sm font-medium text-navy-700 hover:underline">
-                        Reçu {p.receiptNumber}
-                      </Link>
+                        <Link href={`/finance/receipts/${p.id}`} className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+                          {p.receiptNumber ? `Reçu ${p.receiptNumber}` : "Voir le paiement"}
+                        </Link>
+                      </div>
+                      {p.status === "pending" && permissions.financeWrite && <PendingPaymentActions paymentId={p.id} />}
                     </Card>
                   </li>
                 ))}
@@ -609,11 +657,18 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               <ul className="space-y-2">
                 {communications.map((m) => (
                   <li key={m.id}>
-                    <Card>
-                      <span className="block text-sm font-medium text-slate-900">WhatsApp · {m.summary}</span>
-                      <span className="block text-xs text-slate-500">
-                        Préparé, envoi manuel · {formatRelativeDay(m.at, now, tz)} · {memberName(m.actorId)}
-                      </span>
+                    <Card className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <span className="block text-sm font-medium text-slate-900">
+                          {COMMUNICATION_CHANNEL[m.channel]} · {m.summary}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {formatRelativeDay(m.at, now, tz)}
+                          {m.recipientEmail ? ` · ${m.recipientEmail}` : ""}
+                          {m.actorId ? ` · ${memberName(m.actorId)}` : " · Automatique"}
+                        </span>
+                      </div>
+                      <StatusBadge spec={COMMUNICATION_STATUS[m.status]} />
                     </Card>
                   </li>
                 ))}

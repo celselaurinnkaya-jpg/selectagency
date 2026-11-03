@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, PageHeader, Section } from "@/components/shared/ui";
 import { CATEGORY_SHORT_LABELS, CLIENT_TYPE } from "@/lib/domain/labels";
+import { caseKindLabel } from "@/features/workflows/templates";
 import { search } from "@/features/operations/queries";
 
 export const metadata: Metadata = { title: "Recherche" };
@@ -56,7 +57,7 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
                           {c.firstName} {c.lastName}
                         </span>
                         <span className="block text-sm text-slate-600">
-                          {c.reference} · {CLIENT_TYPE[c.clientType]} · {c.city}
+                          {c.reference} · {c.status === "prospect" ? "Prospect" : CLIENT_TYPE[c.clientType]} · {c.city}
                         </span>
                       </Card>
                     </Link>
@@ -76,7 +77,7 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
                       <Card className="hover:ring-2 hover:ring-navy-200">
                         <span className="font-medium text-navy-800">{k.title}</span>
                         <span className="block text-sm text-slate-600">
-                          {k.reference} · {CATEGORY_SHORT_LABELS[k.category]} · {client.firstName} {client.lastName}
+                          {k.reference} · {caseKindLabel(k.templateKey, CATEGORY_SHORT_LABELS[k.category])} · {client.firstName} {client.lastName}
                         </span>
                       </Card>
                     </Link>

@@ -9,22 +9,22 @@ import { formatTaxRate, invoiceTotals, lineAmount } from "./totals";
 // (Helvetica) : aucun fichier de police à charger ; leur jeu de caractères (WinAnsi) couvre le
 // français, les autres caractères sont remplacés.
 
-const A4 = { width: 595.28, height: 841.89 };
-const M = 48;
-const RIGHT = A4.width - M;
-const WIDTH = RIGHT - M;
-const BOTTOM = M + 24;
+export const A4 = { width: 595.28, height: 841.89 };
+export const M = 48;
+export const RIGHT = A4.width - M;
+export const WIDTH = RIGHT - M;
+export const BOTTOM = M + 24;
 
-const NAVY = rgb(2 / 255, 55 / 255, 100 / 255);
-const CITRON = rgb(240 / 255, 255 / 255, 10 / 255);
-const INK = rgb(15 / 255, 23 / 255, 42 / 255);
-const MUTED = rgb(71 / 255, 85 / 255, 105 / 255);
-const FAINT = rgb(100 / 255, 116 / 255, 139 / 255);
-const BORDER = rgb(225 / 255, 230 / 255, 238 / 255);
-const SURFACE = rgb(243 / 255, 245 / 255, 248 / 255);
-const MARK = rgb(0.9, 0.91, 0.93);
+export const NAVY = rgb(2 / 255, 55 / 255, 100 / 255);
+export const CITRON = rgb(240 / 255, 255 / 255, 10 / 255);
+export const INK = rgb(15 / 255, 23 / 255, 42 / 255);
+export const MUTED = rgb(71 / 255, 85 / 255, 105 / 255);
+export const FAINT = rgb(100 / 255, 116 / 255, 139 / 255);
+export const BORDER = rgb(225 / 255, 230 / 255, 238 / 255);
+export const SURFACE = rgb(243 / 255, 245 / 255, 248 / 255);
+export const MARK = rgb(0.9, 0.91, 0.93);
 const PAID = rgb(5 / 255, 150 / 255, 105 / 255);
-const DEMO = rgb(154 / 255, 52 / 255, 18 / 255);
+export const DEMO = rgb(154 / 255, 52 / 255, 18 / 255);
 
 const WIN_ANSI_EXTRA = "€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ";
 
@@ -93,7 +93,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
   const line = (top: number, x1 = M, x2 = RIGHT, color = BORDER) => page.drawLine({ start: { x: x1, y: top }, end: { x: x2, y: top }, thickness: 0.8, color });
 
   // En-tête : titre, numéro, logo.
-  text("FACTURE", M, y, 26, bold, NAVY);
+  text("FACTURE", M, y, 24, bold, NAVY);
   const label = "N° de facture";
   text(label, M, y - 34, 9.5, font, MUTED);
   const number = data.number ?? "attribué à l'enregistrement";
@@ -109,9 +109,9 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     const ini = pdfText(initials(data.issuer.name) || "A");
     page.drawText(ini, { x: RIGHT - 28 - bold.widthOfTextAtSize(ini, 15) / 2, y: y - 33, size: 15, font: bold, color: CITRON });
   }
-  y -= 78;
+  y -= 64;
   line(y);
-  y -= 16;
+  y -= 12;
 
   // Émetteur, destinataire, dates.
   const colW = (WIDTH - 24) / 2;
@@ -137,7 +137,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     }
     lowest = Math.min(lowest, top);
   });
-  y = lowest - 10;
+  y = lowest - 6;
   [
     ["Date d'émission", formatDay(data.issueDate)],
     ["Date d'échéance", formatDay(data.dueDate)],
@@ -145,20 +145,20 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     text(title!, colX[i]!, y, 8.5, font, FAINT);
     text(value!, colX[i]!, y - 13, 10, bold);
   });
-  y -= 30;
+  y -= 28;
   if (data.caseLabel) {
     for (const l of wrap(`Dossier : ${data.caseLabel}`, font, 9, WIDTH)) {
       text(l, M, y, 9, font, MUTED);
       y -= 12;
     }
   }
-  y -= 10;
+  y -= 4;
 
   // Lignes de la facture.
   const cols = { label: M, labelWidth: 236, qty: M + 276, unit: M + 366, tax: M + 424, amount: RIGHT };
   const tableHeader = () => {
     text("Prestations", M, y, 9, font, MUTED);
-    y -= 20;
+    y -= 16;
     text("Désignation", cols.label, y, 8.5, font, FAINT);
     textRight("Qté", cols.qty, y, 8.5, font, FAINT);
     textRight("Prix unit.", cols.unit, y, 8.5, font, FAINT);
@@ -166,13 +166,13 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     textRight("Montant", cols.amount, y, 8.5, font, FAINT);
     y -= 14;
     line(y);
-    y -= 8;
+    y -= 6;
   };
   ensure(80);
   tableHeader();
   for (const item of data.items) {
     const labelLines = wrap(item.label, font, 9.5, cols.labelWidth);
-    const height = labelLines.length * 12 + 10;
+    const height = labelLines.length * 12 + 8;
     if (y - height < BOTTOM) {
       page = newPage();
       y = A4.height - M;
@@ -186,7 +186,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     y -= height;
     line(y + 4, M, RIGHT, SURFACE);
   }
-  y -= 10;
+  y -= 6;
 
   // Totaux.
   const totals = invoiceTotals(data.items, data.discountMinor);
@@ -211,7 +211,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     page.drawRectangle({ x: M + 10, y: y - 52, width: 92, height: 30, borderColor: PAID, borderWidth: 2, rotate: degrees(8) });
     page.drawText("PAYÉE", { x: M + 24, y: y - 44, size: 16, font: bold, color: PAID, rotate: degrees(8) });
   }
-  y -= boxH + 14;
+  y -= boxH + 10;
 
   // Remarque.
   if (data.notes) {
@@ -220,20 +220,20 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
     ensure(noteH + 10);
     roundedRect(page, M, y, WIDTH, noteH, 5, undefined, BORDER);
     noteLines.forEach((l, i) => text(l, M + 10, y - 6 - i * 11, 8.5, font, MUTED));
-    y -= noteH + 14;
+    y -= noteH + 10;
   }
 
   // Mode de paiement, signature et cachet.
   const payLines = data.paymentDetails ? wrap(data.paymentDetails, font, 9, colW) : [];
-  ensure(Math.max(payLines.length * 12 + 30, 130));
+  ensure(Math.max(payLines.length * 12 + 30, 112));
   line(y);
-  y -= 16;
+  y -= 12;
   const blockTop = y;
   if (payLines.length) {
     text("Mode de paiement", M, blockTop, 9.5, bold);
     payLines.forEach((l, i) => text(l, M, blockTop - 15 - i * 12, 9, font, MUTED));
   }
-  const sign = { x: RIGHT - 180, w: 180, h: 84 };
+  const sign = { x: RIGHT - 180, w: 180, h: 64 };
   if (embedded.stamp) {
     const box = fit(embedded.stamp, 110, sign.h);
     page.drawImage(embedded.stamp, { x: sign.x + (sign.w - box.width) / 2, y: blockTop - sign.h + (sign.h - box.height) / 2, opacity: 0.9, ...box });
@@ -244,7 +244,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
   }
   if (!embedded.stamp && !embedded.signature) line(blockTop - sign.h + 4, sign.x, RIGHT, rgb(0.8, 0.83, 0.87));
   textRight(data.signatoryName || "Signature et cachet", RIGHT, blockTop - sign.h - 6, 9.5, bold);
-  y = Math.min(blockTop - payLines.length * 12 - 20, blockTop - sign.h - 24);
+  y = Math.min(blockTop - payLines.length * 12 - 16, blockTop - sign.h - 20);
 
   // Mentions de bas de facture.
   const footer = [...(data.footerNote ? wrap(data.footerNote, font, 7.5, WIDTH) : [])];
@@ -269,7 +269,7 @@ export async function renderInvoicePdf(data: InvoiceDocumentData, images: PdfIma
   return doc.save();
 }
 
-async function embedImage(doc: PDFDocument, bytes: Uint8Array): Promise<PDFImage | undefined> {
+export async function embedImage(doc: PDFDocument, bytes: Uint8Array): Promise<PDFImage | undefined> {
   try {
     if (bytes[0] === 0x89 && bytes[1] === 0x50) return await doc.embedPng(bytes);
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return await doc.embedJpg(bytes);
@@ -279,13 +279,13 @@ async function embedImage(doc: PDFDocument, bytes: Uint8Array): Promise<PDFImage
   return undefined;
 }
 
-function fit(image: PDFImage, maxWidth: number, maxHeight: number) {
+export function fit(image: PDFImage, maxWidth: number, maxHeight: number) {
   const ratio = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
   return { width: image.width * ratio, height: image.height * ratio };
 }
 
 /** Rectangle à coins arrondis, repéré par son coin supérieur gauche. */
-function roundedRect(page: PDFPage, x: number, top: number, w: number, h: number, r: number, fill?: ReturnType<typeof rgb>, border?: ReturnType<typeof rgb>) {
+export function roundedRect(page: PDFPage, x: number, top: number, w: number, h: number, r: number, fill?: ReturnType<typeof rgb>, border?: ReturnType<typeof rgb>) {
   const path = `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`;
   page.drawSvgPath(path, { x, y: top, color: fill, borderColor: border, borderWidth: border ? 0.8 : 0 });
 }

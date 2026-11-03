@@ -14,21 +14,33 @@ import {
   APPOINTMENT_STATUS,
   CASE_STATUS,
   CATEGORY_LABELS,
+  CLIENT_SOURCE,
   CLIENT_TYPE,
+  COMMUNICATION_CHANNEL,
+  COMMUNICATION_STATUS,
   GENDER_OPTIONS,
   ID_DOC_TYPES,
   LANGUAGES,
   MARITAL_STATUS,
+  PAYMENT_STATUS,
+  PROSPECT_BADGE,
   REQUIREMENT_STATUS,
+  ROLE,
   SERVICE_CLIENT_STATUS,
   SERVICE_MOTIVES,
   STEP_KIND,
 } from "@/lib/domain/labels";
+import { activeMembers } from "@/lib/domain/members";
 import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
+import { AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { getClientDetail } from "@/features/clients/queries";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { buildMessageTemplates } from "@/features/communications/templates";
+import { ConvertProspectButton, FollowUpForm } from "@/features/prospects/ProspectForms";
 import { EnrollForm, ServiceClientActions } from "@/features/services/ServiceForms";
+import { caseKindLabel } from "@/features/workflows/templates";
+import { ServiceProgress } from "@/features/services/ServiceSteps";
+import { BookingPanel } from "@/features/services/BookingForms";
 
 export const metadata: Metadata = { title: "Fiche client" };
 
@@ -55,21 +67,28 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services, followUps, today, partner } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/clients/${client.id}`;
   const missing = requirements.filter((r) => r.isRequired && (r.status === "not_received" || r.status === "to_correct"));
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
   const balance = cases.reduce((sum, s) => sum + s.finance.balanceMinor, 0);
+  const isProspect = client.status === "prospect";
+  const origin = client.source ? `${CLIENT_SOURCE[client.source]}${client.sourceDetail ? ` — ${client.sourceDetail}` : ""}` : (client.sourceDetail ?? "Non précisée");
 
   return (
     <>
       <PageHeader
-        back={{ href: "/clients", label: "Retour aux clients" }}
-        eyebrow={<span className="font-mono text-sm text-slate-500">{client.reference}</span>}
+        back={isProspect ? { href: "/prospects", label: "Retour aux prospects" } : { href: "/clients", label: "Retour aux clients" }}
+        eyebrow={
+          <span className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-sm text-slate-500">{client.reference}</span>
+            {isProspect && <StatusBadge spec={PROSPECT_BADGE} />}
+          </span>
+        }
         title={`${client.firstName} ${client.lastName}`}
-        description={`${CLIENT_TYPE[client.clientType]} · ${client.city}, ${countryName(client.residenceCountry)} · suivi par ${advisor?.fullName ?? "—"}`}
+        description={`${isProspect ? "Prospect" : CLIENT_TYPE[client.clientType]} · ${[client.city, countryName(client.residenceCountry)].filter(Boolean).join(", ")} · suivi par ${advisor?.fullName ?? "—"}`}
         actions={
           permissions.write || permissions.delete ? (
           <>
@@ -113,6 +132,63 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
           </Notice>
         </div>
       )}
+      {query.partenaire === "refuse" && (
+        <div className="mb-4">
+          <Notice tone="warning" title="Partenaire non modifié">
+            La fiche est enregistrée, mais le partenaire n&apos;a pas pu changer : sa commission est peut-être déjà payée. Vérifiez sur la page du
+            partenaire.
+          </Notice>
+        </div>
+      )}
+      {query.ok === "prospect-cree" && (
+        <div className="mb-4">
+          <Notice tone="success" title="Prospect enregistré">
+            {followUps.length ? "Sa première relance est planifiée : elle apparaîtra dans les tâches le jour venu." : "Pensez à planifier sa relance ci-dessous."}
+          </Notice>
+        </div>
+      )}
+
+      {isProspect && (
+        <Section title="Prospect à suivre" className="mb-6">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="space-y-3">
+              <dl className="grid gap-3 sm:grid-cols-2">
+                <Field label="Origine du contact">{origin}</Field>
+                <Field label="Premier contact">{formatDate(client.registeredAt, tz)}</Field>
+                <Field label="Projet" className="sm:col-span-2">
+                  {client.serviceMotive ? SERVICE_MOTIVES[client.serviceMotive] ?? client.serviceMotive : "Non précisé"}
+                </Field>
+              </dl>
+              <p className="text-sm text-slate-600">
+                Il devient client avec ce bouton, ou de lui-même dès qu&apos;un dossier lui est ouvert ou qu&apos;il est ajouté à un service. La fiche
+                reste la même : rien n&apos;est recopié.
+              </p>
+              {permissions.write && <ConvertProspectButton clientId={client.id} name={`${client.firstName} ${client.lastName}`} />}
+            </Card>
+            <Card className="space-y-3">
+              <h3 className="font-semibold text-navy-800">Relances</h3>
+              {followUps.length === 0 ? (
+                <p className="text-sm font-medium text-orange-800">Aucune relance prévue.</p>
+              ) : (
+                <ul className="divide-y divide-slate-100 text-sm">
+                  {followUps.map((t) => (
+                    <li key={t.id} className="flex flex-wrap items-baseline justify-between gap-2 py-2">
+                      <span className="text-slate-900">{t.title}</span>
+                      <span className={new Date(t.dueAt).getTime() < now.getTime() ? "font-semibold text-red-700" : "text-slate-600"}>
+                        {formatRelativeDay(t.dueAt, now, tz)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {permissions.write && <FollowUpForm clientId={client.id} today={today} />}
+              <Link href={`${base}?tab=rendez-vous`} className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+                {nextAppointment ? `Rendez-vous ${formatRelativeDay(nextAppointment.startsAt, now, tz, !nextAppointment.allDay).toLowerCase()}` : "Programmer un rendez-vous"}
+              </Link>
+            </Card>
+          </div>
+        </Section>
+      )}
 
       <TabNav
         label="Sections de la fiche client"
@@ -151,6 +227,16 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                     </span>
                   </Field>
                   <Field label="Inscription">{formatDate(client.registeredAt, tz)}</Field>
+                  <Field label="Origine du contact">{origin}</Field>
+                  {partner && (
+                    <Field label="Apporté par">
+                      <Link href={`/partners/${partner.id}`} className="font-medium text-navy-700 hover:underline">
+                        {partner.name}
+                      </Link>{" "}
+                      <span className="font-mono text-xs text-slate-500">({partner.code})</span>
+                    </Field>
+                  )}
+                  {client.convertedAt && <Field label="Devenu client">{formatDate(client.convertedAt, tz)}</Field>}
                 </dl>
               </Card>
             </Section>
@@ -267,7 +353,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                 </span>
                 <span className="mt-2 block font-medium text-navy-800">{s.travelCase.title}</span>
                 <span className="block text-sm text-slate-600">
-                  {CATEGORY_LABELS[s.travelCase.category]} · {countryName(s.travelCase.destinationCountry)}
+                  {caseKindLabel(s.travelCase.templateKey, CATEGORY_LABELS[s.travelCase.category])} · {countryName(s.travelCase.destinationCountry)}
                 </span>
                 <span className="mt-2 block text-sm text-slate-700">Étape : {s.current?.label ?? "Dossier clôturé"}</span>
                 {s.finance.balanceMinor > 0 && <span className="block text-sm text-orange-800">Solde dû : {formatMoney(s.finance.balanceMinor, s.finance.currency)}</span>}
@@ -303,7 +389,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
               <EmptyState icon={BriefcaseBusiness} title="Ce client ne suit aucun service" description="Ajoutez-le à un service (hébergement, garant, AVI…) pour suivre où il en est." />
             ) : (
               <ul className="space-y-3">
-                {services.followed.map(({ link, service }) => {
+                {services.followed.map(({ link, service, progress, bookings }) => {
                   const linkedCase = cases.find((s) => s.travelCase.id === link.caseId)?.travelCase;
                   return (
                     <li key={link.id} className="space-y-3 rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.1)]">
@@ -330,6 +416,8 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                         · ajouté le {formatDate(link.addedAt, tz)}
                       </p>
                       {link.note && <p className="rounded-lg bg-surface px-3 py-2 text-sm whitespace-pre-line text-slate-700">{link.note}</p>}
+                      <ServiceProgress steps={progress.steps} canEdit={permissions.write && link.status !== "cancelled"} timezone={tz} />
+                      <BookingPanel linkId={link.id} bookings={bookings} defaultCurrency={agency.currency} canEdit={permissions.write} />
                       {permissions.write && (
                         <div className="border-t border-slate-100 pt-3">
                           <ServiceClientActions
@@ -372,6 +460,23 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
         </Section>
       )}
 
+      {tab === "rendez-vous" && permissions.write && !client.archivedAt && (
+        <Section title="Programmer un rendez-vous" className="mb-6">
+          <Card>
+            <AppointmentForm
+              fixedClientId={client.id}
+              members={activeMembers(members)
+                .filter((m) => m.role !== "viewer")
+                .map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }))}
+              defaultMemberId={client.assignedTo}
+              defaultDate={today}
+            />
+          </Card>
+          <p className="mt-3 text-sm text-slate-600">
+            Pour un rendez-vous lié à une démarche (dépôt de visa, entretien d&apos;admission…), programmez-le depuis le dossier concerné.
+          </p>
+        </Section>
+      )}
       {tab === "rendez-vous" && (
         <Section title="Rendez-vous et échéances">
           {appointments.length === 0 ? (
@@ -396,7 +501,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
       )}
 
       {tab === "paiements" && (
-        <Section title="Paiements reçus">
+        <Section title="Paiements">
           {payments.length === 0 ? (
             <p className="text-sm text-slate-600">Aucun paiement enregistré.</p>
           ) : (
@@ -405,13 +510,16 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                 <li key={p.id}>
                   <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <span>
-                      <span className="block text-sm font-semibold tabular-nums text-slate-900">{formatMoney(p.amountMinor, p.currency)}</span>
+                      <span className="flex flex-wrap items-center gap-2 text-sm font-semibold tabular-nums text-slate-900">
+                        {formatMoney(p.amountMinor, p.currency)}
+                        {p.status !== "recorded" && <StatusBadge spec={PAYMENT_STATUS[p.status]} />}
+                      </span>
                       <span className="block text-xs text-slate-500">
                         {formatDate(p.paidAt, tz)} · {p.methodLabel} · {caseReferences.get(p.caseId)}
                       </span>
                     </span>
-                    <Link href={`/finance/receipts/${p.id}`} className="text-sm font-medium text-navy-700 hover:underline">
-                      Reçu {p.receiptNumber}
+                    <Link href={`/finance/receipts/${p.id}`} className="inline-flex min-h-10 items-center text-sm font-medium text-navy-700 hover:underline">
+                      {p.receiptNumber ? `Reçu ${p.receiptNumber}` : "Paiement à vérifier"}
                     </Link>
                   </Card>
                 </li>
@@ -450,11 +558,18 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
               <ul className="space-y-2">
                 {communications.map((c) => (
                   <li key={c.id}>
-                    <Card>
-                      <span className="block text-sm font-medium text-slate-900">WhatsApp · {c.summary}</span>
-                      <span className="block text-xs text-slate-500">
-                        Préparé, envoi manuel · {formatRelativeDay(c.at, now, tz)} · {members.find((m) => m.id === c.actorId)?.fullName}
-                      </span>
+                    <Card className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <span className="block text-sm font-medium text-slate-900">
+                          {COMMUNICATION_CHANNEL[c.channel]} · {c.summary}
+                        </span>
+                        <span className="block text-xs text-slate-500">
+                          {formatRelativeDay(c.at, now, tz)}
+                          {c.recipientEmail ? ` · ${c.recipientEmail}` : ""}
+                          {c.actorId ? ` · ${members.find((m) => m.id === c.actorId)?.fullName ?? ""}` : " · Automatique"}
+                        </span>
+                      </div>
+                      <StatusBadge spec={COMMUNICATION_STATUS[c.status]} />
                     </Card>
                   </li>
                 ))}

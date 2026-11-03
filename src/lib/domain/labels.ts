@@ -7,11 +7,16 @@ import type {
   CaseOutcome,
   CasePriority,
   CaseStatus,
+  ClientSource,
   ClientType,
+  CommissionStatus,
+  CommunicationChannel,
+  CommunicationStatus,
   ConfirmationLevel,
   InvoiceStatus,
   MemberRole,
   PaymentMethodKind,
+  PaymentStatus,
   QuoteStatus,
   RequirementStatus,
   ServiceClientStatus,
@@ -137,6 +142,21 @@ export const INVOICE_STATUS: Record<InvoiceStatus, LabelSpec> = {
   cancelled: { label: "Annulée", tone: "neutral" },
 };
 
+/** Commission d'un partenaire : due dès le premier paiement confirmé du client apporté. */
+export const COMMISSION_STATUS: Record<CommissionStatus, LabelSpec> = {
+  pending: { label: "En attente du 1er paiement", tone: "neutral" },
+  approved: { label: "À payer", tone: "warning" },
+  paid: { label: "Payée", tone: "success" },
+  cancelled: { label: "Annulée", tone: "neutral" },
+};
+
+/** Paiement annoncé (à vérifier, sans reçu), confirmé (avec reçu) ou annulé. */
+export const PAYMENT_STATUS: Record<PaymentStatus, LabelSpec> = {
+  pending: { label: "À vérifier", tone: "warning" },
+  recorded: { label: "Confirmé", tone: "success" },
+  voided: { label: "Annulé", tone: "danger" },
+};
+
 /** Facture émise dont l'échéance est passée (calculé à l'affichage). */
 export const INVOICE_OVERDUE: LabelSpec = { label: "En retard", tone: "danger" };
 
@@ -249,6 +269,41 @@ export const ID_DOC_TYPES: Record<string, string> = {
   cni: "Carte Nationale d'Identité (CNI)",
   residence_permit: "Titre ou carte de séjour",
   other: "Autre pièce officielle",
+};
+
+/** Origine du contact (prospects et clients). */
+export const CLIENT_SOURCE: Record<ClientSource, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  whatsapp: "WhatsApp",
+  tiktok: "TikTok",
+  referral: "Recommandation",
+  walk_in: "Visite à l'agence",
+  website: "Site internet",
+  phone: "Appel téléphonique",
+  other: "Autre",
+};
+
+export const PROSPECT_BADGE: LabelSpec = { label: "Prospect", tone: "info" };
+
+export const COMMUNICATION_CHANNEL: Record<CommunicationChannel, string> = {
+  whatsapp: "WhatsApp",
+  email: "E-mail",
+  phone: "Téléphone",
+  in_person: "En agence",
+};
+
+/** Statut réel d'une communication (« Envoyé » = accepté par Brevo ; « Livré » = confirmé par Brevo). */
+export const COMMUNICATION_STATUS: Record<CommunicationStatus, LabelSpec> = {
+  prepared_manual: { label: "Préparé, envoi manuel", tone: "neutral" },
+  logged: { label: "Enregistré", tone: "neutral" },
+  queued: { label: "En file d'envoi", tone: "info" },
+  sent: { label: "Envoyé", tone: "info" },
+  delivered: { label: "Livré", tone: "success" },
+  bounced: { label: "Non distribué (rejeté)", tone: "danger" },
+  complained: { label: "Signalé indésirable", tone: "danger" },
+  failed: { label: "Échec d'envoi", tone: "warning" },
+  cancelled: { label: "Annulé", tone: "neutral" },
 };
 
 export const SERVICE_MOTIVES: Record<string, string> = {

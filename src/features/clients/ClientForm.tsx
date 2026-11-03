@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
 import { initialFormState } from "@/lib/form-state";
 import {
+  CLIENT_SOURCE,
   CLIENT_TYPE,
   LANGUAGES,
   GENDER_OPTIONS,
@@ -30,6 +31,8 @@ interface ClientFormProps {
   defaultCountry: string;
   defaultMemberId: string;
   client?: Client;
+  /** Code du partenaire déjà rattaché (modification). */
+  partnerCode?: string;
 }
 
 /**
@@ -42,7 +45,7 @@ export function ClientForm(props: ClientFormProps) {
   return <ClientFormFields key={bfcacheId} {...props} />;
 }
 
-function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client }: ClientFormProps) {
+function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode }: ClientFormProps) {
   // En cas de succès, saveClientAction redirige elle-même vers la fiche (rien à rejouer ici).
   const [state, action, pending] = useActionState(saveClientAction, initialFormState);
   const v = state.values ?? {};
@@ -374,6 +377,33 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
             ))}
           </select>
         </FormField>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField id="source" label="Origine du contact" error={e.source}>
+            <select id="source" name="source" defaultValue={v.source ?? client?.source ?? ""} className={selectClass}>
+              <option value="">Non précisée</option>
+              {Object.entries(CLIENT_SOURCE).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </FormField>
+          <FormField id="sourceDetail" label="Précision sur l'origine" error={e.sourceDetail} hint="Ex. : nom de la personne qui recommande, publicité de la rentrée.">
+            <Input id="sourceDetail" name="sourceDetail" maxLength={120} defaultValue={v.sourceDetail ?? client?.sourceDetail} {...describedBy("sourceDetail", e.sourceDetail, "hint")} />
+          </FormField>
+          <FormField id="partnerCode" label="Code partenaire" error={e.partnerCode} hint="Si un partenaire vous l'envoie : sa commission sera suivie automatiquement.">
+            <Input
+              id="partnerCode"
+              name="partnerCode"
+              maxLength={20}
+              autoComplete="off"
+              defaultValue={v.partnerCode ?? partnerCode}
+              placeholder="Ex. : AMINA-2026"
+              className="font-mono uppercase"
+              {...describedBy("partnerCode", e.partnerCode, "hint")}
+            />
+          </FormField>
+        </div>
         <FormField id="notes" label="Notes internes" hint="Contexte du projet, premier contact. N'y inscrivez ni numéro de passeport ni donnée bancaire.">
           <Textarea id="notes" name="notes" rows={3} defaultValue={v.notes ?? client?.notes} {...describedBy("notes", undefined, "hint")} />
         </FormField>

@@ -7,6 +7,7 @@ import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { loadTables, readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
 import { stepToRow } from "@/lib/data/rows";
+import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import type { ApplicantTag } from "@/lib/domain/types";
@@ -14,7 +15,8 @@ import { buildRequirements, documentType, DOCUMENT_TYPES, OTHER_DOCUMENT } from 
 import { caseFinance } from "@/features/finance/calculations";
 import { instantiateSteps } from "@/features/workflows/instantiate";
 import { applyTransition, validateTransition, type TransitionInput } from "@/features/workflows/rules";
-import { templateForCategory } from "@/features/workflows/templates";
+import { effectiveTemplate } from "@/features/workflows/custom";
+import { resolveTemplate } from "@/features/workflows/templates";
 import { activeMembers } from "@/lib/domain/members";
 
 const categories = ["study_abroad", "tourist_visa", "business_travel", "administrative_support", "other_mobility", "custom_trip"] as const;
@@ -34,6 +36,8 @@ const caseSchema = z.object({
   institution: z.string().trim().max(120).optional(),
   program: z.string().trim().max(120).optional(),
   intake: z.string().trim().max(60).optional(),
+  // Procédure (études : Campus France, Parcoursup, école privée…) ; à défaut, le modèle du type de projet.
+  templateKey: z.string().max(40).optional(),
 });
 
 export async function createCaseAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -60,7 +64,7 @@ export async function createCaseAction(_prev: FormState, formData: FormData): Pr
 
   // Copie du modèle et de la checklist dans le dossier : les modifications futures des modèles
   // ne changeront pas ce dossier. La base attribue le numéro DOS-… et écrit l'historique.
-  const template = templateForCategory(input.category);
+  const template = await effectiveTemplate(ctx, resolveTemplate(input.category, input.templateKey));
   const steps = instantiateSteps("nouveau", template).map((s) => ({
     position: s.position,
     key: s.key,
@@ -153,7 +157,7 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
     ? { status: "closed", closed_at: now, next_action: null, next_action_due_at: null, outcome: result.outcome ?? null }
     : { next_action: result.to.label, ...(result.outcome ? { outcome: result.outcome } : {}) };
 
-  const { error } = await ctx.supabase.rpc("apply_case_transition", {
+  const { data: newVersion, error } = await ctx.supabase.rpc("apply_case_transition", {
     p_case_id: caseId,
     p_version: version,
     p_steps: result.steps.map(stepToRow),
@@ -161,8 +165,16 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
     p_event: result.description,
   });
   if (error) return { message: dbMessage(error), values };
+  // Si l'agence l'a activé et que l'étape concerne le client, la base a préparé un e-mail : il part après la réponse.
+  const { data: queued } = await ctx.supabase
+    .from("email_outbox")
+    .select("id")
+    .eq("idempotency_key", `case_status:${caseId}:v${newVersion}`)
+    .maybeSingle();
+  if (queued) sendQueuedEmailsAfterResponse(ctx);
   refresh();
-  return { ok: true, message: result.closes ? "Dossier clôturé." : `Étape en cours : « ${result.to.label} ».` };
+  const mailNote = queued ? " Un e-mail part au client pour l'en informer (suivi dans l'onglet « Communications »)." : "";
+  return { ok: true, message: `${result.closes ? "Dossier clôturé." : `Étape en cours : « ${result.to.label} ».`}${mailNote}` };
 }
 
 const requirementSchema = z

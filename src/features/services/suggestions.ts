@@ -15,3 +15,17 @@ export const SERVICE_SUGGESTIONS: { name: string; description: string }[] = [
   { name: "Traduction et légalisation", description: "Traduction des documents et démarches de légalisation." },
   { name: "Accueil à l'arrivée", description: "Accueil à l'aéroport et aide à l'installation les premiers jours." },
 ];
+
+/** Étapes proposées pour chaque nouveau service (même liste que la base : private.default_service_steps). */
+export const DEFAULT_SERVICE_STEPS = [
+  "Demande reçue",
+  "Documents attendus",
+  "Documents reçus",
+  "Paiement vérifié (si nécessaire)",
+  "Dossier transmis au partenaire",
+  "Réception confirmée",
+  "Traitement en cours",
+  "Résultat reçu",
+  "Résultat transmis au client",
+  "Service terminé",
+];

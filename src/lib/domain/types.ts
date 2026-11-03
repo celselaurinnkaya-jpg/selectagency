@@ -79,10 +79,24 @@ export interface ClientGuardian {
   relationship?: string;
 }
 
+/** Prospect : premier contact, pas encore client (même fiche, qui devient client sans copie). */
+export type ClientStatus = "prospect" | "client";
+
+/** Origine du contact. */
+export type ClientSource = "facebook" | "instagram" | "whatsapp" | "tiktok" | "referral" | "walk_in" | "website" | "phone" | "other";
+
 export interface Client {
   id: string;
   reference: string;
   clientType: ClientType;
+  /** Absent (fiches de démonstration) = client. */
+  status?: ClientStatus;
+  source?: ClientSource;
+  sourceDetail?: string;
+  /** Date à laquelle le prospect est devenu client. */
+  convertedAt?: string;
+  /** Partenaire qui a apporté ce client (code saisi à son arrivée). */
+  partnerId?: string;
   firstName: string;
   lastName: string;
   email?: string;
@@ -113,6 +127,9 @@ export interface Client {
   isSelfResponsible?: boolean;
   guardian1?: ClientGuardian;
   guardian2?: ClientGuardian;
+
+  /** Vrai si le client s'est désinscrit des relances et notifications par e-mail. */
+  emailOptOut?: boolean;
 }
 
 export interface CaseDetails {
@@ -241,6 +258,8 @@ export interface PaymentAllocation {
   amountMinor: number;
 }
 
+export type PaymentStatus = "pending" | "recorded" | "voided";
+
 export interface Payment {
   id: string;
   caseId: string;
@@ -253,8 +272,14 @@ export interface Payment {
   payerName?: string;
   paidAt: string;
   receivedBy: string;
-  status: "recorded" | "voided";
-  receiptNumber: string;
+  /** « pending » : annoncé, pas encore vérifié (sans reçu, hors des soldes). */
+  status: PaymentStatus;
+  /** Attribué par la base quand le paiement est confirmé. */
+  receiptNumber?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  /** Reste à payer du dossier juste après ce paiement (figé à sa confirmation). */
+  balanceAfterMinor?: number;
   allocations: PaymentAllocation[];
   voidedAt?: string;
   voidedBy?: string;
@@ -363,6 +388,78 @@ export interface AgencyService {
 
 export type ServiceClientStatus = "in_progress" | "waiting_client" | "waiting_external" | "completed" | "cancelled";
 
+/** Partenaire qui apporte des clients, avec son code et sa commission par client. */
+export interface Partner {
+  id: string;
+  name: string;
+  code: string;
+  phone?: string;
+  email?: string;
+  commissionMinor: number;
+  currency: string;
+  notes: string;
+  isActive: boolean;
+  /** Compte rattaché à l'espace partenaire. */
+  hasAccess: boolean;
+  /** Lien d'accès envoyé, pas encore utilisé. */
+  accessToken?: string;
+  accessEmail?: string;
+  createdAt: string;
+}
+
+/** « pending » : client apporté, pas encore de paiement ; « approved » : à payer ; « paid » : versée. */
+export type CommissionStatus = "pending" | "approved" | "paid" | "cancelled";
+
+export interface PartnerCommission {
+  id: string;
+  partnerId: string;
+  clientId: string;
+  amountMinor: number;
+  currency: string;
+  status: CommissionStatus;
+  approvedAt?: string;
+  paidAt?: string;
+  paidMethod?: string;
+  paidReference?: string;
+  cancelReason?: string;
+  createdAt: string;
+}
+
+/** Confirmation de réservation (hébergement, billet, assurance…) établie sur le suivi d'un client dans un service. */
+export interface ServiceBooking {
+  id: string;
+  serviceClientId: string;
+  number: string;
+  provider: string;
+  reference: string;
+  startDate?: string;
+  endDate?: string;
+  place: string;
+  details: string;
+  amountMinor?: number;
+  currency?: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+/** Étape d'un service, telle que l'agence l'a définie. */
+export interface ServiceStep {
+  id: string;
+  serviceId: string;
+  position: number;
+  label: string;
+}
+
+/** Étape d'un client suivi : copie faite à son ajout au service, cochée au fil du suivi. */
+export interface ServiceClientStep {
+  id: string;
+  serviceClientId: string;
+  position: number;
+  label: string;
+  doneAt?: string;
+  doneBy?: string;
+}
+
 /** Client suivi dans un service, avec le dossier concerné s'il y en a un. */
 export interface ServiceClient {
   id: string;
@@ -443,15 +540,89 @@ export interface ActivityEvent {
   text: string;
 }
 
+export type CommunicationChannel = "whatsapp" | "email" | "phone" | "in_person";
+export type CommunicationStatus =
+  | "prepared_manual"
+  | "logged"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "failed"
+  | "cancelled";
+
 export interface CommunicationLog {
   id: string;
   at: string;
   clientId: string;
   caseId?: string;
-  channel: "whatsapp" | "email" | "phone" | "in_person";
-  status: "prepared_manual" | "logged";
+  channel: CommunicationChannel;
+  status: CommunicationStatus;
   summary: string;
-  actorId: string;
+  actorId?: string;
+  emailOutboxId?: string;
+  recipientEmail?: string;
+}
+
+export type EmailOutboxKind =
+  | "agency_welcome"
+  | "payment_confirmed"
+  | "document_send"
+  | "missing_documents"
+  | "case_status_changed"
+  | "appointment_reminder"
+  | "subscription_notice";
+
+export type EmailOutboxStatus =
+  | "queued"
+  | "sending"
+  | "sent"
+  | "delivered"
+  | "bounced"
+  | "complained"
+  | "failed"
+  | "cancelled";
+
+export interface EmailSettings {
+  senderName: string;
+  replyToEmail: string;
+  notifyPaymentConfirmed: boolean;
+  notifyAppointmentReminder: boolean;
+  notifyCaseStatus: boolean;
+  notifyMissingDocuments: boolean;
+}
+
+export interface EmailOutboxItem {
+  id: string;
+  organizationId: string;
+  clientId?: string;
+  caseId?: string;
+  paymentId?: string;
+  appointmentId?: string;
+  kind: EmailOutboxKind;
+  idempotencyKey: string;
+  recipientEmail: string;
+  recipientName: string;
+  senderName: string;
+  replyToEmail?: string;
+  subject: string;
+  payload: Record<string, unknown>;
+  status: EmailOutboxStatus;
+  brevoMessageId?: string;
+  attempts: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  lastError?: string;
+  createdBy?: string;
+  createdAt: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  /** Faux quand l'envoi a été demandé par un membre de l'agence (bouton), vrai pour une notification automatique. */
+  isAutomatic: boolean;
+  /** Dernier événement reçu du webhook Brevo (delivered, soft_bounce, spam…). */
+  lastEvent?: string;
+  lastEventAt?: string;
 }
 
 /** Données d'une agence telles que les écrans les calculent (chargées depuis Supabase, ou fictives). */

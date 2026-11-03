@@ -68,6 +68,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
   }
 
   const documentsToReview = d.toHandle.filter((i) => i.kind === "document").length;
+  const paymentsToCheck = d.toHandle.filter((i) => i.kind === "payment").length;
 
   return (
     <div className="space-y-6">
@@ -89,7 +90,12 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           <Tile href="/documents" label="Documents à examiner" icon={FileSearch} badge={documentsToReview ? String(documentsToReview) : undefined} />
           <Tile href="/appointments" label="Rendez-vous" icon={CalendarDays} />
           <Tile href="/tasks" label="Tâches" icon={ListChecks} badge={d.kpis.overdueTasks ? `${d.kpis.overdueTasks} en retard` : undefined} />
-          <Tile href="/finance" label="Finance" icon={Wallet} />
+          <Tile
+            href={paymentsToCheck ? "/finance/payments?vue=a-verifier" : "/finance"}
+            label="Finance"
+            icon={Wallet}
+            badge={paymentsToCheck ? `${paymentsToCheck} à vérifier` : undefined}
+          />
         </div>
       </Section>
 
@@ -102,7 +108,15 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
               <li key={item.id}>
                 <Link href={item.href} className="flex items-start gap-3 rounded-xl bg-white p-3 shadow-[0_1px_2px_rgba(2,55,100,0.08)] hover:ring-2 hover:ring-navy-200">
                   <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg ${item.overdue ? "bg-red-50 text-red-700" : "bg-navy-50 text-navy-700"}`}>
-                    {item.kind === "document" ? <FileSearch className="size-4" /> : item.overdue ? <AlertTriangle className="size-4" /> : <Clock className="size-4" />}
+                    {item.kind === "document" ? (
+                      <FileSearch className="size-4" />
+                    ) : item.kind === "payment" ? (
+                      <Wallet className="size-4" />
+                    ) : item.overdue ? (
+                      <AlertTriangle className="size-4" />
+                    ) : (
+                      <Clock className="size-4" />
+                    )}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium text-slate-900">{item.title}</span>
@@ -110,7 +124,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
                   </span>
                   {item.dueAt && (
                     <span className={`shrink-0 text-right text-xs ${item.overdue ? "font-semibold text-red-700" : "text-slate-500"}`}>
-                      {item.overdue ? "En retard · " : item.kind === "document" ? "Reçu " : ""}
+                      {item.overdue ? "En retard · " : item.kind === "document" ? "Reçu " : item.kind === "payment" ? "Annoncé " : ""}
                       {formatRelativeDay(item.dueAt, d.now, tz)}
                     </span>
                   )}
@@ -128,7 +142,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: p.key === "mois" ? "/dashboard" : `/dashboard?periode=${p.key}` }))}
         />
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="Clients" value={d.kpis.clients} hint="Fiches actives" icon={Users} href="/clients" />
+          <StatCard label="Clients" value={d.kpis.clients} hint={d.kpis.prospects ? `+ ${d.kpis.prospects} prospect(s) à suivre` : "Fiches actives"} icon={Users} href={d.kpis.prospects ? "/prospects" : "/clients"} />
           <StatCard label="Dossiers actifs" value={d.kpis.activeCases} hint="En cours de traitement" icon={FolderKanban} href="/cases" />
           <StatCard label="En attente du client" value={d.kpis.waitingClient} hint="Pièces ou décision du client" icon={Hourglass} href="/cases?attente=client_action" tone="warning" />
           <StatCard label="En attente d'un tiers" value={d.kpis.waitingThirdParty} hint="Établissement, consulat, administration" icon={Hourglass} href="/cases?attente=external_event" />

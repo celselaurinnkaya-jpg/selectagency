@@ -7,6 +7,10 @@ import type { Client } from "@/lib/domain/types";
 export const normalizeName = (value: string) =>
   value.normalize("NFD").replace(/\p{Diacritic}/gu, "").replace(/[^a-zA-Z]/g, "").toLowerCase();
 
+/** Libellé d'une fiche semblable : un prospect se transforme en client, il ne se recrée pas. */
+export const duplicateLabel = (client: Client) =>
+  `${client.firstName} ${client.lastName} (${client.reference})${client.status === "prospect" ? " — prospect : ouvrez sa fiche et transformez-le en client" : ""}`;
+
 export interface DuplicateCandidate {
   client: Client;
   reasons: string[];

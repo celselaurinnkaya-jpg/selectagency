@@ -44,7 +44,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
   const q = typeof params.q === "string" ? params.q : "";
   const type = typeof params.type === "string" && params.type in CLIENT_TYPE ? (params.type as ClientType) : undefined;
   const country = typeof params.pays === "string" ? params.pays : undefined;
-  const { rows, agency, now, countries, total, canWrite, canDelete } = await listClients({ q, type, country });
+  const { rows, agency, now, countries, total, prospects, canWrite, canDelete } = await listClients({ q, type, country });
   const tz = agency.timezone;
 
   return (
@@ -98,6 +98,14 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
 
       <p className="mb-3 text-sm text-slate-600" aria-live="polite">
         {rows.length} client{rows.length > 1 ? "s" : ""} affiché{rows.length > 1 ? "s" : ""} sur {total}
+        {prospects > 0 && (
+          <>
+            {" · "}
+            <Link href="/prospects" className="font-medium text-navy-700 hover:underline">
+              {prospects} prospect{prospects > 1 ? "s" : ""} à suivre
+            </Link>
+          </>
+        )}
       </p>
 
       {rows.length === 0 ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useState } from "react";
+import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -28,6 +29,7 @@ export function StepTransitionForm({
   canSkip,
   needsConfirmation,
   balanceDue,
+  notifiedKeys = [],
 }: {
   caseId: string;
   /** Version du dossier lue à l'affichage (verrou optimiste). */
@@ -39,6 +41,8 @@ export function StepTransitionForm({
   needsConfirmation: boolean;
   /** Solde restant, déjà formaté ; absent si le dossier est soldé. */
   balanceDue?: string;
+  /** Étapes dont l'arrivée prévient le client par e-mail (réglage de l'agence activé, client joignable). */
+  notifiedKeys?: string[];
 }) {
   const [state, action, pending] = useActionState(transitionCaseAction, initialFormState);
   const [mode, setMode] = useState<Mode>("advance");
@@ -55,6 +59,8 @@ export function StepTransitionForm({
   const e = state.fieldErrors ?? {};
   const closing = mode === "advance" && to === "closed";
   const options = mode === "back" ? back : forward;
+  const target = mode === "skip" ? forward[0]?.to : to;
+  const notifiesClient = Boolean(target && notifiedKeys.includes(target));
 
   const modes: { key: Mode; label: string; available: boolean }[] = [
     { key: "advance", label: "Terminer l'étape", available: forward.length > 0 },
@@ -170,6 +176,13 @@ export function StepTransitionForm({
           </label>
         )}
       </div>
+
+      {notifiesClient && (
+        <p className="flex items-start gap-2 rounded-lg border border-navy-200 bg-navy-50 p-3 text-sm text-navy-900">
+          <Mail className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>Le client sera prévenu par e-mail de cette étape dès l&apos;enregistrement.</span>
+        </p>
+      )}
 
       <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
       <Button type="submit" disabled={pending}>

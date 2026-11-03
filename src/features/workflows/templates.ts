@@ -28,10 +28,110 @@ export const WORKFLOW_DISCLAIMER =
 
 const closeOption: StepTransitionOption = { to: "closed", label: "Clôturer le dossier" };
 
+/** Fin commune des procédures d'études : visa, décision, départ. */
+const studyVisaSteps = (retryKey: string): TemplateStep[] => [
+  { key: "visa_prep", label: "Préparation du dossier de visa", kind: "agency_action" },
+  { key: "visa_submission", label: "Rendez-vous et dépôt du dossier de visa", kind: "external_event" },
+  {
+    key: "visa_decision_wait",
+    label: "Attente de la décision de visa",
+    kind: "external_event",
+    next: [
+      { to: "visa_granted", label: "Visa accordé" },
+      { to: "visa_refused", label: "Visa refusé" },
+    ],
+  },
+  { key: "visa_granted", label: "Visa accordé", kind: "outcome", outcome: "approved", next: [{ to: "departure_prep", label: "Préparer le départ" }] },
+  {
+    key: "visa_refused",
+    label: "Visa refusé",
+    kind: "outcome",
+    outcome: "refused",
+    next: [{ to: "visa_prep", label: "Préparer une nouvelle demande" }, { to: retryKey, label: "Reprendre les candidatures" }, closeOption],
+  },
+  { key: "departure_prep", label: "Préparation du départ", kind: "agency_action" },
+  { key: "closed", label: "Dossier clôturé", kind: "closure" },
+];
+
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
+    key: "campus_france",
+    name: "Études en France — Campus France",
+    category: "study_abroad",
+    description: "Procédure Études en France : dossier en ligne, entretien, réponses des établissements, puis visa.",
+    steps: [
+      { key: "new_candidate", label: "Nouveau candidat", kind: "agency_action" },
+      { key: "account", label: "Création du compte Études en France", kind: "agency_action" },
+      { key: "documents", label: "Collecte des documents", kind: "client_action" },
+      { key: "programs", label: "Choix des formations et saisie du dossier", kind: "agency_action" },
+      { key: "fees", label: "Paiement des frais de dossier", kind: "client_action" },
+      { key: "interview", label: "Entretien pédagogique", kind: "external_event" },
+      {
+        key: "institution_response",
+        label: "Réponses des établissements",
+        kind: "external_event",
+        next: [
+          { to: "visa_prep", label: "Admission acceptée : préparer le visa" },
+          { to: "programs", label: "Pas d'admission : choisir d'autres formations" },
+          closeOption,
+        ],
+      },
+      ...studyVisaSteps("programs"),
+    ],
+  },
+  {
+    key: "parcoursup",
+    name: "Études en France — Parcoursup",
+    category: "study_abroad",
+    description: "Admission en première année : vœux, dossier, propositions des formations, puis visa.",
+    steps: [
+      { key: "new_candidate", label: "Nouveau candidat", kind: "agency_action" },
+      { key: "registration", label: "Inscription sur la plateforme", kind: "agency_action" },
+      { key: "documents", label: "Collecte des bulletins et documents", kind: "client_action" },
+      { key: "wishes", label: "Formulation des vœux", kind: "agency_action" },
+      { key: "file", label: "Projets de formation motivés et confirmation des vœux", kind: "agency_action" },
+      {
+        key: "institution_response",
+        label: "Propositions des formations",
+        kind: "external_event",
+        next: [
+          { to: "visa_prep", label: "Proposition acceptée : préparer le visa" },
+          { to: "wishes", label: "Aucune proposition : phase complémentaire" },
+          closeOption,
+        ],
+      },
+      ...studyVisaSteps("wishes"),
+    ],
+  },
+  {
+    key: "private_school",
+    name: "Admission dans une école privée",
+    category: "study_abroad",
+    description: "Candidature directe auprès d'une école privée : dossier, entretien, inscription, puis visa.",
+    steps: [
+      { key: "new_candidate", label: "Nouveau candidat", kind: "agency_action" },
+      { key: "school_choice", label: "Choix de l'école et du programme", kind: "agency_action" },
+      { key: "documents", label: "Collecte des documents", kind: "client_action" },
+      { key: "application", label: "Envoi du dossier de candidature", kind: "agency_action" },
+      { key: "admission_test", label: "Entretien ou test d'admission", kind: "external_event", optional: true },
+      {
+        key: "institution_response",
+        label: "Décision de l'école",
+        kind: "external_event",
+        next: [
+          { to: "enrolment", label: "Admis : inscription" },
+          { to: "school_choice", label: "Refusé : choisir une autre école" },
+          closeOption,
+        ],
+      },
+      { key: "enrolment", label: "Inscription et paiement de l'acompte", kind: "client_action" },
+      { key: "enrolment_proof", label: "Attestation d'inscription reçue", kind: "external_event" },
+      ...studyVisaSteps("school_choice"),
+    ],
+  },
+  {
     key: "study_abroad",
-    name: "Études à l'étranger",
+    name: "Études à l'étranger (autre procédure)",
     category: "study_abroad",
     description: "Candidature dans un établissement puis demande de visa d'études.",
     steps: [
@@ -192,10 +292,36 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   },
 ];
 
+/** Modèle par défaut d'un type de projet (pour les études : la procédure générale). */
 export function templateForCategory(category: CaseCategory): WorkflowTemplate {
-  const template = WORKFLOW_TEMPLATES.find((t) => t.category === category);
+  const template = WORKFLOW_TEMPLATES.find((t) => t.category === category && t.key === category) ?? WORKFLOW_TEMPLATES.find((t) => t.category === category);
   if (!template) throw new Error(`Aucun modèle de workflow pour la catégorie ${category}`);
   return template;
+}
+
+/** Nom affiché du type de dossier : la procédure pour les études (Campus France, Parcoursup…), sinon le libellé donné. */
+export function caseKindLabel(templateKey: string | undefined, fallback: string): string {
+  const template = templateKey ? templateByKey(templateKey) : undefined;
+  return template && template.category === "study_abroad" && template.key !== "study_abroad" ? template.name : fallback;
+}
+
+/** Procédures proposées pour un type de projet (plusieurs pour les études : Campus France, Parcoursup…). */
+export function templatesForCategory(category: CaseCategory): WorkflowTemplate[] {
+  return WORKFLOW_TEMPLATES.filter((t) => t.category === category);
+}
+
+/** Modèle choisi à la création d'un dossier : la procédure demandée si elle va avec le type de projet. */
+export function resolveTemplate(category: CaseCategory, key?: string): WorkflowTemplate {
+  return WORKFLOW_TEMPLATES.find((t) => t.key === key && t.category === category) ?? templateForCategory(category);
+}
+
+/**
+ * Une étape peut-elle être retirée d'un modèle personnalisé ? Non pour les décisions, la clôture,
+ * les étapes qui proposent un choix et celles vers lesquelles un choix renvoie : le dossier doit
+ * toujours pouvoir avancer.
+ */
+export function isStructuralStep(step: TemplateStep, steps: TemplateStep[]): boolean {
+  return step.kind === "outcome" || step.kind === "closure" || !!step.next?.length || steps.some((s) => s.next?.some((n) => n.to === step.key));
 }
 
 export function templateByKey(key: string): WorkflowTemplate | undefined {

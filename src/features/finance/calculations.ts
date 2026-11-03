@@ -14,9 +14,12 @@ export interface CaseFinance {
   balanceMinor: number;
   overpaidMinor: number;
   unallocatedMinor: number;
+  /** Paiements annoncés, pas encore vérifiés : hors des soldes, affichés à part. */
+  pendingMinor: number;
 }
 
 const recorded = (payments: Payment[]) => payments.filter((p) => p.status === "recorded");
+const pending = (payments: Payment[]) => payments.filter((p) => p.status === "pending");
 const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
 
 function assertCurrency(currency: string, items: { currency: string }[]) {
@@ -42,6 +45,7 @@ export function caseFinance(currency: string, charges: Charge[], payments: Payme
     balanceMinor: Math.max(0, difference),
     overpaidMinor: Math.max(0, -difference),
     unallocatedMinor: paidMinor - allocatedMinor,
+    pendingMinor: sum(pending(payments).map((p) => p.amountMinor)),
   };
 }
 
@@ -49,14 +53,23 @@ export interface ChargeProgress {
   charge: Charge;
   allocatedMinor: number;
   remainingMinor: number;
+  /** Part réservée par des paiements en attente de vérification. */
+  pendingMinor: number;
 }
 
 export function chargeProgress(charges: Charge[], payments: Payment[]): ChargeProgress[] {
   const paid = recorded(payments);
+  const announced = pending(payments);
+  const on = (list: Payment[], chargeId: string) => sum(list.flatMap((p) => p.allocations.filter((a) => a.chargeId === chargeId).map((a) => a.amountMinor)));
   return charges.map((charge) => {
-    const allocatedMinor = sum(paid.flatMap((p) => p.allocations.filter((a) => a.chargeId === charge.id).map((a) => a.amountMinor)));
-    return { charge, allocatedMinor, remainingMinor: Math.max(0, charge.amountMinor - allocatedMinor) };
+    const allocatedMinor = on(paid, charge.id);
+    return { charge, allocatedMinor, remainingMinor: Math.max(0, charge.amountMinor - allocatedMinor), pendingMinor: on(announced, charge.id) };
   });
+}
+
+/** Ce qu'un nouveau paiement peut encore couvrir : le reste à payer, moins les paiements en attente (comme la base). */
+export function availableToPay(progress: ChargeProgress[]): ChargeProgress[] {
+  return progress.map((p) => ({ ...p, remainingMinor: Math.max(0, p.remainingMinor - p.pendingMinor) }));
 }
 
 export interface AgencyFinance {

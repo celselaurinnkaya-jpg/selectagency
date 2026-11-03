@@ -30,6 +30,8 @@ const appointmentSchema = z.object({
   location: z.string().trim().max(200).optional(),
   assignedTo: z.string().min(1, "Choisissez la personne responsable."),
   caseId: z.string().optional(),
+  // Rendez-vous d'une fiche sans dossier (prospect, premier entretien) : lié à la personne seulement.
+  clientId: z.string().optional(),
   status: z.enum(["planned", "awaiting_confirmation", "confirmed", "done", "cancelled"]),
   externalReference: z.string().trim().max(120).optional(),
 });
@@ -76,26 +78,31 @@ export async function createAppointmentAction(_prev: FormState, formData: FormDa
   const fieldErrors = checkInput(input);
   if (fieldErrors) return { message: "Certains champs sont à corriger.", fieldErrors, values };
 
-  const { data, ctx } = await readAgency(input.caseId ? { cases: (q) => q.eq("id", input.caseId!) } : {});
+  const { data, ctx } = await readAgency({
+    ...(input.caseId ? { cases: (q) => q.eq("id", input.caseId!) } : {}),
+    ...(!input.caseId && input.clientId ? { clients: (q) => q.eq("id", input.clientId!) } : {}),
+  });
   if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
   if (!activeMembers(data.members).some((m) => m.id === input.assignedTo)) return { message: "Responsable introuvable.", values };
   const travelCase = data.cases[0];
   if (input.caseId && !travelCase) return { message: "Dossier introuvable.", values };
+  const clientId = travelCase?.clientId ?? data.clients[0]?.id;
+  if (!input.caseId && input.clientId && !clientId) return { message: "Fiche introuvable.", values };
   const tz = data.agency.timezone;
 
   const { error } = await ctx.supabase.from("appointments").insert({
     organization_id: ctx.organizationId,
     case_id: travelCase?.id ?? null,
-    client_id: travelCase?.clientId ?? null,
+    client_id: clientId ?? null,
     ...toColumns(input, tz),
   });
   if (error) return { message: dbMessage(error), values };
-  if (travelCase) {
+  if (clientId) {
     await ctx.supabase.from("activity_events").insert({
       organization_id: ctx.organizationId,
       actor_id: ctx.member.id,
-      client_id: travelCase.clientId,
-      case_id: travelCase.id,
+      client_id: clientId,
+      case_id: travelCase?.id ?? null,
       text: `Rendez-vous programmé : ${input.title} (${APPOINTMENT_KIND[input.kind]}, ${when(input, tz)}).`,
     });
   }

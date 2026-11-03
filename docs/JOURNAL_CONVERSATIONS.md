@@ -223,3 +223,394 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - Boutons tactiles standardisés (hauteur ≥ 40 px pour mobile).
 * **Actions** :
   - Commit et `git push origin main` vers GitHub (déclenchement de la CI/CD Vercel).
+
+### Session 13 — 31 Octobre 2026 (Claude Code) — Bilan de la liste 3.1 à 3.6, puis lot 1 : paiements à vérifier et reçus
+* **Demande** : vérifier ce qui manque dans la liste « Finaliser les fonctionnalités métier » (3.1 prospects et clients, 3.2 procédures d'études, 3.3 services, 3.4 suivi des dossiers de services, 3.5 partenaires et commissions, 3.6 paiements et reçus), puis « commence par le plus important, tout doit être synchronisé, vérifie que chaque ajout fonctionne ».
+* **Bilan remis** : 3.1 en partie (pas de prospect, pas d'origine du contact, pas de conversion, relances = tâches manuelles) ; 3.2 en partie (un seul type « Études à l'étranger », Campus France / Parcoursup / écoles privées non séparés) ; 3.3 presque fait (étapes par service manquantes) ; 3.4 en partie (état simple, pas d'étapes modifiables, modèles d'étapes des dossiers figés) ; 3.5 pas commencé (5 questions de la Session 5 toujours ouvertes) ; 3.6 en grande partie (manquaient : PDF du reçu, envoi au client, paiement en attente / confirmé, format A4 imposé).
+* **Ordre retenu** : 3.6 → 3.1 → étapes modifiables (3.2 + 3.3 + 3.4) → 3.5 (après les réponses).
+* **Lot 1 — Paiements et reçus (3.6)** :
+  - Migration `20261031180000_paiements_en_attente.sql` : état « pending » (annoncé, sans reçu, hors des soldes mais part réservée sur le reste à payer), `confirmed_at` / `confirmed_by`, numéro de reçu attribué seulement à la confirmation, `confirm_payment`, `record_payment` avec `p_pending` (faux par défaut : la version en ligne continue de fonctionner), `void_payment` qui laisse un conseiller annuler un paiement encore à vérifier.
+  - Formulaire de paiement à champs contrôlés (plus rien ne se perd après une erreur) avec le choix « Reçu et vérifié » / « Annoncé, à vérifier ».
+  - Reçu refait comme la facture (`ReceiptDocument`, `receipt.ts`) : logo, cachet, signature et mentions de Paramètres > Factures ; PDF A4 (`receipt-pdf.ts`, route `/finance/receipts/[id]/pdf`) ; boutons Imprimer, Télécharger le PDF, Envoyer par WhatsApp, Envoyer par e-mail (PDF téléchargé ou partagé, message préparé, envoi noté « préparé, envoi manuel ») ; page « Paiement à vérifier » sans reçu, avec Confirmer la réception / Annuler.
+  - Synchronisation : onglet Finance du dossier (badge, « + … à vérifier », confirmation sur place), onglet Paiements de la fiche client, Finance > Paiements (alerte, filtres Tous / À vérifier / Confirmés / Annulés), tableau de bord (« Paiement à vérifier » dans À traiter, badge sur la tuile Finance), export CSV (statut, date de confirmation), impression forcée en A4 (`globals.css`).
+* **Préparé pour le lot 2 (3.1)** : migration `20261031190000_prospects.sql` (statut prospect / client sur la même fiche, origine du contact, `convert_prospect`, conversion automatique au premier dossier ou à l'ajout à un service, statut par défaut pour l'import de la démonstration). L'interface des prospects n'est pas encore écrite.
+* **Validation** : typage et lint sans erreur ; 94 tests (dont 45 de base : paiement annoncé, part réservée, confirmation, numéro de reçu, annulation sans reçu, prospects) ; `npm run build` réussi. Test Chrome `receipts-flow.mjs` (hors projet) écrit, en attente de la migration.
+* **En attente** : l'utilisateur applique les deux migrations (`npx supabase db push --linked`). Tant que ce n'est pas fait, l'espace agence local ne peut pas lire les paiements (colonne `confirmed_at` absente).
+* Rien n'a été commité ni envoyé sur GitHub.
+
+### Session 14 — 1er Novembre 2026 (Claude Code) — Vérification du lot 1 (paiements et reçus) et des services
+* **Contexte** : l'utilisateur a appliqué les migrations `20261031180000_paiements_en_attente.sql` et `20261031190000_prospects.sql` (base en ligne à jour, vérifié à blanc).
+* **Test Chrome paiements et reçus (`receipts-flow.mjs`, vraie base, compte de test supprimé) : 32/32** — paiement « à vérifier » sans reçu et hors soldes, part réservée, champs conservés après une erreur, tableau de bord, liste filtrée, confirmation (reçu numéroté, date et auteur), reçu complet, PDF A4 d'une page, impression A4, WhatsApp et e-mail notés « préparé, envoi manuel », annulation d'un paiement jamais arrivé (sans reçu), fiche client, historique, téléphone, aucune erreur JavaScript.
+* **Correction trouvée par le test** : le lien « Retour » en haut des pages (composant partagé `PageHeader`) faisait 36 px ; il fait maintenant 40 px sur toutes les pages (`src/components/shared/ui.tsx`).
+* **Services (`services-flow.mjs`)** : 33/36 au premier passage. Les 3 écarts venaient du script de test, pas de l'application, vérifié par des essais ciblés : l'ajout depuis la fiche client fonctionne (le formulaire laisse la place à « suit déjà tous les services actifs ») ; la modification d'un service enregistre bien le nouveau nom et la désactivation quand on tape puis coche comme une personne. Scripts de test rendus plus fiables (attente du nouveau document, de l'hydratation, clics après la saisie, onglet ramené au premier plan après WhatsApp). Le dernier passage complet a été arrêté par l'utilisateur ; ses données de test ont été supprimées.
+* **Reste à faire** (ordre convenu) : interface des prospects (3.1, base déjà prête), étapes modifiables pour dossiers et services (3.2 + 3.3 + 3.4), partenaires et commissions (3.5, après les 5 questions).
+* Rien n'a été commité ni envoyé sur GitHub.
+
+### Session 15 — 1er Novembre 2026 (Claude Code) — Lot 2 : prospects et clients (3.1)
+* **Demande** : « continue » (suite de l'ordre convenu, après les paiements et reçus).
+* **Réalisations** (la base était prête : migration `20261031190000_prospects.sql`, appliquée) :
+  - Menu « Prospects » juste avant « Clients » ; route protégée ; « Nouveau prospect » dans le menu « Nouveau ».
+  - `/prospects` : compteurs (en cours, à relancer, sans relance prévue, devenus clients ce mois-ci), filtres, cartes (téléphone, projet, origine, prochaine relance en rouge si due, rendez-vous, conseiller, premier contact).
+  - `/prospects/new` : formulaire court à champs contrôlés (nom, téléphone, pays, origine en un geste — Facebook, Instagram, WhatsApp, TikTok, recommandation, visite, site, appel, autre —, précision, projet, conseiller, première relance avec raccourcis Demain / 3 jours / une semaine, notes). Doublons signalés comme pour un client (un prospect existant est indiqué « ouvrez sa fiche et transformez-le en client »).
+  - Fiche : badge « Prospect », bloc « Prospect à suivre » (origine, premier contact, projet, bouton « Transformer en client » avec confirmation, relances avec « Planifier la relance »), origine du contact et date de conversion dans le profil, retour vers les prospects.
+  - Relances = tâches liées à la fiche, confiées au conseiller (Tâches, « À traiter aujourd'hui »).
+  - Rendez-vous sans dossier : l'onglet Rendez-vous de la fiche permet d'en programmer un, lié à la personne (`clientId` ajouté à l'action et au formulaire des rendez-vous), noté dans l'historique.
+  - Synchronisation : la liste des clients exclut les prospects (lien « N prospects à suivre ») ; tableau de bord (clients sans les prospects, « + N prospect(s) à suivre ») ; recherche (« Prospect ») ; nouveau dossier (« prospect, deviendra client ») ; rapports (« Origine des nouveaux contacts » et prospects devenus clients sur la période) ; « Origine du contact » ajoutée au formulaire client.
+  - Code : `src/features/prospects/` (actions, queries, ProspectForms), `src/features/clients/phone.ts` (numéro au format international, partagé), `duplicateLabel`.
+* **Validation** : typage et lint sans erreur ; 94 tests ; `npm run build` réussi ; test Chrome `prospects-flow.mjs` (hors projet, vraie base, compte supprimé) : **21/21** (menu, création avec relance, fiche, listes, doublon, relance et rendez-vous sans dossier, transformation sur la même fiche, historique, téléphone, aucune erreur JavaScript).
+* **Suite** : étapes modifiables pour les dossiers et les services (3.2, 3.3, 3.4), puis partenaires et commissions (3.5, après les 5 questions).
+* Rien n'a été commité ni envoyé sur GitHub.
+
+### Session 16 — 1er Novembre 2026 (Claude Code) — Lot 3 : étapes des services et procédures d'études (3.2, 3.3, 3.4)
+* **Demande** : « continue » (étapes modifiables, après les prospects).
+* **Étapes des services** (migration `20261101100000_etapes_services.sql`) :
+  - Chaque service a sa liste d'étapes (`service_steps`), proposée par défaut à la création : Demande reçue, Documents attendus, Documents reçus, Paiement vérifié (si nécessaire), Dossier transmis au partenaire, Réception confirmée, Traitement en cours, Résultat reçu, Résultat transmis au client, Service terminé. Services existants complétés avec ces étapes.
+  - Chaque client ajouté reçoit une copie (`service_client_steps`) : changer la liste ensuite ne touche pas les suivis en cours. Suivis déjà terminés : toutes leurs étapes marquées faites.
+  - `save_service_steps` (responsables), `set_service_client_step` (responsables et conseillers) : chaque étape cochée ou décochée est notée dans l'historique ; toutes faites → suivi « Terminé » ; une étape décochée d'un suivi terminé → « En cours ».
+  - Écrans : page du service (étapes affichées, avancement de chaque client avec barre, bouton « Étape faite : … » et liste à cocher), modification du service (éditeur : renommer, ajouter, monter, descendre, retirer, revenir aux étapes proposées), onglet Services de la fiche client (même avancement).
+* **Procédures d'études** : trois modèles de départ distincts — « Études en France — Campus France », « Études en France — Parcoursup », « Admission dans une école privée » — en plus de « Études à l'étranger (autre procédure) », chacun avec ses étapes, ses choix (admission, refus, autre candidature) et la partie visa. À la création d'un dossier d'études, on choisit la procédure ; un même client peut avoir plusieurs dossiers. Le nom de la procédure s'affiche dans les listes de dossiers, la fiche client, la recherche et le dossier.
+* **Modèles adaptés par l'agence** (migration `20261101110000_modeles_etapes.sql`, table `workflow_templates`, fonctions `save_workflow_template` / `reset_workflow_template`) : Paramètres > Modèles d'étapes devient modifiable (renommer, ajouter, déplacer, retirer, nature de l'étape, facultative ; étapes liées à une décision seulement renommables ; clôture toujours en dernier ; « Revenir au modèle de départ »). Les nouveaux dossiers suivent la version de l'agence ; les dossiers ouverts gardent la leur.
+* **Validation** : typage et lint sans erreur ; 107 tests (dont base : étapes de services, droits, copie, Terminé automatique, historique, modèles d'agence ; et cohérence de tous les modèles) ; `npm run build` réussi. Test Chrome `steps-flow.mjs` (hors projet) prêt.
+* **Migrations appliquées par l'utilisateur** ; test Chrome `steps-flow.mjs` (vraie base, compte supprimé) : **28/28** — 10 étapes proposées, « Étape faite » en un geste, liste à cocher, suivi « Terminé » automatique, même avancement sur la fiche client, historique, éditeur des étapes (renommer, retirer, ajouter ; suivis en cours inchangés), dossier Campus France avec ses étapes, modèle adapté par l'agence (étapes liées à une décision verrouillées, nouveau dossier avec les étapes de l'agence, ancien dossier inchangé), retour au modèle de départ, téléphone, aucune erreur JavaScript.
+* Rien n'a été commité ni envoyé sur GitHub.
+
+### Session 17 — 1er Novembre 2026 (Claude Code) — Lot 4 : partenaires et commissions (3.5)
+* **Décisions de l'utilisateur** : commission = montant fixé par l'agence (« chaque agence a sa façon de faire ») ; due dès le premier paiement du client ; espace partenaire en lecture seule.
+* **Mise en œuvre retenue** : montant par client apporté fixé pour chaque partenaire, ajustable commission par commission ; statuts « En attente du 1er paiement » → « À payer » (automatique au premier paiement confirmé, retour en attente si ce paiement est annulé) → « Payée » (date, moyen, référence) ou « Annulée » (motif). Un client = un partenaire = une commission (pas de double comptage) ; une commission payée bloque le changement de partenaire.
+* **Migration `20261101120000_partenaires.sql`** : tables `partners` (code unique par agence, commission, accès) et `partner_commissions`, colonne `clients.partner_id`, déclencheur sur les paiements, fonctions `save_partner`, `set_client_partner`, `update_commission`, `pay_commission`, `cancel_commission`, `create_partner_access`, `revoke_partner_access`, `get_partner_access`, `accept_partner_access`, `is_partner`, `partner_portal`. Le partenaire n'est jamais membre : aucune politique de lecture ne lui ouvre les tables ; `partner_portal()` ne renvoie que prénom + initiale, avancement simple et commissions.
+* **Écrans** : menu « Partenaires » (après Finance) ; liste (actifs, clients apportés, à payer, versé ce mois-ci), création / modification, page du partenaire (clients apportés, commissions avec Ajuster / Marquer payée / Annuler, espace partenaire : lien personnel lié à une adresse e-mail, copier ou WhatsApp, retrait de l'accès) ; « Code partenaire » sur les formulaires client et prospect (code inconnu ou partenaire désactivé refusés avant tout enregistrement) ; « Apporté par » sur la fiche client ; page `/acces-partenaire/[token]` (créer son compte ou se connecter avec la bonne adresse) ; espace `/partenaire` (en-tête simple, sans le menu de l'agence) ; un partenaire qui se connecte est conduit vers son espace.
+* **Droits** : partenaires créés et modifiés par le propriétaire et les administrateurs ; code saisi par eux et les conseillers ; commissions gérées par le propriétaire, les administrateurs et le comptable, lisibles par les rôles qui voient la finance.
+* **Validation** : typage et lint sans erreur ; 109 tests (dont base : droits, code, commission en attente puis à payer au 1er paiement, ajustement, versement, blocage après paiement, espace partenaire limité, aucune table lisible par le partenaire, retrait de l'accès) ; `npm run build` réussi. Test Chrome `partners-flow.mjs` (hors projet) prêt.
+* **Migration appliquée par l'utilisateur** ; test Chrome `partners-flow.mjs` (vraie base, comptes supprimés) : **23/23** — création (code mis en majuscules), code inconnu refusé sans rien enregistrer, prospect apporté avec son code, commission en attente puis « à payer » au premier paiement, montant ajusté, versement (moyen noté), lien d'accès, connexion du partenaire avec la bonne adresse, espace limité (prénom et initiale, avancement, commission ; ni nom complet, ni téléphone, ni paiements), partenaire renvoyé vers son espace s'il ouvre les pages de l'agence, aucune donnée de l'agence dans les réponses, téléphone, aucune erreur JavaScript. Retouche : « À recevoir » en orange seulement s'il y a un montant à recevoir.
+* **Liste « Finaliser les fonctionnalités métier » (3.1 à 3.6) : terminée et vérifiée.**
+* Rien n'a été commité ni envoyé sur GitHub.
+
+---
+
+### Session 18 — 1er Novembre 2026 à 12:15 — Reprise de la session & Bilan de santé
+* **Demande de l'Utilisateur** : reprise de la conversation sur le projet SELECT Agency (« on contunu la conversationsur le projet select agency »).
+* **Vérification de l'état du projet** :
+  - `npm run typecheck` : 0 erreur TypeScript.
+  - `npm test` : 109/109 tests validés avec succès (100% de réussite).
+  - Statut git : modifications locales des Sessions 13 à 17 prêtes (lots 1 à 4 terminés et testés, aucun commit ni push sans demande explicite).
+* **Objectif** : alignement avec l'utilisateur sur la suite des priorités (lancement du serveur dev local, commit / push éventuel si souhaité, ou poursuite des fonctionnalités suivantes comme les prestataires externes).
+
+
+### Session 18 — 1er Novembre 2026 (Claude Code) — Documents PDF : reçus, factures, devis, récapitulatif, confirmations
+* **Demande** : « Finaliser les documents PDF » — reçus, factures, devis, confirmations de réservation, récapitulatifs de dossier, avec les données réelles (identité de l'agence, numéro, date, client, service, montant, mode et référence de paiement, solde restant) et une impression propre sur A4.
+* **Vérification préalable** (contrôle d'impression dans Chrome, compte de test supprimé) : reçu propre (1 page A4) mais sans solde restant ; facture de 6 lignes sur 2 pages ; devis à l'ancienne présentation (logo SELECT, ni identité de l'agence, ni PDF, ni envoi) ; aucun récapitulatif ni confirmation de réservation.
+* **Choix de l'utilisateur** : situation financière du récapitulatif au choix à chaque document ; confirmations de réservation avec service, prestataire, référence, dates, lieu, détails, montant, client.
+* **Réalisations** :
+  - Migration `20261101130000_documents.sql` : `payments.balance_after_minor` (reste à payer figé à la confirmation, reçus existants complétés) ; table `service_bookings` (numéro CONF-AAAA-00001), fonctions `save_booking` / `delete_booking` (historique du client).
+  - Modèle commun de document (`src/features/printables/` : `spec.ts`, `PrintableDocument.tsx`, `spec-pdf.ts`, `DocumentToolbar.tsx`, `actions.ts`) : même présentation que les factures, page imprimable et PDF A4 identiques, aucune ligne coupée entre deux pages, numéros de page, envoi WhatsApp / e-mail noté dans les communications.
+  - Reçu : « Reste à payer sur le dossier » (ou « Soldé ») sur la page et le PDF ; nom de la procédure à côté du dossier (aussi sur les factures).
+  - Facture : impression resserrée (marges internes, signature), lignes, totaux et signature jamais coupés.
+  - Devis : nouvelle présentation (identité de l'agence, logo, cachet, signature, conditions), PDF `/finance/quotes/[id]/pdf`, envoi WhatsApp / e-mail.
+  - Récapitulatif de dossier : `/cases/[id]/recapitulatif` (bouton « Récapitulatif à remettre » sur le dossier) — démarche, destination, état, prochaine action, conseiller, étapes avec dates, pièces, rendez-vous à venir, situation financière au choix (« Inclure / Retirer la situation financière »), PDF et envoi.
+  - Confirmations de réservation : « Préparer une confirmation de réservation » sur chaque client suivi (page du service et fiche client), page `/services/confirmations/[id]` (modifier, supprimer), PDF et envoi.
+* **Validation** : typage et lint sans erreur ; 114 tests (dont base : solde figé sur chaque reçu, numérotation et droits des confirmations ; PDF du modèle commun : A4, plusieurs pages, image illisible) ; `npm run build` réussi. Contrôle Chrome `docs-check.mjs` (hors projet) prêt : 6 documents × (données réelles, A4, une page, sans éléments de l'application, sans débordement, PDF téléchargé).
+* **Migration appliquée par l'utilisateur.** Premier contrôle Chrome : 42/51 — facture de 6 lignes et récapitulatif complet sur 2 pages (impression et PDF), plus deux vérifications trop strictes du script. Corrections : PDF des factures et du modèle commun resserrés (en-tête, lignes, signature), étapes et pièces sur deux colonnes (page, impression, PDF), impression en A4 avec marges de 12 mm et texte un peu plus serré. Mesure locale des PDF sans navigateur (facture 6 lignes : 1 page).
+* **Contrôle Chrome final `docs-check.mjs` : 51/51** — reçu, facture, devis, récapitulatif (sans et avec finances), confirmation : données réelles de l'agence et du client, A4, une page (le récapitulatif complet avec finances tient proprement sur 2 pages), sans menu ni boutons, sans débordement, PDF téléchargé en A4 ; envoi WhatsApp du devis noté ; bouton « Récapitulatif à remettre » ; téléphone ; aucune erreur JavaScript.
+* Rien n'a été commité ni envoyé sur GitHub.
+
+### Session 19 — 1er Novembre 2026 (Claude Code) — E-mails : choix de Brevo, puis audit (phase 1, sans modification du code)
+* **Demandes** : liste de ce qui reste (sauvegarde Git, sécurité E1/E2/M2, formulaires, dossier/archivage, lancement) — mise de côté par l'utilisateur pour plus tard ; puis « Configurer les e-mails » : choix du fournisseur (Brevo recommandé et retenu : français, 300 e-mails/jour gratuits, API + SMTP), puis cahier des charges d'intégration Brevo en 4 phases.
+* **Audit (phase 1)** :
+  - Comptes : `signUp` et `resetPasswordForEmail` (`src/features/auth/actions.ts`) + `/auth/confirm` déjà corrects ; envoi par le SMTP par défaut de Supabase, limité à **2 e-mails par heure** (`supabase/config.toml`, `[auth.rate_limit] email_sent = 2`), modèles anglais par défaut.
+  - Aucun domaine propre : `site_url = https://selectagency.vercel.app` → un domaine à acheter est indispensable pour un expéditeur authentifié (SPF, DKIM, DMARC).
+  - L'application n'utilise jamais la clé secrète Supabase (tout passe par la session et la RLS) ; aucun envoi automatique, aucune tâche planifiée (ni `vercel.json`, ni pg_cron) ; « Envoyer par e-mail » = messagerie de l'utilisateur (`mailto:`) ; `communication_logs` (statuts `prepared_manual` / `logged`) à réutiliser pour l'historique client.
+  - Réutilisables : PDF des reçus, identité de l'agence (Paramètres > Factures), paiements « confirmés » (`recorded`), textes WhatsApp (pièces manquantes, rappel de rendez-vous), `DocumentToolbar`, droits (`allowed`).
+  - Les tests Chrome passés créaient des comptes temporaires dans la seule base (production) → nouvelle exigence : un projet Supabase de test séparé.
+* **Plan proposé** : file d'envoi en base (une ligne par événement, clé unique anti-doublon, statut, identifiant Brevo, tentatives, erreurs), module serveur Brevo (délai, nouvelles tentatives, clé jamais affichée), SMTP Brevo + modèles français pour les e-mails de compte, envois sur événements (paiement confirmé + reçu PDF joint, pièces manquantes, état du dossier, bienvenue), envois planifiés (rappels de rendez-vous, abonnement) par pg_cron, webhook Brevo pour la livraison réelle, réglages par agence et désinscription client.
+* **Décisions attendues** : nom de domaine, projet Supabase de test, planificateur, notifications activées par défaut.
+* **Fichiers modifiés** : aucun (hors ce journal et la mémoire). Rien n'a été commité ni envoyé sur GitHub.
+* **Suite de la Session 19 (même jour) — état à l'arrêt, à reprendre ici** : compte Brevo créé, nom de domaine acheté et **authentifié dans Brevo** (statut « Authentifié »). Clé API en cours de création : n'autoriser que les « E-mails transactionnels » (envoi et lecture), sans restriction d'adresse IP. Seule `BREVO_API_KEY` ira dans `.env.local` (encore absente à l'arrêt, vérifié sans lire la valeur) ; l'identifiant et la clé SMTP seront saisis directement dans Supabase à l'étape des e-mails de compte. Restent à faire par l'utilisateur : expéditeur `notifications@<domaine>` dans Brevo, clé API dans `.env.local`, projet Supabase de test, communiquer le domaine et le vendeur. Phase 2 (intégration) pas commencée : attend son « vas-y ».
+
+---
+
+### Session 20 — 2 Novembre 2026 à 14:35 — Vérification de l'environnement, démarrage du serveur et liens d'accès
+* **Demande de l'Utilisateur** : « verifier, donne moi le lien ».
+* **Vérifications réalisées** :
+  - Démarrage du serveur local Next.js 16 (`npm run dev`) sur `http://localhost:3000`.
+  - Vérification de `.env.local` (sans exposer les valeurs secrètes) : `BREVO_API_KEY` (89 caractères), `BREVO_SMTP_KEY` (90 caractères) et `BREVO_SMTP_LOGIN` (24 caractères) ont bien été ajoutés par l'utilisateur.
+* **Actions** :
+  - Fourniture des liens d'accès directs (`http://localhost:3000`, `/dashboard`, `/prospects`, `/services`, `/partners`, `/finance`, `/login`, `/admin`).
+  - Rappel de sécurité : les identifiants SMTP (`BREVO_SMTP_KEY` et `BREVO_SMTP_LOGIN`) servent pour la console Supabase (Authentication > SMTP Settings), tandis que seule `BREVO_API_KEY` est requise côté serveur dans `.env.local`.
+
+---
+
+### Session 21 — 2 Novembre 2026 (Claude Code) — Brevo : reprise pas à pas
+* **Demande de l'Utilisateur** : « je veux qu'on avance pas à pas, quel est l'étape suivant ? »
+* **Vérifications (sans lire les secrets)** : `BREVO_API_KEY` présente dans `.env.local` ; `.env.local` bien ignoré par Git. Les modèles `supabase/templates/confirmation.html` et `recovery.html` (Session 20) sont corrects : liens vers `/auth/confirm` et `/reset-password`, qui existent, et branchés dans `supabase/config.toml`. Ils serviront à l'étape 3 (e-mails de compte) et ne sont pas encore envoyés à Supabase.
+* **Étape suivante donnée** : créer l'expéditeur `SELECT Agency <notifications@domaine>` dans Brevo, puis communiquer le nom de domaine pour la vérification DNS. Restent ensuite : le projet Supabase de test, le choix des notifications par défaut, puis le « vas-y » de la phase 2. Aucun code modifié.
+* **Suite de la Session 21** : l'utilisateur a créé l'expéditeur `notifications@myselectagency.com`. Domaine : **myselectagency.com** (DNS gérés par Vercel, site en ligne sur `https://www.myselectagency.com`). Contrôle DNS public : `brevo-code` présent, signatures DKIM `brevo1` et `brevo2` publiées (clé RSA joignable), DMARC `p=none` avec rapports vers Brevo. Pas de SPF à la racine, ce qui est normal avec la méthode d'authentification actuelle de Brevo. Pas de boîte de réception (aucun MX) : on ne peut pas répondre à `notifications@`, donc les e-mails clients auront une adresse de réponse vers l'agence. Étape suivante donnée : créer le projet Supabase de test `select-agency-test`.
+* **Suite de la Session 21 — projet de test** : Supabase refuse un 3e projet gratuit (limite de 2 projets actifs : `lhel…` pour le site, et un autre, sans doute `tayrygsq…`). Docker n'est pas installé. Trois choix proposés : tests sans nouveau projet, mise en pause de l'autre projet, ou installation de Docker. **Choix de l'utilisateur : mettre l'autre projet en pause**, qu'il fait lui-même depuis le tableau de bord Supabase (l'assistant n'y touche pas), puis il crée `select-agency-test`.
+* **Suite de la Session 21 — projet de test créé** : `select-agency-test`, identifiant **`rgpmydwzfetaetyxhlyv`**. Il répond (HTTP 401 sans clé, ce qui est normal). La production reste `lhel…`, et le lien du CLI Supabase reste sur la production. Les migrations seront appliquées au projet de test par l'utilisateur, avec `--db-url`, au moment des tests (phase 3), pour ne pas changer le projet lié. Dernière décision avant le « vas-y » : les notifications activées par défaut.
+* **Décision — notifications par défaut** : **tout désactivé**. Aucun e-mail client ne part (paiement et reçu, rappel de rendez-vous, pièces manquantes, état du dossier) tant que l'agence ne l'a pas activé dans ses réglages. Les e-mails de compte (confirmation, mot de passe) et d'abonnement partent toujours. Conséquence prévue : un écran de réglages clair et un rappel visible pour inviter l'agence à activer ses e-mails. Tous les préalables sont réunis : la phase 2, étape 1, attend le « vas-y ».
+
+---
+
+### Session 22 — 2 Novembre 2026 (Claude Code) — Brevo phase 2, étape 1 : base de données (après « vas-y »)
+* **Constat** : une session précédente (Session 20, autre assistant) avait déjà écrit sans le noter : la migration `20261102100000_emails_brevo.sql`, **déjà appliquée en production** (tables présentes, vérifié avec la clé publique), et du code (`src/lib/email/*`, réglages e-mails, page de désinscription, webhook, tests). Rien n'a pu être envoyé : ce code n'est pas en ligne.
+* **Problèmes trouvés et corrigés** :
+  - Réglages par défaut tous activés, contraire à la décision « tout désactivé ». L'interrupteur « abonnement » est supprimé : ces e-mails partent toujours.
+  - Secrets système stockés en clair : seule leur empreinte SHA-256 est gardée, avec 32 caractères minimum.
+  - **Webhook** : sans secret dans la requête, il reprenait celui du serveur, ce qui permettait à n'importe qui de faire passer de faux événements. Corrigé.
+  - Un lecteur (viewer) pouvait réclamer la file d'envoi et lire son contenu : réservé à propriétaire, admin, agent et comptable.
+  - Un e-mail de paiement restait en file après l'annulation du paiement, la suppression du client ou la désactivation de la notification : il est maintenant **revérifié juste avant l'envoi** et annulé.
+  - Les erreurs définitives étaient retentées : elles passent directement en échec.
+  - Un envoi bloqué était repris au bout de 2 minutes (risque de doublon) : repris au bout de 15 minutes seulement.
+  - `soft_bounce` et `deferred` marquaient l'e-mail « rejeté » : le statut ne change plus. Un e-mail signalé comme indésirable ne repasse jamais « livré ».
+  - Une confirmation de paiement pouvait être envoyée à la main : interdit, elle ne part que de la confirmation réelle.
+  - **La page de désinscription désinscrivait dès l'ouverture du lien** (les messageries ouvrent les liens toutes seules) : il faut maintenant cliquer sur un bouton.
+  - 8 erreurs de compilation qui auraient bloqué la mise en ligne Vercel : formulaire écrit avec des composants inexistants, mauvaise permission, dates sans fuseau horaire.
+  - La lecture de la page de réglages était exposée comme action serveur : déplacée dans `email-queries.ts`.
+* **Fichiers** :
+  - Nouvelle migration `supabase/migrations/20261102120000_emails_corrections.sql`. Elle annule aussi les e-mails clients restés en file avec les anciens réglages, qui n'ont jamais été envoyés.
+  - Modifiés : `src/features/settings/EmailSettingsForm.tsx` (réécrit, champs contrôlés), `email-actions.ts`, nouveau `email-queries.ts`, `src/app/(app)/settings/emails/page.tsx` (rappel visible « aucun e-mail automatique »), page et vue de `desinscription/[token]`, `src/app/api/webhooks/brevo/route.ts`, `types.ts`, `labels.ts` (statut « Annulé »), `rows.ts`, `templates.ts` (fuseau horaire).
+* **Vérifications** :
+  - `tsc` : 0 erreur, et ESLint OK.
+  - **127 tests réussis**, dont 4 nouveaux tests de base : désactivé par défaut, rôles, revérification avant envoi, secrets et webhook.
+  - Page de désinscription locale contrôlée : elle affiche la question sans rien modifier.
+* **À faire par l'utilisateur** : appliquer la migration de correction (`npx supabase db push`). Rien n'a été envoyé sur GitHub.
+* **Pour l'étape 2 (module d'envoi)** :
+  - ajouter `BREVO_SENDER_EMAIL` ;
+  - ajouter l'en-tête `IdempotencyKey` (anti-doublon Brevo) ;
+  - supprimer l'identifiant de message inventé (`brevo-<date>`) quand Brevo n'en renvoie pas ;
+  - passer `p_permanent` ;
+  - adresse du site `https://www.myselectagency.com` dans les liens.
+* **Pour l'étape 6 (webhook)** : ne plus accepter le secret dans l'adresse (`?secret=`).
+* **Suite de la Session 22** : l'utilisateur a appliqué la migration de correction (« c'est fait »). Contrôle en production avec la clé publique, sans rien modifier : `complete_system_email` accepte le nouveau paramètre `p_permanent`, et les fonctions protégées refusent un faux secret (« Secret système invalide »). **Étape 1 terminée.** L'étape 2 (module d'envoi) attend le « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo phase 2, étape 2 : module d'envoi (après « vas-y »)
+* **Documentation Brevo vérifiée** : le mode bac à sable `X-Sib-Sandbox: drop` et la clé anti-doublon `IdempotencyKey` se placent **dans le corps JSON** (objet `headers`), pas dans les en-têtes HTTP. Le module de la Session 20 mettait le bac à sable en en-tête HTTP, ce qui aurait envoyé de **vrais** e-mails pendant les « essais ».
+* **`src/lib/email/brevo.ts` réécrit** :
+  - bac à sable et `IdempotencyKey` dans le corps ;
+  - `duplicate_request` reconnu comme « déjà envoyé » ;
+  - plus jamais d'identifiant inventé (`messageId` vaut null si Brevo n'en renvoie pas) ;
+  - classement des erreurs : 400 et 404 = définitives ; 401, 402, 403, 429 et 5xx = à retenter ;
+  - adresse du destinataire vérifiée avant l'appel ; délai de 10 s ; clé jamais affichée ;
+  - `import "server-only"`.
+* **`src/lib/email/dispatcher.ts`** :
+  - clé anti-doublon = identifiant de la ligne de la file d'envoi ;
+  - `p_permanent` transmis ;
+  - si le PDF annoncé (reçu, facture…) ne peut pas être préparé, l'e-mail est retenté au lieu de partir sans pièce jointe.
+* **Autres fichiers** :
+  - `templates.ts` : liens vers `https://www.myselectagency.com` par défaut.
+  - `email-actions.ts` : message sans nom de variable technique.
+  - `.env.local` : ajout de `BREVO_SENDER_EMAIL=notifications@myselectagency.com`, qui n'est pas un secret.
+  - `.env.example` : noms des variables Brevo, sans valeurs.
+* **Tests** : `email.test.ts` mis à jour (bac à sable dans le corps, anti-doublon, doublon, aucun identifiant inventé, classement des erreurs, adresse du site). `tsc` : 0 erreur, ESLint OK, **131 tests réussis**.
+* **Essai réel en bac à sable** (script `brevo-sandbox-check.mjs` dans le dossier temporaire, rien envoyé) : Brevo répond **401 « adresse IP non reconnue »**. Les « IP autorisées » sont activées sur le compte Brevo, ce qui bloquerait aussi Vercel (adresses changeantes). Le module a bien géré l'erreur : erreur à retenter, clé masquée.
+* **À faire par l'utilisateur** : dans Brevo, Sécurité > IP autorisées, **désactiver le blocage par adresse IP**. Ensuite, refaire l'essai en bac à sable.
+* **Suite de l'étape 2** : l'utilisateur a désactivé le blocage d'IP dans Brevo pour les clés API et SMTP.
+* **Essai réel en bac à sable** : réussi, rien n'a été envoyé. Brevo accepte la clé, l'expéditeur `notifications@myselectagency.com` et le format, et renvoie un numéro de message.
+* **Anti-doublon** : en bac à sable, la même `IdempotencyKey` a donné **deux numéros différents**. Brevo n'a donc pas dédoublonné, du moins dans ce mode. Les protections propres à l'application restent :
+  - clé unique par événement dans la file d'envoi ;
+  - réclamation verrouillée (FOR UPDATE SKIP LOCKED) ;
+  - clôture seulement si l'envoi est encore « en cours ».
+  Le seul risque restant est une coupure juste après l'acceptation par Brevo. **À vérifier en phase 3** par deux vrais envois avec la même clé vers la boîte de l'utilisateur, avec son accord. Si Brevo ne dédoublonne pas en mode réel : marquer chaque e-mail d'une étiquette unique et interroger Brevo avant de renvoyer après une coupure.
+* **Vérifié** : `/auth/confirm` et `/reset-password` existent déjà en ligne (HTTP 307), donc les modèles d'e-mails de compte peuvent être branchés sur Supabase. **Étape 2 terminée.** L'étape 3 (SMTP Brevo pour Supabase Auth) attend le « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo phase 2, étape 3 : e-mails de compte (après « vas-y »)
+* **Vérifié** : `src/app/auth/confirm/route.ts` gère les liens `token_hash` + `type` des modèles (`type=email` pour la confirmation, `type=recovery&next=/reset-password` pour le mot de passe).
+* **Modifié** : `supabase/config.toml` passe `site_url` à `https://www.myselectagency.com` et ajoute www, le domaine sans www, vercel.app et localhost aux adresses de retour. Ce fichier sert en local seulement ; le tableau de bord n'est pas touché.
+* **Déroulé prévu, côté utilisateur dans le tableau de bord Supabase du projet `lhel…`** :
+  - 3.1 SMTP Brevo (`smtp-relay.brevo.com`, port 587, identifiant et clé SMTP collés par lui) ;
+  - 3.2 modèles FR (objet + `confirmation.html` / `recovery.html`) ;
+  - 3.3 limite d'envoi et adresse du site ;
+  - 3.4 essai avec « mot de passe oublié » sur son propre compte.
+* **Étape 3 réalisée par l'utilisateur dans le tableau de bord Supabase du projet `lhel…`** :
+  - SMTP personnalisé Brevo (`smtp-relay.brevo.com:587`, expéditeur `SELECT Agency <notifications@myselectagency.com>`) ;
+  - modèles FR « Confirm signup » et « Reset password » (objet + HTML de `supabase/templates/`) ;
+  - limite d'envoi à 100 e-mails/heure ;
+  - Site URL `https://www.myselectagency.com` ; adresses de retour `https://www.myselectagency.com/**` et `http://localhost:3000/**`.
+* **Essai réel avec son propre compte** (`/forgot-password` en ligne, aucune donnée de test créée) : **succès complet** confirmé par l'utilisateur. L'e-mail est reçu, en français et aux couleurs SELECT, et le bouton ouvre la bonne page. **Étape 3 terminée.** Prochaine : l'étape 4 (e-mails sur événement), sur « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo étape 4a : paiement confirmé et bienvenue (après « vas-y »)
+* **Nouveau `src/lib/email/compose.ts`** : prépare chaque demande Brevo.
+  - E-mails d'agence : au nom « <agence> via SELECT Agency », réponses vers l'agence.
+  - E-mails de la plateforme (`agency_welcome`, `subscription_notice`) : au nom de « SELECT Agency », sans adresse de réponse d'agence.
+  - Clé anti-doublon = identifiant de la ligne de la file d'envoi.
+* **`src/lib/email/dispatcher.ts`** : nouvelle fonction `sendQueuedEmailsAfterResponse(ctx?)`, qui envoie avec `after()` de Next.js juste après la réponse (l'agent n'attend pas Brevo). Elle ne fait rien si Brevo n'est pas configuré sur le serveur.
+* **Branchements** :
+  - `recordPaymentAction` (paiement reçu, pas « à vérifier ») et `confirmPaymentAction` : l'e-mail de confirmation avec le reçu PDF part si l'agence l'a activé (la base revérifie tout) ;
+  - `createAgencyAction` : e-mail de bienvenue au propriétaire.
+* **Modèle de bienvenue** : il renvoie vers « Aide et support », car le domaine n'a pas de boîte de réception.
+* **Tests** : nouveau `compose.test.ts`. `tsc` : 0 erreur, ESLint OK, **133 tests réussis**.
+* **Proposé à l'utilisateur** : un vrai e-mail de démonstration envoyé à SA boîte, avec des données inventées et un vrai reçu PDF, sans toucher à la base. Il est envoyé deux fois avec la même clé pour vérifier l'anti-doublon de Brevo en mode réel. En attente de son accord et de l'adresse à utiliser.
+* **Vrai e-mail de démonstration** (accord de l'utilisateur, envoyé à `celsedomb@gmail.com`) : « paiement confirmé » avec un reçu PDF, données inventées, aucune base touchée. Il a été envoyé deux fois avec la même `IdempotencyKey`, depuis un fichier temporaire `src/lib/email/envoi-demo.manuel.ts`, **supprimé juste après**.
+* **Registre Brevo lu par l'API, en lecture seule** : 2 e-mails, 2 numéros différents, tous deux **livrés** (« delivered ») et 1 ouvert. **Brevo ne bloque pas les doublons avec `IdempotencyKey`.**
+* **Correction anti-doublon** :
+  - chaque e-mail porte l'étiquette unique `outbox-<id>` (`compose.ts`, `outboxTag`) ;
+  - avant toute nouvelle tentative (`attempts > 1`), `findAcceptedEmailByTag` (`brevo.ts`) interroge les événements « requests » de Brevo sur 7 jours. Si l'e-mail a déjà été accepté, il est noté envoyé sans être renvoyé (`deliverOnce` dans `dispatcher.ts`) ;
+  - l'`IdempotencyKey`, inefficace, est retirée.
+  - Filtre par étiquette vérifié en vrai : un e-mail trouvé pour une étiquette existante, rien pour une étiquette inconnue.
+* **Tests** : `tsc` : 0 erreur, ESLint OK, **134 tests réussis**. En attente de l'avis de l'utilisateur sur l'e-mail reçu (apparence, PDF, boîte de réception ou spams).
+* **Validation de l'utilisateur** : l'e-mail de démonstration est arrivé dans la **boîte de réception** (pas dans les spams), l'expéditeur affiché est « Agence Étoile via SELECT Agency », le **reçu PDF s'ouvre**, et l'apparence lui convient. **Étape 4a terminée.** Prochaine : 4b (bouton « Envoyer par e-mail » sur les documents), sur « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo étape 4b : « Envoyer par e-mail » sur les documents (après « vas-y »)
+* **Nouvelle action `src/features/printables/email-actions.ts` (`sendDocumentEmailAction`)** :
+  - documents concernés : reçu, facture, devis, récapitulatif de dossier (avec ou sans finances), confirmation de réservation ;
+  - vérifie les droits : `finance.write` pour reçu, facture et devis ; `operations.write` pour récapitulatif et réservation ;
+  - vérifie l'état du document : reçu confirmé seulement ; facture émise ou payée (ni brouillon ni annulée) ; devis ni annulé ni refusé ;
+  - vérifie l'adresse e-mail du client ;
+  - met l'e-mail en file (`queue_agency_email`, type `document_send`, `is_automatic = false`, clé `document_send:<requestId>`), l'envoie aussitôt, puis donne le **vrai** résultat : accepté par Brevo, en file ou échec.
+  - Indépendant des e-mails automatiques, car c'est l'agent qui décide.
+  - PDF toujours joint, jamais de lien public.
+* **Nouveau bouton `EmailDocumentButton.tsx`** : affiche l'adresse du client et demande confirmation. Un identifiant est tiré à l'ouverture, donc un double clic n'envoie qu'un seul e-mail. Sans adresse e-mail, le bouton est désactivé avec une explication.
+* **Branché dans `DocumentToolbar`** (reçu, devis, récapitulatif, réservation) **et `InvoiceToolbar`** (factures émises ou payées), via `directEmail={emailSendingEnabled()}` sur les 5 pages. Si Brevo n'est pas configuré sur le serveur, l'ancien fonctionnement (messagerie de l'agent) reste en place.
+* **Vérifications** : `tsc` : 0 erreur, ESLint OK, **134 tests réussis**.
+* **Pour vérifier en vrai sans toucher la production** : préparer le projet de test `rgpmydwzfetaetyxhlyv`. Il servira aussi pour 4c, 5 et 6.
+* **Préparation du projet de test, T1 faite par l'utilisateur** : il a lancé lui-même `npx supabase db push --db-url "<adresse du pooler de session>"` vers `select-agency-test` (`rgpmydwzfetaetyxhlyv`). Le CLI reste lié à la production, et le mot de passe n'a pas été communiqué. Le résultat sera vérifié dès que la clé publique du projet de test sera disponible (T3).
+* **T2 demandée** : désactiver « Confirm email » sur le projet de test seulement, pour pouvoir y créer des comptes d'essai sans e-mail de confirmation.
+* **T2 faite par l'utilisateur** : « Confirm email » désactivé sur `select-agency-test` uniquement. La production garde la confirmation par e-mail.
+* **T3 demandée** : clé publique du projet de test (`sb_publishable_…`, faite pour être visible dans le navigateur). La clé secrète `sb_secret_…` ne doit jamais être transmise.
+* **T3 faite** : l'utilisateur a donné la clé publique du projet de test. **Vérification de T1** (appels refusés, aucune donnée créée) : les 21 migrations sont en place sur `select-agency-test` (tables, fonctions d'e-mail, `complete_agency_email` avec `p_permanent`), et la clé publique seule ne lit rien.
+* **Essai réel de 4b sur le projet de test** (`email4b-flow.mjs`, hors projet) :
+  - conditions : application compilée et lancée sur le port 3100, branchée **uniquement** sur le projet de test (aucune trace du projet de production dans la compilation), Brevo en **bac à sable** (`BREVO_SANDBOX=true`), adresses en `@example.com`, aucune clé secrète utilisée ;
+  - résultat : **16/16** :
+    - connexion et réglages : envoi activé ;
+    - paiement enregistré : l'e-mail automatique « paiement reçu » est accepté par Brevo avec un vrai identifiant, et la réponse va à l'adresse de l'agence ;
+    - reçu : confirmation affichant l'adresse et le nom du PDF, message « Brevo l'a accepté », bouton de nouveau utilisable après l'envoi, ligne « sent » marquée envoi manuel, envoi noté dans l'historique du client ;
+    - récapitulatif avec situation financière : accepté ;
+    - client sans adresse : bouton désactivé avec explication, rien en file ;
+    - aucune erreur JavaScript.
+  - **Registre Brevo lu en lecture seule** : aucune trace pour les adresses d'essai, donc le bac à sable a fonctionné et **rien n'a été réellement envoyé**.
+  - Serveur d'essai arrêté ; celui de l'utilisateur (port 3000) n'a pas été touché. Les comptes d'essai restent dans le projet de test seulement.
+  - La compilation locale `.next` pointe maintenant vers le projet de test. Cela n'a aucun effet sur `npm run dev` ni sur Vercel, qui compile de son côté.
+* **Étape 4b terminée et vérifiée.** Prochaine : 4c (pièces manquantes et état du dossier), sur « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo étape 4c : avancement du dossier et relance des pièces (après « vas-y »)
+* **Choix retenus** (fidèles aux réglages déjà affichés aux agences) :
+  - **Avancement du dossier** : automatique, seulement si l'agence l'a activé. Un e-mail part à trois moments : quand le dossier attend une **action du client**, quand une **décision** est enregistrée (visa accordé ou refusé…), et à la **clôture**. Les étapes internes (travail de l'agence, attente d'un organisme) n'envoient rien.
+  - **Pièces manquantes** : bouton « Relancer par e-mail » dans l'onglet Documents. L'agent voit l'adresse et la liste exacte avant d'envoyer : pièces obligatoires à fournir, à corriger avec leur motif, ou expirées. La **relance automatique** liée au réglage « Relance des pièces manquantes » viendra avec les envois planifiés (étape 5).
+* **Migration `20261102140000_emails_dossiers.sql`** :
+  - déclencheur `cases_z_email_status` (`private.enqueue_case_status_email`) : le contenu est tiré de la base ; une seule information par changement d'étape (clé `case_status:<dossier>:v<version>`) ; rien si le réglage est désactivé, si le client est désinscrit ou sans adresse ;
+  - `public.queue_missing_documents_email(dossier, demande)` : propriétaire, administrateur ou agent seulement ; dossier en cours ; liste relue dans la base ; client désinscrit refusé ; pas de doublon ;
+  - `private.tidy_email_outbox` : annule un e-mail d'avancement dépassé (le dossier a encore changé) et une relance d'un dossier qui n'est plus en cours ;
+  - `queue_agency_email` n'accepte plus que l'envoi d'un document, ce qui empêche un faux « Visa accordé » écrit à la main.
+* **Application** :
+  - modèles d'e-mail adaptés : action attendue, décision (avec une phrase propre au refus), clôture ;
+  - `src/lib/email/missing-documents.ts` : même description des pièces dans l'aperçu et dans l'e-mail ;
+  - `src/lib/email/report.ts` : message de résultat commun aux envois ;
+  - nouvelle action `sendMissingDocumentsEmailAction` et bouton `MissingDocumentsEmailButton` ;
+  - après un changement d'étape, l'e-mail part tout de suite et le message le dit ;
+  - le formulaire d'étape avertit **avant** l'enregistrement : « Le client sera prévenu par e-mail de cette étape ».
+* **Vérifications** : `tsc` : 0 erreur, ESLint : 0 erreur, **138 tests réussis**, dont 2 nouveaux tests de base et 2 de modèles.
+* **En attente** : l'utilisateur applique la migration au **projet de test** (même commande que T1), puis essai réel dans Chrome (`email4c-flow.mjs`, hors projet, bac à sable).
+* **Migration appliquée par l'utilisateur au projet de test** (vérifié : `queue_missing_documents_email` existe et refuse toute personne non connectée). **Elle n'est pas encore appliquée en production.**
+* **Essai réel de 4c sur le projet de test** (`email4c-flow.mjs`, hors projet ; bac à sable Brevo, adresses en `@example.com`, sans clé secrète) : **16/16** :
+  - avertissement « Le client sera prévenu par e-mail » avant d'enregistrer une étape qui le concerne ;
+  - message « Un e-mail part au client » ;
+  - e-mail d'avancement accepté par Brevo, marqué automatique, contenu tiré de la base (« Collecte des documents », action attendue) ;
+  - pas d'avertissement pour l'étape interne suivante ;
+  - onglet Documents : « 7 pièces obligatoires manquent encore » ; la confirmation montre l'adresse et la pièce à corriger avec son motif, mais pas la pièce déjà vérifiée ; message « Brevo l'a accepté » ; relance marquée manuelle, avec la liste exacte (7) ;
+  - client désinscrit : bouton désactivé avec explication, aucun avertissement, étape enregistrée sans e-mail ;
+  - aucune erreur JavaScript.
+* **Registre Brevo lu en lecture seule** : aucune trace pour les adresses d'essai, donc **rien n'a été réellement envoyé**. Serveur d'essai arrêté ; celui de l'utilisateur (port 3000) n'a pas été touché.
+* **Étape 4c terminée et vérifiée.** Prochaine : étape 5 (envois planifiés : rappels de rendez-vous la veille, relance automatique des pièces, alertes d'abonnement, nouvelles tentatives), sur « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo étape 5 : envois planifiés (après « vas-y »)
+* **Fonctionnement** : une tâche planifiée Vercel Cron passe **une fois par jour à 16 h UTC** (17 h à Douala), sur `/api/cron/emails` (`vercel.json`). Vercel envoie `Authorization: Bearer <CRON_SECRET>`, et la route vérifie ce secret en temps constant. L'application appelle ensuite la base avec la clé publique et ce même secret, que la base compare à son empreinte SHA-256 (`private.system_secrets`, clé `email_worker`). Aucune clé secrète Supabase n'est utilisée. La réponse ne contient que des nombres.
+* **Migration `20261102160000_emails_planifies.sql`** : `public.schedule_system_emails(secret)` prépare les e-mails du jour.
+  - **Rappel de rendez-vous la veille**, si l'agence l'a activé : rendez-vous prévus ou confirmés, demain dans le fuseau de l'agence ; ni dates limites internes, ni départ ; client joignable. Un rappel déplacé, annulé ou passé est annulé avant l'envoi.
+  - **Relance automatique des pièces**, si l'agence l'a activée : dossier en cours qui attend le client, sans changement depuis 3 jours, des pièces obligatoires manquantes. Une relance par semaine au plus, 3 au total.
+  - **Alertes d'abonnement au propriétaire**, toujours : fin d'essai à 7 jours et la veille, essai terminé, échéance à 7 jours, échéance passée, espace suspendu. Une seule fois par étape, sans lien de désinscription.
+  - `claim_system_emails` ne prend plus les e-mails qui joignent un PDF (paiement, document) : sans personne connectée, le PDF ne peut pas être produit, donc ils partent depuis l'espace de l'agence.
+  - Liste des pièces manquantes commune : `private.case_missing_documents`.
+* **Application** :
+  - `src/lib/email/deliver.ts` : envoi unique avec contrôle anti-doublon, partagé avec l'envoi depuis l'agence ;
+  - `src/lib/email/system-worker.ts` : préparation, puis envoi par lots de 25, 5 à la fois, dans une limite de 40 s ; rien n'est préparé si Brevo n'est pas configuré ;
+  - route `src/app/api/cron/emails/route.ts` ;
+  - modèles : date du rendez-vous et date d'échéance écrites à l'heure de l'agence ;
+  - réglages : textes précisés (pas de rappel pour les dates limites ; règle de la relance automatique) ;
+  - `.env.example` : `CRON_SECRET`.
+* **Secret** : `CRON_SECRET` (43 caractères) créé directement dans `.env.local`, jamais affiché ; seule son empreinte SHA-256 a été montrée, pour l'enregistrer dans la base.
+* **Vérifications** : `tsc` : 0 erreur, ESLint : 0 erreur, **145 tests réussis** :
+  - base : rappels, revérification, PDF exclus, relance automatique, alertes d'abonnement ;
+  - tâche planifiée : secret, lots, limite de temps ;
+  - modèles : dates.
+  - Un ancien test faisait envoyer un document PDF par le planificateur ; il utilise désormais une relance de pièces.
+* **En attente** : sur le projet de test, l'utilisateur applique la migration et enregistre l'empreinte du secret, puis vient l'essai réel (`email5-flow.mjs`, hors projet).
+* **Pour la mise en ligne, plus tard et sur demande** : `CRON_SECRET` dans Vercel, empreinte enregistrée dans la base de production, migrations 4c et 5 appliquées en production.
+* **Projet de test préparé par l'utilisateur** : migration appliquée et empreinte du secret enregistrée. Vérifié : `schedule_system_emails` refuse un mauvais secret.
+* **Essai réel de l'étape 5** (`email5-flow.mjs`, hors projet ; appel direct de `/api/cron/emails` comme Vercel Cron ; bac à sable Brevo ; adresses en `@example.com`) : **10/10** :
+  - sans secret ou avec un mauvais secret : refusé (401), rien de préparé ;
+  - avec le bon secret, la tâche s'exécute : 1 rappel préparé ; 2 e-mails envoyés, le rappel et la bienvenue de l'agence d'essai restée en file, tous deux acceptés par Brevo ;
+  - la réponse ne contient ni adresse, ni contenu, ni secret ;
+  - aucun rappel pour un rendez-vous dans 2 jours, annulé ou de type date limite ;
+  - historique du client : « Rappel de rendez-vous envoyé par e-mail », sans auteur (automatique) ;
+  - second passage : aucun doublon.
+* **Registre Brevo lu en lecture seule** : aucune trace pour les adresses d'essai, donc rien n'a été réellement envoyé. Serveur d'essai arrêté ; celui de l'utilisateur (port 3000) n'a pas été touché.
+* **Étape 5 terminée et vérifiée.** Prochaine : étape 6 (webhook Brevo : livré, rejeté, plainte), sur « vas-y ».
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo étape 6 : webhook de suivi de livraison (après « vas-y »)
+* **Documentation Brevo vérifiée** : les webhooks transactionnels envoient `event`, `message-id`, `tags` et `reason`, parfois par lots. L'authentification se fait par jeton (`auth: bearer`) ou par en-têtes personnalisés. Le tableau de bord (Intégrations → Webhooks) propose l'authentification par jeton et les en-têtes.
+* **Clé API Brevo** : lecture de `/v3/webhooks` refusée (403 `permission_denied`). C'est normal, puisque la clé est limitée aux e-mails transactionnels. Le webhook sera donc créé **depuis le tableau de bord Brevo**, à la mise en ligne. Rien n'a été modifié dans Brevo.
+* **Route `src/app/api/webhooks/brevo/route.ts` réécrite** :
+  - secret **uniquement dans un en-tête**, jeton `Authorization: Bearer` ou `x-webhook-secret` ; un secret placé dans l'adresse (`?secret=`) est **refusé** (400) ;
+  - 32 caractères minimum ; mauvais secret : 401 ; autre erreur : 500, et Brevo réessaie ;
+  - lots de 100 événements au plus ;
+  - réponse sans adresse ni secret ;
+  - accès à la base sans personne connectée : `src/lib/supabase/system.ts` (clé publique), partagé avec la tâche planifiée.
+* **Lecture des appels** : `src/lib/email/webhook.ts` (`webhookSecretFrom`, `secretInUrl`, `parseBrevoEvents`).
+* **Migration `20261102180000_emails_webhook.sql`** : `apply_brevo_webhook` reçoit aussi l'identifiant tiré de l'étiquette `outbox-<id>`.
+  - Si l'identifiant Brevo n'est pas encore enregistré (événement arrivé très vite, ou e-mail retrouvé sans identifiant après une coupure), l'e-mail est retrouvé par son étiquette et l'identifiant est enregistré.
+  - Un identifiant différent n'est jamais remplacé.
+  - Un report temporaire n'écrit plus d'erreur sur un e-mail déjà livré.
+  - L'ancien appel à 4 paramètres reste accepté.
+* **Secret** : `BREVO_WEBHOOK_SECRET` (43 caractères) créé directement dans `.env.local`, jamais affiché ; seule son empreinte SHA-256 a été montrée. L'application ne le lit pas : il sera collé dans Brevo, et la base n'en garde que l'empreinte.
+* **Vérifications** : `tsc` : 0 erreur, ESLint : 0 erreur, **147 tests réussis** :
+  - lecture des en-têtes, des lots et des étiquettes ;
+  - base : étiquette, identifiant différent refusé, report temporaire après livraison, mauvais secret.
+* **En attente** : sur le projet de test, l'utilisateur applique la migration et enregistre l'empreinte (clé `brevo_webhook`), puis vient l'essai (`email6-flow.mjs`, hors projet : on joue le rôle de Brevo, qui ne peut pas joindre un ordinateur local).
+* **Projet de test préparé par l'utilisateur** : migration appliquée et empreinte `brevo_webhook` enregistrée. Vérifié : la nouvelle `apply_brevo_webhook` à 5 paramètres refuse un mauvais secret.
+* **Essai réel de l'étape 6** (`email6-flow.mjs`, hors projet ; on joue le rôle de Brevo ; e-mails envoyés au préalable en bac à sable par la tâche planifiée) : **13/13**, réussi deux fois de suite.
+  - Accès : sans secret, refusé (401) ; secret dans l'adresse, refusé (400) ; mauvais secret, refusé (401). Rien ne change après ces refus.
+  - « Livré » (jeton Bearer) : e-mail `delivered` avec sa date, historique du client à `delivered`.
+  - Lot (en-tête `x-webhook-secret`) : `hard_bounce` passe à `bounced` avec la raison ; `spam` passe à `complained` et le client est désinscrit ; message inconnu ignoré. Un e-mail signalé ne repasse jamais « livré ».
+  - Étiquette `outbox-<id>` : l'e-mail encore en file est retrouvé et son identifiant Brevo enregistré.
+  - Réponses sans adresse ni secret.
+* **Incident constaté honnêtement** : au premier essai, la tâche planifiée a laissé un e-mail en attente. C'était une erreur passagère, remise en file comme prévu, puis envoyée au passage suivant. La cause exacte n'a pas pu être relue (les données de cette agence d'essai ne sont lisibles qu'avec sa session). Ce n'est pas une limite de Brevo : 10 envois simultanés en bac à sable ont tous été acceptés (201). Il s'agit probablement d'une coupure réseau passagère sur ce poste.
+* **Registre Brevo lu en lecture seule** : aucune trace des adresses d'essai, donc rien n'a été réellement envoyé. Serveur d'essai arrêté ; celui de l'utilisateur (port 3000) n'a pas été touché.
+* **Étape 6 terminée et vérifiée. Phase 2 (intégration) terminée.** Restent le rapport final (phase 4) et, sur demande explicite, la mise en ligne :
+  - migrations 4c, 5 et 6 en production ;
+  - deux empreintes à enregistrer dans la base de production ;
+  - `CRON_SECRET` et les variables Brevo dans Vercel ;
+  - webhook à créer dans Brevo.
+
+---
+
+### Session 22 (suite) — 2 Novembre 2026 (Claude Code) — Brevo phase 4 : rapport final (demande « rapport final »)
+* **Rapport rédigé** : [`docs/RAPPORT_INTEGRATION_BREVO.md`](RAPPORT_INTEGRATION_BREVO.md), conforme à la phase 4 du cahier des charges Brevo (fichiers modifiés, variables d'environnement, tests effectués, problèmes restants). Il contient aussi le résumé de ce que fait l'intégration et la liste ordonnée de la mise en ligne.
+* **Chiffres vérifiés au moment de la rédaction** :
+  - 147 tests réussis, dont 33 propres aux e-mails (11 de base, 22 d'application) ;
+  - essais réels sur le projet de test : 16/16, 16/16, 10/10 et 13/13 ;
+  - une seule preuve de livraison réelle d'un e-mail client : la démonstration « paiement reçu » (registre Brevo : 2 livrés).
+* **Problèmes restants mis en avant** :
+  - pas encore en ligne ;
+  - code non sauvegardé dans Git ;
+  - e-mails de bienvenue en attente dans la vraie base, à annuler avant l'activation ;
+  - webhook réel non testé ;
+  - tâche quotidienne une seule fois par jour ;
+  - e-mails vérifiés seulement par des tests automatiques ;
+  - incident passager non expliqué ;
+  - limite de la formule Brevo ;
+  - DMARC souple ;
+  - secrets présents seulement sur ce PC.
+* **Aucun envoi sur GitHub, aucune mise en ligne.**

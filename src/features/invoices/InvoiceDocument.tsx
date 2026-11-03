@@ -15,7 +15,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
   return (
     <article
       className={cn(
-        "relative overflow-hidden rounded-xl bg-white text-slate-800 shadow-[0_1px_3px_rgba(2,55,100,0.1)] ring-1 ring-slate-200 [print-color-adjust:exact] print:rounded-none print:shadow-none print:ring-0",
+        "relative overflow-hidden rounded-xl bg-white print:overflow-visible text-slate-800 shadow-[0_1px_3px_rgba(2,55,100,0.1)] ring-1 ring-slate-200 [print-color-adjust:exact] print:rounded-none print:shadow-none print:ring-0",
         className,
       )}
     >
@@ -24,7 +24,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
           {mark}
         </p>
       )}
-      <div className="relative space-y-6 p-5 sm:p-8">
+      <div className="relative space-y-6 p-5 sm:p-8 print:space-y-4 print:p-0">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h2 className="text-2xl font-bold tracking-tight text-navy-800 sm:text-3xl">FACTURE</h2>
@@ -93,7 +93,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
                 </tr>
               ) : (
                 data.items.map((item, index) => (
-                  <tr key={index} className="align-top">
+                  <tr key={index} className="align-top break-inside-avoid">
                     <td className="py-2 pr-2 text-slate-900">{item.label || "—"}</td>
                     <td className="px-1 py-2 text-right tabular-nums">{item.quantity}</td>
                     <td className="px-1 py-2 text-right whitespace-nowrap tabular-nums">{money(item.unitAmountMinor)}</td>
@@ -106,7 +106,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
           </table>
         </div>
 
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start justify-between gap-4 break-inside-avoid">
           {data.status === "paid" ? (
             <p className="mt-2 -rotate-[8deg] rounded-md border-2 border-emerald-600 px-3 py-1 text-lg font-bold tracking-widest text-emerald-700">PAYÉE</p>
           ) : (
@@ -123,9 +123,9 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
           </dl>
         </div>
 
-        {data.notes && <p className="rounded-md border border-slate-200 px-3 py-2 text-xs whitespace-pre-line text-slate-600">{data.notes}</p>}
+        {data.notes && <p className="break-inside-avoid rounded-md border border-slate-200 px-3 py-2 text-xs whitespace-pre-line text-slate-600">{data.notes}</p>}
 
-        <div className="grid grid-cols-2 items-end gap-4 border-t border-slate-200 pt-5 text-xs sm:text-sm">
+        <div className="grid grid-cols-2 items-end gap-4 border-t border-slate-200 pt-5 text-xs break-inside-avoid sm:text-sm print:pt-3">
           <div>
             {data.paymentDetails && (
               <>
@@ -135,7 +135,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
             )}
           </div>
           <div className="flex flex-col items-end text-right">
-            <div className="relative flex h-24 w-44 items-center justify-center">
+            <div className="relative flex h-24 w-44 items-center justify-center print:h-20">
               {images.stamp && <img src={images.stamp} alt="Cachet de l'agence" className="absolute inset-0 m-auto max-h-24 max-w-28 object-contain opacity-90" />}
               {images.signature && <img src={images.signature} alt="Signature" className="relative max-h-20 max-w-40 object-contain" />}
               {!images.stamp && !images.signature && <span className="mt-auto w-full border-b border-slate-300" aria-hidden />}
@@ -145,7 +145,7 @@ export function InvoiceDocument({ data, images, className }: { data: InvoiceDocu
         </div>
 
         {(data.footerNote || data.isDemo) && (
-          <footer className="space-y-1 border-t border-slate-200 pt-3 text-[0.7rem] text-slate-500 sm:text-xs">
+          <footer className="space-y-1 border-t border-slate-200 pt-3 break-inside-avoid text-[0.7rem] text-slate-500 sm:text-xs">
             {data.footerNote && <p className="whitespace-pre-line">{data.footerNote}</p>}
             {data.isDemo && <p className="font-semibold text-orange-800">Document de démonstration : données fictives, sans valeur.</p>}
           </footer>
