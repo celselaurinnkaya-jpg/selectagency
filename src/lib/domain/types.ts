@@ -47,7 +47,8 @@ export type AppointmentStatus =
 export type TaskStatus = "todo" | "in_progress" | "done" | "cancelled";
 export type ClientType = "individual" | "student" | "professional" | "company";
 export type ChargeType = "agency_fee" | "third_party";
-export type PaymentMethodKind = "cash" | "bank_transfer" | "mobile_money" | "other";
+/** « card » : abonnement payé par carte avec Stripe (jamais saisi à la main). */
+export type PaymentMethodKind = "cash" | "bank_transfer" | "mobile_money" | "card" | "other";
 export type ExpenseType = "operating" | "client_disbursement";
 export type ApplicantTag = "student" | "employee" | "self_employed" | "minor" | "sponsored";
 
@@ -478,6 +479,9 @@ export interface ServiceClient {
 export type SubscriptionStatus = "trialing" | "active" | "past_due" | "suspended" | "cancelled";
 export type BillingPeriod = "monthly" | "quarterly" | "yearly";
 
+/** Palier d'une formule : il décide des options ouvertes (src/lib/domain/features.ts). */
+export type PlanTier = "starter" | "pro" | "business";
+
 export interface Plan {
   id: string;
   name: string;
@@ -487,13 +491,19 @@ export interface Plan {
   billingPeriod: BillingPeriod;
   /** Nombre de membres actifs autorisés ; absent = sans limite. */
   maxMembers?: number;
+  stripePriceId?: string;
+  stripeProductId?: string;
+  /** Absent pour une ancienne formule : toutes les options sont alors ouvertes. */
+  tier?: PlanTier;
 }
 
 export interface Subscription {
   status: SubscriptionStatus;
-  plan?: Pick<Plan, "id" | "name" | "maxMembers">;
+  plan?: Pick<Plan, "id" | "name" | "maxMembers" | "tier">;
   trialEndsAt?: string;
   currentPeriodEnd?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
 }
 
 export type TicketStatus = "open" | "answered" | "resolved";

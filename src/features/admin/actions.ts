@@ -8,6 +8,7 @@ import { CURRENCY_OPTIONS } from "@/lib/format";
 import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import { parseAmount } from "@/features/finance/payments";
+import { getStripe } from "@/lib/stripe/server";
 import { CONSOLE_TIMEZONE } from "./display";
 
 // Actions de la console SELECT. Chacune revérifie la session et le rôle (platformAdminForAction),
@@ -28,7 +29,37 @@ const planSchema = z.object({
   billingPeriod: z.enum(["monthly", "quarterly", "yearly"], { error: "Choisissez la périodicité." }),
   maxMembers: z.union([z.literal(""), z.coerce.number().int().min(1).max(1000)]).optional(),
   isActive: z.enum(["on"]).optional(),
+  stripePriceId: z.union([z.literal(""), z.string().trim().regex(/^price_[A-Za-z0-9]+$/, "Identifiant Stripe invalide (il commence par « price_ »).")]).optional(),
 });
+
+const STRIPE_INTERVAL = { monthly: ["month", 1], quarterly: ["month", 3], yearly: ["year", 1] } as const;
+
+/**
+ * Vérifie auprès de Stripe que le tarif correspond exactement à la formule (prix, devise, périodicité, récurrent,
+ * actif). Renvoie l'identifiant du produit, ou un message d'erreur.
+ */
+async function checkStripePrice(
+  priceId: string,
+  plan: { priceMinor: number; currency: string; billingPeriod: keyof typeof STRIPE_INTERVAL },
+): Promise<{ productId: string } | { error: string }> {
+  const stripe = getStripe();
+  if (!stripe) return { error: "Stripe n'est pas configuré sur ce serveur : impossible de vérifier le tarif." };
+  let price;
+  try {
+    price = await stripe.prices.retrieve(priceId);
+  } catch {
+    return { error: "Tarif introuvable dans Stripe (vérifiez l'identifiant et le mode test ou réel)." };
+  }
+  const [interval, count] = STRIPE_INTERVAL[plan.billingPeriod];
+  if (!price.active) return { error: "Ce tarif est archivé dans Stripe." };
+  if (!price.recurring || price.recurring.interval !== interval || price.recurring.interval_count !== count) {
+    return { error: "Ce tarif Stripe n'a pas la même périodicité que la formule." };
+  }
+  if (price.currency.toUpperCase() !== plan.currency || price.unit_amount !== plan.priceMinor) {
+    return { error: "Ce tarif Stripe n'a pas le même prix ou la même devise que la formule." };
+  }
+  return { productId: typeof price.product === "string" ? price.product : price.product.id };
+}
 
 export async function savePlanAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
@@ -40,7 +71,11 @@ export async function savePlanAction(_prev: FormState, formData: FormData): Prom
   const priceMinor = input.price.trim() === "0" ? 0 : parseAmount(input.price, input.currency);
   if (priceMinor === null) return { message: "Certains champs sont à corriger.", fieldErrors: { price: [`Prix invalide en ${input.currency}.`] }, values };
 
-  const { error } = await user.supabase.rpc("platform_save_plan", {
+  const stripePriceId = input.stripePriceId || "";
+  const stripe = stripePriceId ? await checkStripePrice(stripePriceId, { priceMinor, currency: input.currency, billingPeriod: input.billingPeriod }) : null;
+  if (stripe && "error" in stripe) return { message: "Certains champs sont à corriger.", fieldErrors: { stripePriceId: [stripe.error] }, values };
+
+  const { data: planId, error } = await user.supabase.rpc("platform_save_plan", {
     p_id: input.planId || null,
     p_name: input.name,
     p_description: input.description ?? "",
@@ -51,7 +86,13 @@ export async function savePlanAction(_prev: FormState, formData: FormData): Prom
     p_is_active: input.isActive === "on",
   });
   if (error) return { message: dbMessage(error), values };
+  const { error: stripeError } = await user.supabase.rpc("platform_set_plan_stripe", {
+    p_plan_id: (planId as string | null) ?? input.planId,
+    p_stripe_price_id: stripePriceId,
+    p_stripe_product_id: stripe && "productId" in stripe ? stripe.productId : null,
+  });
   refresh();
+  if (stripeError) return { message: `Formule enregistrée, mais pas son tarif Stripe : ${dbMessage(stripeError)}`, values };
   return { ok: true, message: input.planId ? "Formule mise à jour." : "Formule créée." };
 }
 

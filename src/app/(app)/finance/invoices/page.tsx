@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { FileText, Plus, Wallet } from "lucide-react";
 import { Pills } from "@/components/shared/navigation";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, Notice, PageHeader, StatCard, StatusBadge } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,7 @@ import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
 import { formatDay } from "@/features/invoices/document";
 import { listInvoices, type InvoiceFilter } from "@/features/invoices/queries";
+import { getShell } from "@/features/operations/queries";
 
 export const metadata: Metadata = { title: "Factures" };
 
@@ -49,12 +51,20 @@ export default function InvoicesPage({ searchParams }: PageProps<"/finance/invoi
 async function Invoices({ searchParams }: Pick<PageProps<"/finance/invoices">, "searchParams">) {
   const params = await searchParams;
   const filter = FILTERS.find((f) => f.key === params.etat)?.key ?? "all";
-  const { rows, counts, outstanding, canSeeFinance } = await listInvoices(filter);
+  const [{ rows, counts, outstanding, canSeeFinance }, { locked }] = await Promise.all([listInvoices(filter), getShell()]);
   if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
 
   return (
     <>
       <FinanceTabs />
+      {locked.includes("invoices") && (
+        <div className="mb-4">
+          <FeatureLocked feature="invoices">
+            Votre formule STARTER garde vos factures consultables et modifiables, mais ne permet plus d&apos;en créer. Les reçus et
+            les devis restent inclus.
+          </FeatureLocked>
+        </div>
+      )}
       {params.ok === "facture-supprimee" && (
         <div className="mb-4">
           <Notice tone="success" title="Facture supprimée">

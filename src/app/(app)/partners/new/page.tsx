@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { getAgencyContext } from "@/lib/auth/context";
@@ -22,6 +23,8 @@ export default function NewPartnerPage() {
 
 async function Form() {
   const edit = await getPartnerForEdit();
-  if (!edit?.canManage) return <Notice>{forbiddenMessage(await getAgencyContext(), "partners.manage")}</Notice>;
+  const ctx = await getAgencyContext();
+  if (!edit?.canManage) return <Notice>{forbiddenMessage(ctx, "partners.manage")}</Notice>;
+  if (ctx.locked.includes("partners")) return <FeatureLocked feature="partners" />;
   return <PartnerForm defaultCurrency={edit.currency} />;
 }

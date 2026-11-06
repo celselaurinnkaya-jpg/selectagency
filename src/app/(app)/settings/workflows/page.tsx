@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, Notice, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { STEP_KIND } from "@/lib/domain/labels";
@@ -28,9 +29,15 @@ export default function WorkflowsPage() {
 }
 
 async function Templates() {
-  const { templates, canManage } = await getWorkflowSettings();
+  const { templates, canManage, locked } = await getWorkflowSettings();
   return (
     <div className="space-y-6">
+      {locked && (
+        <FeatureLocked feature="custom_workflows">
+          Avec la formule STARTER, vos dossiers suivent les étapes standard de chaque procédure (et les modèles déjà adaptés pendant
+          l&apos;essai). Les adapter à votre agence est inclus dans PRO et BUSINESS.
+        </FeatureLocked>
+      )}
       {templates.map(({ template, customized }) => (
         <Section
           key={template.key}
@@ -38,7 +45,7 @@ async function Templates() {
           action={
             <div className="flex flex-wrap items-center gap-2">
               {customized && <StatusBadge spec={{ label: "Adapté par l'agence", tone: "navy" }} />}
-              {canManage && (
+              {canManage && !locked && (
                 <Button asChild variant="outline">
                   <Link href={`/settings/workflows/${template.key}`}>
                     <Pencil aria-hidden />

@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { getAgencyContext } from "@/lib/auth/context";
@@ -27,6 +28,7 @@ export default function NewServicePage({ searchParams }: PageProps<"/services/ne
 async function Form({ searchParams }: Pick<PageProps<"/services/new">, "searchParams">) {
   const [{ nom }, ctx] = await Promise.all([searchParams, getAgencyContext()]);
   if (!allowed(ctx, "services.manage")) return <Notice>{forbiddenMessage(ctx, "services.manage")}</Notice>;
+  if (ctx.locked.includes("services")) return <FeatureLocked feature="services" />;
   const services = await loadServices(ctx);
   return (
     <ServiceForm

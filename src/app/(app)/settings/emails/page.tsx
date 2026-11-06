@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Mail } from "lucide-react";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, Notice, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { COMMUNICATION_STATUS, type LabelSpec } from "@/lib/domain/labels";
@@ -37,7 +38,7 @@ export default function EmailSettingsPage() {
 }
 
 async function EmailSettingsContent() {
-  const { agency, settings, recentEmails, canManage, readOnly, brevoReady } = await getEmailSettingsPage();
+  const { agency, settings, recentEmails, canManage, readOnly, brevoReady, autoLocked } = await getEmailSettingsPage();
   const queuedCount = recentEmails.filter((e) => e.status === "queued").length;
   const noneEnabled =
     !settings.notifyPaymentConfirmed && !settings.notifyAppointmentReminder && !settings.notifyCaseStatus && !settings.notifyMissingDocuments;
@@ -50,7 +51,13 @@ async function EmailSettingsContent() {
           dès l&apos;activation.
         </Notice>
       )}
-      {noneEnabled && (
+      {autoLocked && (
+        <FeatureLocked feature="auto_emails">
+          Avec la formule STARTER, la confirmation de paiement et les envois faits à la main (document, relance des pièces) restent
+          disponibles. Les rappels, relances et avis d&apos;avancement automatiques sont inclus dans PRO et BUSINESS.
+        </FeatureLocked>
+      )}
+      {noneEnabled && !autoLocked && (
         <Notice tone="info">
           Vos clients ne reçoivent aucun e-mail automatique pour l&apos;instant. Cochez ci-dessous ceux que vous souhaitez leur envoyer.
         </Notice>
@@ -59,7 +66,7 @@ async function EmailSettingsContent() {
       <Section title="Expéditeur et e-mails automatiques">
         {canManage ? (
           <Card>
-            <EmailSettingsForm settings={settings} agencyName={agency.name} />
+            <EmailSettingsForm settings={settings} agencyName={agency.name} autoLocked={autoLocked} />
           </Card>
         ) : readOnly ? (
           <Notice tone="warning">

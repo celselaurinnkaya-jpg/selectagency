@@ -33,6 +33,8 @@ interface ClientFormProps {
   client?: Client;
   /** Code du partenaire déjà rattaché (modification). */
   partnerCode?: string;
+  /** Formule STARTER : le code partenaire ne peut plus être changé (option PRO). */
+  partnersLocked?: boolean;
 }
 
 /**
@@ -45,7 +47,7 @@ export function ClientForm(props: ClientFormProps) {
   return <ClientFormFields key={bfcacheId} {...props} />;
 }
 
-function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode }: ClientFormProps) {
+function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode, partnersLocked = false }: ClientFormProps) {
   // En cas de succès, saveClientAction redirige elle-même vers la fiche (rien à rejouer ici).
   const [state, action, pending] = useActionState(saveClientAction, initialFormState);
   const v = state.values ?? {};
@@ -391,15 +393,26 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           <FormField id="sourceDetail" label="Précision sur l'origine" error={e.sourceDetail} hint="Ex. : nom de la personne qui recommande, publicité de la rentrée.">
             <Input id="sourceDetail" name="sourceDetail" maxLength={120} defaultValue={v.sourceDetail ?? client?.sourceDetail} {...describedBy("sourceDetail", e.sourceDetail, "hint")} />
           </FormField>
-          <FormField id="partnerCode" label="Code partenaire" error={e.partnerCode} hint="Si un partenaire vous l'envoie : sa commission sera suivie automatiquement.">
+          <FormField
+            id="partnerCode"
+            label="Code partenaire"
+            error={e.partnerCode}
+            hint={
+              partnersLocked
+                ? "Partenaires et commissions : option incluse dans les formules PRO et BUSINESS."
+                : "Si un partenaire vous l'envoie : sa commission sera suivie automatiquement."
+            }
+          >
             <Input
               id="partnerCode"
               name="partnerCode"
               maxLength={20}
               autoComplete="off"
-              defaultValue={v.partnerCode ?? partnerCode}
-              placeholder="Ex. : AMINA-2026"
-              className="font-mono uppercase"
+              // En lecture seule (et non désactivé) : le code déjà rattaché reste envoyé, le partenaire n'est pas retiré.
+              readOnly={partnersLocked}
+              defaultValue={partnersLocked ? partnerCode : (v.partnerCode ?? partnerCode)}
+              placeholder={partnersLocked ? undefined : "Ex. : AMINA-2026"}
+              className={partnersLocked ? "cursor-not-allowed bg-surface font-mono uppercase text-slate-500" : "font-mono uppercase"}
               {...describedBy("partnerCode", e.partnerCode, "hint")}
             />
           </FormField>

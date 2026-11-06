@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { CheckCircle2, Clock, FolderKanban, Pencil, Phone, Users, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Pills } from "@/components/shared/navigation";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { EmptyState, Notice, PageHeader, Section, StatCard, StatusBadge } from "@/components/shared/ui";
 import { SERVICE_CLIENT_STATUS } from "@/lib/domain/labels";
@@ -113,7 +114,13 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
           <p className="mt-3 text-sm text-slate-600">Chaque client ajouté reçoit ces étapes ; quand toutes sont faites, son suivi passe « Terminé ».</p>
         </Section>
 
-        {permissions.enroll && (
+        {permissions.enroll && permissions.locked && (
+          <FeatureLocked feature="services">
+            Votre formule STARTER permet de suivre les clients déjà inscrits à ce service, mais pas d&apos;en ajouter de nouveaux ni
+            d&apos;enregistrer de nouvelles réservations.
+          </FeatureLocked>
+        )}
+        {permissions.enroll && !permissions.locked && (
           <Section title="Ajouter un client">
             {!service.isActive ? (
               <Notice tone="warning">Ce service est désactivé. Pour y ajouter des clients, un responsable doit le réactiver (Modifier).</Notice>
@@ -154,7 +161,7 @@ async function ServiceDetail({ params, searchParams }: PageProps<"/services/[id]
               title={rows.length === 0 ? "Aucun client dans ce service" : "Aucun client à cet état"}
               description={
                 rows.length === 0
-                  ? permissions.enroll && service.isActive
+                  ? permissions.enroll && !permissions.locked && service.isActive
                     ? "Ajoutez un client avec le formulaire ci-dessus."
                     : undefined
                   : "Choisissez un autre état, ou affichez tous les clients."

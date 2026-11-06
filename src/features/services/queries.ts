@@ -100,6 +100,8 @@ export async function listServices() {
     totals: countByStatus(links),
     clientsFollowed: new Set(links.filter((l) => ACTIVE.has(l.status)).map((l) => l.clientId)).size,
     canManage: allowed(ctx, "services.manage"),
+    // Formule STARTER : les services existants restent consultables, mais on n'en crée plus.
+    locked: ctx.locked.includes("services"),
   };
 }
 
@@ -164,7 +166,7 @@ export async function getService(id: string) {
     cases: data.cases.map((k) => ({ id: k.id, clientId: k.clientId, label: `${k.reference} — ${k.title}` })),
     agency: data.agency,
     now,
-    permissions: { manage: allowed(ctx, "services.manage"), enroll: canEnroll, financeRead },
+    permissions: { manage: allowed(ctx, "services.manage"), enroll: canEnroll, financeRead, locked: ctx.locked.includes("services") },
   };
 }
 

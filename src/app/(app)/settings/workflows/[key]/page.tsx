@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { getAgencyContext } from "@/lib/auth/context";
@@ -29,7 +30,9 @@ async function Editor({ params }: Pick<PageProps<"/settings/workflows/[key]">, "
         title={editor.template.name}
         description="Renommez, ajoutez, déplacez ou retirez des étapes. Les prochains dossiers de cette procédure suivront cette liste ; les dossiers déjà ouverts gardent la leur."
       />
-      {editor.canManage ? (
+      {editor.canManage && editor.locked ? (
+        <FeatureLocked feature="custom_workflows" />
+      ) : editor.canManage ? (
         // La clé change après chaque enregistrement : l'éditeur repart de la version enregistrée.
         <WorkflowEditor key={editor.version} templateKey={editor.template.key} steps={editor.steps} customized={editor.customized} />
       ) : (

@@ -27,6 +27,9 @@ export async function GET(_request: Request, { params }: RouteContext<"/reports/
 
   const { data, ctx, now } = await readAgency({ clients: true, cases: true, steps: true, requirements: true, charges: true, payments: true, expenses: true });
   if (!allowed(ctx, spec.permission)) return new NextResponse(forbiddenMessage(ctx, spec.permission), { status: 403 });
+  if (ctx.locked.includes("reports")) {
+    return new NextResponse("Les rapports et exports sont inclus dans les formules PRO et BUSINESS.", { status: 403 });
+  }
   const tz = data.agency.timezone;
   const date = (iso?: string) => (iso ? formatDate(iso, tz) : "");
   const memberName = (id?: string) => data.members.find((m) => m.id === id)?.fullName ?? "";

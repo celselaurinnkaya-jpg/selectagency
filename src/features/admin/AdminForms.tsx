@@ -23,6 +23,8 @@ interface PlanValues {
   billingPeriod: BillingPeriod;
   maxMembers: string;
   isActive: boolean;
+  /** Tarif Stripe (price_…) : vide = formule payable seulement auprès de SELECT. */
+  stripePriceId?: string;
 }
 
 export function PlanForm({ plan }: { plan?: PlanValues }) {
@@ -63,6 +65,23 @@ export function PlanForm({ plan }: { plan?: PlanValues }) {
         </FormField>
         <FormField id={`plan-description-${key}`} label="Description" error={e.description} className="sm:col-span-2 lg:col-span-3">
           <Input id={`plan-description-${key}`} name="description" defaultValue={v.description ?? plan?.description} placeholder="Ce que comprend la formule, en une phrase" />
+        </FormField>
+        <FormField
+          id={`plan-stripe-${key}`}
+          label="Tarif Stripe (paiement par carte)"
+          error={e.stripePriceId}
+          hint="Identifiant « price_… » du tarif récurrent créé dans Stripe. Vide : payable seulement auprès de SELECT."
+          className="sm:col-span-2 lg:col-span-4"
+        >
+          <Input
+            id={`plan-stripe-${key}`}
+            name="stripePriceId"
+            defaultValue={v.stripePriceId ?? plan?.stripePriceId}
+            placeholder="price_…"
+            autoComplete="off"
+            spellCheck={false}
+            {...describedBy(`plan-stripe-${key}`, e.stripePriceId, "hint")}
+          />
         </FormField>
       </div>
       <label className="flex min-h-10 items-center gap-2 text-sm text-slate-700">
@@ -174,7 +193,7 @@ export function SubscriptionPaymentForm({
         </FormField>
         <FormField id="subpay-method" label="Moyen de paiement" required error={e.methodKind}>
           <select id="subpay-method" name="methodKind" defaultValue={v.methodKind ?? "mobile_money"} className={selectClass}>
-            {(Object.keys(METHOD_KIND) as PaymentMethodKind[]).map((m) => (
+            {(Object.keys(METHOD_KIND) as PaymentMethodKind[]).filter((m) => m !== "card").map((m) => (
               <option key={m} value={m}>
                 {METHOD_KIND[m]}
               </option>

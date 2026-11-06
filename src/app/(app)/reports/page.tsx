@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { BarList, MonthlyColumns } from "@/components/shared/charts";
 import { Pills } from "@/components/shared/navigation";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, Notice, PageHeader, Section } from "@/components/shared/ui";
 import { countryName } from "@/lib/countries";
@@ -10,6 +11,7 @@ import type { CaseCategory, ClientSource, StepKind } from "@/lib/domain/types";
 import { formatMoney } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getReports } from "@/features/finance/queries";
+import { getShell } from "@/features/operations/queries";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -31,7 +33,15 @@ export default function ReportsPage({ searchParams }: PageProps<"/reports">) {
 }
 
 async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchParams">) {
-  const { periode } = await searchParams;
+  const [{ periode }, { locked }] = await Promise.all([searchParams, getShell()]);
+  if (locked.includes("reports")) {
+    return (
+      <FeatureLocked feature="reports">
+        Les tableaux d&apos;activité, de finances et de charge de l&apos;équipe, ainsi que les exports pour Excel, sont inclus dans
+        les formules PRO et BUSINESS. Le tableau de bord reste disponible.
+      </FeatureLocked>
+    );
+  }
   const r = await getReports(typeof periode === "string" ? periode : "annee");
 
   return (

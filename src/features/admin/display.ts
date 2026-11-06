@@ -49,6 +49,7 @@ export function agencyStatus(agency: AgencyStatusInput, now: Date): { spec: Labe
 export const AUDIT_ACTIONS: Record<string, string> = {
   "plan.created": "Formule créée",
   "plan.updated": "Formule modifiée",
+  "plan.stripe": "Tarif Stripe de la formule modifié",
   "subscription.updated": "Abonnement modifié",
   "subscription_payment.recorded": "Paiement d'abonnement enregistré",
   "subscription_payment.voided": "Paiement d'abonnement annulé",

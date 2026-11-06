@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient, type SupabaseServerClient } from "@/lib/supabase/server";
 import { MEMBER, ORGANIZATION, PLAN, SUBSCRIPTION, toAgency, toMember, toPlan, toSubscription } from "@/lib/data/rows";
+import { lockedFeatures, type Feature } from "@/lib/domain/features";
 import { canWrite, demoEndsAt } from "@/lib/domain/subscription";
 import type { Agency, Member, Subscription } from "@/lib/domain/types";
 
@@ -28,6 +29,8 @@ export interface AgencyContext extends SessionUser {
   demoEndsAt?: string;
   /** Faux quand l'abonnement est suspendu, résilié ou l'essai terminé : l'agence est en lecture seule. */
   writable: boolean;
+  /** Options non incluses dans la formule (STARTER) : affichées grisées, refusées par la base. */
+  locked: Feature[];
 }
 
 /** Personne connectée, sans exiger d'agence (inscription, création de l'agence, invitation). */
@@ -86,5 +89,6 @@ export const getAgencyContext = cache(async (): Promise<AgencyContext> => {
     subscription,
     demoEndsAt: demoEnd,
     writable: canWrite(isDemo, subscription, new Date(), demoEnd),
+    locked: lockedFeatures(isDemo, subscription),
   };
 });

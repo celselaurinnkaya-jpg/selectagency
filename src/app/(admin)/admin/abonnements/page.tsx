@@ -71,6 +71,7 @@ async function Plans() {
                         billingPeriod: plan.billingPeriod,
                         maxMembers: plan.maxMembers ? String(plan.maxMembers) : "",
                         isActive: plan.isActive,
+                        stripePriceId: plan.stripePriceId ?? "",
                       }}
                     />
                   </div>

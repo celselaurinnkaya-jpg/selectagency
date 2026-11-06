@@ -3,9 +3,11 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { CheckCircle2, Handshake, Plus, Users, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, PageHeader, StatCard, StatusBadge } from "@/components/shared/ui";
 import { formatMoney } from "@/lib/format";
+import { getShell } from "@/features/operations/queries";
 import { listPartners } from "@/features/partners/queries";
 
 export const metadata: Metadata = { title: "Partenaires" };
@@ -35,9 +37,16 @@ export default function PartnersPage() {
 }
 
 async function Partners() {
-  const { partners, totals, canSeeCommissions } = await listPartners();
+  const [{ partners, totals, canSeeCommissions }, { locked: lockedFeatures }] = await Promise.all([listPartners(), getShell()]);
+  const locked = lockedFeatures.includes("partners");
   return (
     <div className="space-y-6">
+      {locked && (
+        <FeatureLocked feature="partners">
+          Votre formule STARTER garde vos partenaires et leurs commissions consultables, mais ne permet plus d&apos;en créer ni de
+          leur rattacher de nouveaux clients.
+        </FeatureLocked>
+      )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Partenaires actifs" value={totals.active} hint={`${partners.length} au total`} icon={Handshake} />
         <StatCard label="Clients apportés" value={totals.clients} hint="Tous partenaires confondus" icon={Users} />
@@ -53,11 +62,17 @@ async function Partners() {
         <EmptyState
           icon={Handshake}
           title="Aucun partenaire pour le moment"
-          description="Créez un partenaire, donnez-lui son code : chaque client qui arrive avec ce code lui sera rattaché."
+          description={
+            locked
+              ? "Les partenaires sont inclus dans les formules PRO et BUSINESS."
+              : "Créez un partenaire, donnez-lui son code : chaque client qui arrive avec ce code lui sera rattaché."
+          }
           action={
-            <Button asChild variant="accent">
-              <Link href="/partners/new">Créer un partenaire</Link>
-            </Button>
+            locked ? undefined : (
+              <Button asChild variant="accent">
+                <Link href="/partners/new">Créer un partenaire</Link>
+              </Button>
+            )
           }
         />
       ) : (

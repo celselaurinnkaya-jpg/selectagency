@@ -185,6 +185,8 @@ export interface PlatformPlan {
   maxMembers?: number;
   isActive: boolean;
   subscribers: number;
+  /** Tarif Stripe associé (price_…) : la formule est alors payable par carte. */
+  stripePriceId?: string;
 }
 
 export async function listPlans(): Promise<PlatformPlan[]> {
@@ -198,6 +200,7 @@ export async function listPlans(): Promise<PlatformPlan[]> {
     maxMembers: r.max_members === null || r.max_members === undefined ? undefined : Number(r.max_members),
     isActive: Boolean(r.is_active),
     subscribers: Number(r.subscribers ?? 0),
+    stripePriceId: r.stripe_price_id ? String(r.stripe_price_id) : undefined,
   }));
 }
 

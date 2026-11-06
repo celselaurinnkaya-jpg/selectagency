@@ -24,6 +24,7 @@ export async function getWorkflowSettings() {
   const overrides = await loadTemplateOverrides(ctx);
   return {
     canManage: allowed(ctx, "settings.manage"),
+    locked: ctx.locked.includes("custom_workflows"),
     templates: WORKFLOW_TEMPLATES.map((template) => {
       const override = overrides.get(template.key);
       return { template: override ? { ...template, steps: override.steps } : template, customized: !!override };
@@ -43,6 +44,7 @@ export async function getWorkflowEditor(key: string) {
     customized: !!override,
     version: override?.updatedAt ?? "depart",
     canManage: allowed(ctx, "settings.manage"),
+    locked: ctx.locked.includes("custom_workflows"),
     steps: steps.map((s) => {
       const original = base.steps.find((o) => o.key === s.key);
       return { key: s.key, label: s.label, kind: s.kind, optional: !!s.optional, structural: !!original && isStructuralStep(original, base.steps) };

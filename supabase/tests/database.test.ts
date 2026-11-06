@@ -656,7 +656,7 @@ describe("abonnements et console SELECT", () => {
     const hugo = await memberId(HUGO);
     const plan = (await one<{ id: string }>(GRACE_MFA, "select public.platform_save_plan(null, 'Essentiel', '', 1500000, 'XAF', 'monthly', 2, true) as id")).id;
     await setSubscription("active", null, plan);
-    expect((await rows<{ name: string }>(HUGO, "select name from public.plans")).map((p) => p.name)).toEqual(["Essentiel"]);
+    expect((await rows<{ name: string }>(HUGO, "select name from public.plans order by name")).map((p) => p.name)).toEqual(["BUSINESS", "Essentiel", "PRO", "STARTER"]);
     const invite = () =>
       one(HUGO, "insert into public.invitations (organization_id, email, role, invited_by) values ($1, 'nouveau@agence-h.test', 'agent', $2) returning id", [orgH, hugo]);
     await expect(invite()).rejects.toThrow(/formule permet 2 membres/);
@@ -678,6 +678,143 @@ describe("abonnements et console SELECT", () => {
     await one(HUGO, "select public.reply_support_ticket($1, 'Merci !')", [ticket!.id]);
     expect((await one<{ status: string }>(HUGO, "select status from public.support_tickets")).status).toBe("open");
     await expect(one(GRACE, "select public.platform_reply_ticket($1, 'x', 'answered')", [ticket!.id])).rejects.toThrow(/équipe SELECT/);
+  });
+
+  it("abonnement par carte (Stripe) : lien par le webhook, facture enregistrée une seule fois, échéance prolongée, statut suivi", async () => {
+    const SECRET = "secret-serveur-0123456789abcdef-stripe";
+    await db.query(
+      `insert into private.system_secrets (key, secret_sha256) values ('email_worker', encode(sha256(convert_to($1, 'UTF8')), 'hex'))
+       on conflict (key) do update set secret_sha256 = excluded.secret_sha256`,
+      [SECRET],
+    );
+    const subscription = () =>
+      one<{ status: string; plan_id: string | null; stripe_customer_id: string | null; stripe_subscription_id: string | null; current_period_end: Date | null }>(
+        HUGO, "select status, plan_id, stripe_customer_id, stripe_subscription_id, current_period_end from public.subscriptions where organization_id = $1", [orgH]);
+    const writable = () => db.query<{ w: boolean }>("select private.org_can_write($1) as w", [orgH]).then((r) => r.rows[0]!.w);
+
+    // Tarif Stripe d'une formule : réservé à la console SELECT, au bon format.
+    const plan = (await one<{ id: string }>(GRACE_MFA, "select public.platform_save_plan(null, 'Pro Carte', '', 15000, 'XAF', 'monthly', null, true) as id")).id;
+    await expect(one(HUGO, "select public.platform_set_plan_stripe($1, 'price_ProCarte1')", [plan])).rejects.toThrow();
+    await expect(one(GRACE_MFA, "select public.platform_set_plan_stripe($1, 'pas-un-tarif')", [plan])).rejects.toThrow(/check constraint/);
+    await one(GRACE_MFA, "select public.platform_set_plan_stripe($1, 'price_ProCarte1', 'prod_ProCarte1')", [plan]);
+    expect((await rows<{ stripe_price_id: string }>(GRACE_MFA, "select stripe_price_id from public.platform_plans() where id = $1", [plan]))[0]?.stripe_price_id).toBe("price_ProCarte1");
+
+    // L'agence ne peut plus se rattacher elle-même un client Stripe : seul le webhook signé le fait.
+    await expect(one(HUGO, "select public.set_agency_stripe_customer($1, 'cus_X')", [orgH])).rejects.toThrow(/does not exist/);
+
+    // Essai terminé : agence en consultation seulement.
+    await db.query(
+      "update public.subscriptions set status = 'trialing', trial_ends_at = now() - interval '1 day', current_period_end = null, stripe_customer_id = null, stripe_subscription_id = null where organization_id = $1",
+      [orgH],
+    );
+    expect(await writable()).toBe(false);
+    await expect(one(null, "select public.stripe_link_checkout('mauvais-secret-mauvais-secret-000000', $1, 'cus_Hugo1', 'sub_Hugo1')", [orgH])).rejects.toThrow(/Secret système invalide/);
+
+    // Facture payée arrivée AVANT le lien de la session : agence retrouvée par les métadonnées. Une seule fois.
+    const periodEnd = new Date(Date.now() + 30 * 86400_000).toISOString();
+    const record = (invoice: string, amount: number, end: string, org: string | null) =>
+      one<{ r: string }>(null, "select public.stripe_record_invoice($1, $2, 'cus_Hugo1', 'sub_Hugo1', 'price_ProCarte1', $3, 'xaf', $4::timestamptz, 'F-0001', $5) as r", [SECRET, invoice, amount, end, org]).then((x) => x.r);
+    expect(await record("in_Hugo1", 15000, periodEnd, orgH)).toBe("recorded");
+    expect(await record("in_Hugo1", 15000, periodEnd, orgH)).toBe("duplicate");
+    const paid = await subscription();
+    expect(paid).toMatchObject({ status: "active", plan_id: plan, stripe_customer_id: "cus_Hugo1", stripe_subscription_id: "sub_Hugo1" });
+    expect(new Date(paid.current_period_end!).toISOString()).toBe(periodEnd);
+    expect(await writable()).toBe(true);
+    expect(await rows(HUGO, "select amount_minor, currency, method_kind, transaction_reference from public.subscription_payments where stripe_invoice_id = 'in_Hugo1'")).toEqual([
+      { amount_minor: 15000, currency: "XAF", method_kind: "card", transaction_reference: "Carte (Stripe) F-0001" },
+    ]);
+
+    // Lien de la session arrivé ensuite : sans effet ; un client Stripe d'une autre agence n'est jamais déplacé.
+    expect((await one<{ r: boolean }>(null, "select public.stripe_link_checkout($1, $2, 'cus_Hugo1', 'sub_Hugo1') as r", [SECRET, orgH])).r).toBe(true);
+    const other = (await db.query<{ organization_id: string }>("select organization_id from public.subscriptions where organization_id <> $1 limit 1", [orgH])).rows[0]!.organization_id;
+    await expect(one(null, "select public.stripe_link_checkout($1, $2, 'cus_Hugo1', 'sub_Autre1')", [SECRET, other])).rejects.toThrow(/autre agence/);
+
+    // Renouvellement : l'échéance avance ; une facture à 0 prolonge sans paiement.
+    const nextEnd = new Date(Date.now() + 61 * 86400_000).toISOString();
+    expect(await record("in_Hugo2", 15000, nextEnd, null)).toBe("recorded");
+    expect(await record("in_Hugo3", 0, nextEnd, null)).toBe("no_charge");
+    expect(new Date((await subscription()).current_period_end!).toISOString()).toBe(nextEnd);
+    expect((await rows(HUGO, "select id from public.subscription_payments where stripe_invoice_id like 'in_Hugo%'")).length).toBe(2);
+
+    // Facture d'une agence inconnue : erreur, pour que Stripe renvoie le message plus tard.
+    await expect(
+      one(null, "select public.stripe_record_invoice($1, 'in_Inconnu1', 'cus_Inconnu1', 'sub_Inconnu1', null, 100, 'xaf', null, null, null)", [SECRET]),
+    ).rejects.toThrow(/Agence introuvable/);
+
+    // Statut suivi : retard de paiement, puis résiliation ; un paiement jamais abouti ne change rien.
+    const sync = (status: string, price: string | null = null) =>
+      one<{ r: boolean }>(null, "select public.stripe_sync_subscription($1, 'sub_Hugo1', 'cus_Hugo1', $2, null, null, $3) as r", [SECRET, status, price]).then((x) => x.r);
+    // Changement de formule fait sur la page Stripe : la formule suit le tarif sans attendre la facture.
+    const otherPlan = (await one<{ id: string }>(GRACE_MFA, "select public.platform_save_plan(null, 'Grande Carte', '', 30000, 'XAF', 'monthly', null, true) as id")).id;
+    await one(GRACE_MFA, "select public.platform_set_plan_stripe($1, 'price_GrandeCarte1')", [otherPlan]);
+    expect(await sync("active", "price_GrandeCarte1")).toBe(true);
+    expect((await subscription()).plan_id).toBe(otherPlan);
+    expect(await sync("active", "price_Inconnu1")).toBe(true);
+    expect((await subscription()).plan_id).toBe(otherPlan);
+    expect(await sync("past_due")).toBe(true);
+    expect((await subscription()).status).toBe("past_due");
+    expect(await sync("incomplete")).toBe(false);
+    expect(await sync("canceled")).toBe(true);
+    expect((await subscription()).status).toBe("cancelled");
+    expect(await writable()).toBe(false);
+  });
+
+  it("formules STARTER, PRO et BUSINESS : options PRO refusées en STARTER, ouvertes pendant l'essai et en PRO", async () => {
+    const plans = await rows<{ id: string; name: string; tier: string; price_minor: number; max_members: number | null; stripe_price_id: string }>(
+      GRACE_MFA, "select id, name, tier, price_minor, max_members, stripe_price_id from public.platform_plans() where tier is not null order by price_minor");
+    expect(plans.map(({ name, tier, price_minor, max_members, stripe_price_id }) => ({ name, tier, price_minor, max_members, stripe_price_id }))).toEqual([
+      { name: "STARTER", tier: "starter", price_minor: 15000, max_members: 2, stripe_price_id: "price_1UYv0TDENw1uRDfuKP8XJlwx" },
+      { name: "PRO", tier: "pro", price_minor: 30000, max_members: 5, stripe_price_id: "price_1UYv0UDENw1uRDfueQEZIlf8" },
+      { name: "BUSINESS", tier: "business", price_minor: 60000, max_members: null, stripe_price_id: "price_1UYv0VDENw1uRDfujuyBG7nb" },
+    ]);
+    const [starter, pro] = plans;
+    const hugo = await memberId(HUGO);
+    const has = (feature: string) => db.query<{ ok: boolean }>("select private.org_has_feature($1, $2) as ok", [orgH, feature]).then((r) => r.rows[0]!.ok);
+    const partner = (id: string | null, name: string, code: string) =>
+      one<{ id: string }>(HUGO, "select public.save_partner($1, $2, $3, $4, null, null, 10000, 'XAF', '', true) as id", [orgH, id, name, code]).then((r) => r.id);
+    const queueEmail = (key: string, kind: string) =>
+      db.query("insert into public.email_outbox (organization_id, kind, idempotency_key, recipient_email, subject) values ($1, $2, $3, 'client@exemple.test', 'Test') returning id", [orgH, kind, key]).then((r) => r.rows.length);
+    const template = [
+      { key: "new_candidate", label: "Premier rendez-vous", kind: "agency_action" },
+      { key: "closed", label: "Dossier clôturé", kind: "closure" },
+    ];
+
+    // Essai (même avec STARTER choisi) : toutes les options sont ouvertes.
+    await setSubscription("trialing", new Date(Date.now() + 10 * 86400_000).toISOString(), starter!.id);
+    expect(await has("invoices")).toBe(true);
+    const trialPartner = await partner(null, "Apporteur Essai", "ESSAI1");
+    await expect(has("magie")).rejects.toThrow(/Option inconnue/);
+
+    // STARTER payé : la base refuse de créer dans une option PRO.
+    await setSubscription("active", null, starter!.id);
+    for (const feature of ["invoices", "services", "partners", "auto_emails", "custom_workflows", "reports"]) {
+      expect(await has(feature)).toBe(false);
+    }
+    await expect(partner(null, "Apporteur Bis", "BIS1")).rejects.toThrow(/Les partenaires et commissions : option incluse dans les formules PRO et BUSINESS/);
+    await expect(one(HUGO, "select public.save_service($1, null, 'Logement', '', null, null, true)", [orgH])).rejects.toThrow(/Les services : option incluse/);
+    await expect(one(HUGO, "select public.save_workflow_template($1, 'campus_france', $2::jsonb)", [orgH, JSON.stringify(template)])).rejects.toThrow(/modèles d'étapes/);
+    await expect(one(HUGO, "select public.save_email_settings($1, $2::jsonb)", [orgH, JSON.stringify({ notify_appointment_reminder: true })])).rejects.toThrow(/e-mails automatiques/);
+    const client = await createClient(HUGO, orgH, hugo, "Starter");
+    await expect(one(HUGO, "select public.set_client_partner($1, $2)", [client.id, trialPartner])).rejects.toThrow(/Les partenaires/);
+    // Ce qui est inclus dans STARTER reste permis ; ce qui a été créé pendant l'essai reste modifiable.
+    await one(HUGO, "select public.save_email_settings($1, $2::jsonb)", [orgH, JSON.stringify({ notify_payment_confirmed: true })]);
+    expect(await partner(trialPartner, "Apporteur Essai", "ESSAI1")).toBe(trialPartner);
+    // E-mails automatiques non mis en file ; envois faits à la main et confirmation de paiement conservés.
+    expect(await queueEmail("appointment_reminder:formule:1", "appointment_reminder")).toBe(0);
+    expect(await queueEmail("case_status:formule:v2", "case_status_changed")).toBe(0);
+    expect(await queueEmail("missing_documents:auto:formule:2026-11-06", "missing_documents")).toBe(0);
+    expect(await queueEmail("missing_documents:3f2b8c1e-9d4a-4b6e-8f10-2a3b4c5d6e7f", "missing_documents")).toBe(1);
+    expect(await queueEmail("payment_confirmed:formule", "payment_confirmed")).toBe(1);
+
+    // PRO : les mêmes actions passent.
+    await setSubscription("active", null, pro!.id);
+    expect(await has("invoices")).toBe(true);
+    await partner(null, "Apporteur Bis", "BIS1");
+    await one(HUGO, "select public.save_service($1, null, 'Logement', '', null, null, true)", [orgH]);
+    await one(HUGO, "select public.save_workflow_template($1, 'campus_france', $2::jsonb)", [orgH, JSON.stringify(template)]);
+    await one(HUGO, "select public.save_email_settings($1, $2::jsonb)", [orgH, JSON.stringify({ notify_appointment_reminder: true })]);
+    await one(HUGO, "select public.set_client_partner($1, $2)", [client.id, trialPartner]);
+    expect(await queueEmail("appointment_reminder:formule:2", "appointment_reminder")).toBe(1);
   });
 });
 

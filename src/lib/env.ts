@@ -21,3 +21,8 @@ export function isSupabaseConfigured(): boolean {
 export function isDemoEnabled(): boolean {
   return process.env.DEMO_DATA_ENABLED === "true";
 }
+
+/** Adresse publique du site (liens de retour, e-mails). En local : NEXT_PUBLIC_SITE_URL=http://localhost:3000. */
+export function siteUrl(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://www.myselectagency.com").replace(/\/+$/, "");
+}

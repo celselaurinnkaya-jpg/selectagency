@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { BriefcaseBusiness, CheckCircle2, Clock, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { EmptyState, Notice, PageHeader, Section, StatCard, StatusBadge } from "@/components/shared/ui";
 import { SERVICE_CLIENT_STATUS } from "@/lib/domain/labels";
 import type { AgencyService } from "@/lib/domain/types";
@@ -22,7 +23,8 @@ export default function ServicesPage({ searchParams }: PageProps<"/services">) {
 }
 
 async function Services({ searchParams }: Pick<PageProps<"/services">, "searchParams">) {
-  const [params, { services, totals, clientsFollowed, canManage }] = await Promise.all([searchParams, listServices()]);
+  const [params, { services, totals, clientsFollowed, canManage: canManageRole, locked }] = await Promise.all([searchParams, listServices()]);
+  const canManage = canManageRole && !locked;
   const active = services.filter((s) => s.service.isActive);
   const inactive = services.filter((s) => !s.service.isActive);
 
@@ -42,6 +44,11 @@ async function Services({ searchParams }: Pick<PageProps<"/services">, "searchPa
           ) : undefined
         }
       />
+      {locked && (
+        <div className="mb-4">
+          <FeatureLocked feature="services" />
+        </div>
+      )}
       {params.ok === "service-supprime" && (
         <div className="mb-4">
           <Notice tone="success" title="Service supprimé">
@@ -55,7 +62,9 @@ async function Services({ searchParams }: Pick<PageProps<"/services">, "searchPa
           icon={BriefcaseBusiness}
           title="Aucun service pour le moment"
           description={
-            canManage
+            locked
+              ? "Les services sont inclus dans les formules PRO et BUSINESS."
+              : canManage
               ? "Créez les services que propose votre agence. Vous pourrez ensuite y ajouter vos clients et suivre chacun d'eux."
               : "Le propriétaire ou un administrateur de l'agence crée la liste des services."
           }

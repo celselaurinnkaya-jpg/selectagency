@@ -833,9 +833,13 @@ export function toServiceClientStep(r: Row): ServiceClientStep {
 
 // Abonnement et support -------------------------------------------------------------------------
 
-export const SUBSCRIPTION = columns("organization_id", "plan_id", "status", "trial_ends_at", "current_period_end");
+export const SUBSCRIPTION = columns(
+  "organization_id", "plan_id", "status", "trial_ends_at", "current_period_end", "stripe_customer_id", "stripe_subscription_id",
+);
 
-export const PLAN = columns("id", "name", "description", "price_minor", "currency", "billing_period", "max_members", "is_active");
+export const PLAN = columns(
+  "id", "name", "description", "price_minor", "currency", "billing_period", "max_members", "is_active", "stripe_price_id", "stripe_product_id", "tier",
+);
 
 export function toPlan(r: Row): Plan {
   return {
@@ -846,15 +850,20 @@ export function toPlan(r: Row): Plan {
     currency: str(r.currency),
     billingPeriod: r.billing_period as Plan["billingPeriod"],
     maxMembers: r.max_members === null || r.max_members === undefined ? undefined : Number(r.max_members),
+    stripePriceId: optStr(r.stripe_price_id),
+    stripeProductId: optStr(r.stripe_product_id),
+    tier: optStr(r.tier) as Plan["tier"],
   };
 }
 
 export function toSubscription(r: Row, plan?: Plan): Subscription {
   return {
     status: r.status as Subscription["status"],
-    plan: plan && { id: plan.id, name: plan.name, maxMembers: plan.maxMembers },
+    plan: plan && { id: plan.id, name: plan.name, maxMembers: plan.maxMembers, tier: plan.tier },
     trialEndsAt: optIso(r.trial_ends_at),
     currentPeriodEnd: optIso(r.current_period_end),
+    stripeCustomerId: optStr(r.stripe_customer_id),
+    stripeSubscriptionId: optStr(r.stripe_subscription_id),
   };
 }
 

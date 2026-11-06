@@ -193,6 +193,7 @@ export const getShell = cache(async () => {
     demoEndsAt: ctx.demoEndsAt,
     subscription: ctx.subscription,
     writable: ctx.writable,
+    locked: ctx.locked,
     // Seuls les administrateurs SELECT voient le lien vers la console (rien n'est révélé aux autres).
     showConsole: access === "ok" || access === "mfa",
   };

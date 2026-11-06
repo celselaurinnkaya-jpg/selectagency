@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
+import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { InvoiceEditor } from "@/features/invoices/InvoiceEditor";
@@ -29,7 +30,7 @@ async function Editor({ searchParams }: Pick<PageProps<"/finance/invoices/new">,
     caseId: typeof dossier === "string" ? dossier : undefined,
   });
   if (!editor) return null;
-  if ("forbidden" in editor) return <Notice>{editor.forbidden}</Notice>;
+  if ("forbidden" in editor) return editor.locked ? <FeatureLocked feature="invoices" /> : <Notice>{editor.forbidden}</Notice>;
   return (
     <InvoiceEditor
       clients={editor.clients}

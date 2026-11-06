@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { ROLE } from "@/lib/domain/labels";
 import { initials } from "@/lib/format";
 import { getShell } from "@/features/operations/queries";
+import { AgencyMobileMenu } from "./AgencyNav";
 import { MobileMenu, NewMenu, UserMenu } from "./HeaderMenus";
 
 // Barre supérieure bleu marine pleine largeur (référence UNIP) : le logo est dessiné pour ce fond.
@@ -34,7 +35,9 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-40 bg-navy-800 text-white shadow-md print:hidden">
       <div className="flex h-16 items-center gap-2 px-3 sm:gap-4 sm:px-5">
-        <MobileMenu />
+        <Suspense fallback={<MobileMenu />}>
+          <AgencyMobileMenu />
+        </Suspense>
         <Link href="/dashboard" className="shrink-0" aria-label="SELECT Agency, tableau de bord">
           <Logo priority className="h-8 sm:h-9" />
         </Link>

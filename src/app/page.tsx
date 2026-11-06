@@ -142,7 +142,7 @@ const FAQ = [
   },
   {
     q: "Combien coûte SELECT Agency ?",
-    a: "Les formules ne sont pas encore fixées : le logiciel est en cours de développement et ouvert aux agences pilotes.",
+    a: "Le premier mois est gratuit, avec toutes les options. Ensuite, trois formules mensuelles : STARTER à 15 000 FCFA (2 membres : clients, dossiers, pièces, rendez-vous, paiements, reçus et devis), PRO à 30 000 FCFA (5 membres, avec en plus factures, services, partenaires, e-mails automatiques, modèles d'étapes et rapports) et BUSINESS à 60 000 FCFA (membres illimités, support prioritaire). Paiement par carte bancaire, Mobile Money ou virement.",
   },
 ];
 

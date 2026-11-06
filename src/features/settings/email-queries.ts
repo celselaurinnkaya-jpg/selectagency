@@ -25,6 +25,7 @@ export async function getEmailSettingsPage() {
     // La file d'envoi n'est visible que des rôles qui suivent les dossiers et la caisse.
     recentEmails: ((outboxRes.data ?? []) as Record<string, unknown>[]).map(toEmailOutboxItem),
     canManage: allowed(ctx, "settings.manage"),
+    autoLocked: ctx.locked.includes("auto_emails"),
     readOnly: can(ctx.member.role, "settings.manage") && !ctx.writable,
     brevoReady: isBrevoConfigured() && Boolean(defaultSenderEmail()),
     senderDomainEmail: defaultSenderEmail(),

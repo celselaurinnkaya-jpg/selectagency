@@ -189,6 +189,7 @@ export const METHOD_KIND: Record<PaymentMethodKind, string> = {
   cash: "Espèces",
   bank_transfer: "Virement bancaire",
   mobile_money: "Mobile Money",
+  card: "Carte bancaire (Stripe)",
   other: "Autre moyen",
 };
 

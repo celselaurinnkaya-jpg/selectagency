@@ -803,3 +803,132 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - Exécution de `git push origin main` vers GitHub (déclenchement du build et déploiement Vercel).
   - Working tree propre (`working tree clean`).
 
+
+---
+
+### Session 24 — 6 Novembre 2026 — Intégration des Paiements (Abonnements SaaS Stripe — Flux B)
+* **Demande / Contexte de l'utilisateur** :
+  - Intégration de deux flux de paiements distincts :
+    - **Flux A** : Paiements des clients des agences (billets d'avion, hébergements, démarches, prestations de voyage et études).
+    - **Flux B** : Paiements des abonnements des agences à SELECT Agency (licences SaaS).
+  - Choix et analyse géographique : l'utilisateur réside au Brésil (pays officiellement pris en charge par Stripe pour percevoir les fonds sur son compte bancaire), et les agences clientes peuvent régler par carte bancaire internationale Visa / Mastercard.
+  - Décision validée : implémentation en priorité du **Flux B (Abonnements agences via Stripe Checkout et portail client Stripe)**.
+* **Architecture & Réalisations** :
+  - **Dépendance** : `npm install stripe` (SDK officiel Stripe pour Node.js).
+  - **Migration SQL** (`supabase/migrations/20261106100000_stripe_subscriptions.sql`) :
+    - Colonnes `stripe_price_id` et `stripe_product_id` sur la table `public.plans`.
+    - Colonnes `stripe_customer_id` et `stripe_subscription_id` sur la table `public.subscriptions`.
+    - Fonction Super-Admin SELECT `public.platform_set_plan_stripe(uuid, text, text)` pour mapper les tarifs Stripe sur les formules.
+    - Fonction sécurisée `public.set_agency_stripe_customer(uuid, text)` réservée aux rôles `owner` et `admin` pour lier le compte client Stripe de l'agence.
+    - Fonction webhook `public.record_stripe_subscription_payment(...)` vérifiée par secret système (`private.check_system_secret`) pour enregistrer les encaissements et prolonger l'abonnement.
+    - Fonction webhook `public.sync_stripe_subscription_status(...)` pour synchroniser résiliations ou défauts de paiement.
+  - **Logique Serveur & Stripe** :
+    - `src/lib/stripe/server.ts` : singleton serveur Stripe avec isolation totale de la clé secrète.
+    - `src/features/billing/stripe-actions.ts` : Server Actions `createStripeCheckoutSessionAction` et `createStripeCustomerPortalAction`.
+    - `src/app/api/webhooks/stripe/route.ts` : endpoint webhook vérifié par signature cryptographique Stripe (`stripe.webhooks.constructEvent`) prenant en charge `checkout.session.completed`, `invoice.payment_succeeded`, `customer.subscription.updated` et `customer.subscription.deleted`.
+  - **Interface Utilisateur (Design System SELECT Agency)** :
+    - `src/features/billing/StripeButtons.tsx` : boutons `StripeSubscribeButton` et `StripeManageButton` respectant le design system (`citron-400`, `navy-800`).
+    - `src/app/(app)/settings/billing/page.tsx` : intégration des boutons de souscription Stripe Checkout sur les formules d'abonnements et bouton d'accès au portail de gestion de carte bancaire.
+  - **Tests & Domaine** :
+    - `src/lib/domain/types.ts` et `src/lib/data/rows.ts` étendus avec les identifiants Stripe.
+    - `supabase/tests/database.test.ts` enrichi avec le test d'intégration complet du cycle Stripe (assignation du client, validation webhook et synchronisation de statut).
+* **Validation & Contrôles Qualité** :
+  - **Tests unitaires & d'intégration** : **164/164 tests passés avec succès** (16 suites de tests sur Vitest / PGlite).
+  - **Compilation TypeScript** (`npm run typecheck`) : 0 erreur.
+  - **Linter** (`npm run lint`) : 0 erreur (13 avertissements préexistants).
+  - **Règle Git & Déploiement** : Strictement conservé en local (`localhost:3000`). **Aucun git push exécuté sans demande explicite de l'utilisateur**.
+* **Prochaines Étapes** :
+  - Renseigner les variables d'environnement Stripe dans `.env.local` (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`).
+  - Déployer la migration `20261106100000_stripe_subscriptions.sql` sur le projet Supabase distant.
+  - Étudier la passerelle pour le Flux A (paiements clients des agences via Mobile Money / Cartes).
+
+* **Mise à jour (Configuration des clés dans `.env.local`)** :
+  - Clés Stripe renseignées par l'utilisateur (`STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`).
+  - Route Webhook (`src/app/api/webhooks/stripe/route.ts`) optimisée pour utiliser `createSystemClient()` de Supabase et aligner le secret système sur `STRIPE_WEBHOOK_SECRET`.
+  - Typecheck vérifié avec succès (0 erreur).
+
+---
+
+### Session 25 — 6 Novembre 2026 (Claude Code) — Incident : site en ligne sans les mises à jour de base S1 à S6 ; vérification Stripe
+* **Demande** : « connecter Stripe d'abord ; j'ai installé Stripe et mis les clés dans `.env.local`, c'est quoi la suite ? »
+* **Constat en reprenant le projet** :
+  - la sécurité S1 à S6 a été enregistrée (`123d64f`) et **envoyée sur GitHub le 3 novembre** (`b4a5256`), donc publiée par Vercel. Les en-têtes de S5 sont visibles sur le vrai site ;
+  - **mais la vraie base n'a pas reçu les migrations** `20261103100000` à `140000`. Vérifié en lecture seule : la nouvelle `apply_case_transition`, `add_requirement` et la désinscription avec code sont **absentes**.
+* **Conséquence sur le vrai site depuis le 3 novembre** : changer l'étape d'un dossier, ajouter une pièce et la page de désinscription échouent, car les fonctions appelées n'existent pas. Les lignes d'historique des rendez-vous, fiches et prestations ne sont plus écrites, puisque l'application ne les écrit plus et que les déclencheurs ne sont pas encore en base.
+* **Réparation engagée** : la migration Stripe préparée en Session 24 (`20261106100000_stripe_subscriptions.sql`, pas encore relue) est **mise de côté temporairement** hors du dossier des migrations. `db push` vers le vrai projet n'enverra ainsi que les 5 migrations de sécurité, à appliquer par l'utilisateur.
+* **Stripe, vérification de l'installation** : paquet `stripe` installé ; `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` et `STRIPE_WEBHOOK_SECRET` présents dans `.env.local` (ignoré par Git), sans clé secrète dans une variable publique. **Ce sont des clés RÉELLES (live)**, et non des clés de test.
+* **Réparation faite** : l'utilisateur a lancé `npx supabase db push` vers le vrai projet, avec exactement les 5 migrations de sécurité (`20261103100000` à `140000`).
+  - Vérifié en lecture seule : `apply_case_transition` (nouvelle forme), `add_requirement` et la désinscription avec code sont **présentes** ; la page de désinscription en ligne répond 200. **Le vrai site est réparé.**
+  - Migration Stripe remise à sa place dans `supabase/migrations`, toujours **non appliquée** et à relire.
+  - Note : le CLI Supabase annonce que, dans sa prochaine version majeure, `db push` visera la base locale par défaut. Il faudra alors écrire `npx supabase db push --linked` pour le vrai projet.
+* **Relecture du code Stripe (Session 24), sans modification** :
+  - **Paiements perdus sans alerte** : le webhook ignore les erreurs de la base et répond toujours « reçu » à Stripe, qui ne réessaie donc jamais.
+  - **Premier paiement refusé par la base** : la référence « Stripe Checkout (cs_…) » dépasse la limite de 80 caractères de `subscription_payments`. Toute l'opération est annulée : ni paiement, ni activation.
+  - **Agence à l'essai terminé incapable de payer** : `set_agency_stripe_customer` exige le droit d'écriture (`has_role`), donc refusé en lecture seule. Le client Stripe n'est pas relié et le paiement n'est attribué à aucune agence.
+  - **Échéance jamais prolongée** : la date de fin de période est lue sur l'abonnement, alors que dans cette version de l'API Stripe (`2026-10-28.endive`, SDK 23.1) elle se trouve sur l'élément d'abonnement (`SubscriptionItem.current_period_end`).
+  - **Doublons** : le premier paiement est enregistré deux fois (`checkout.session.completed` puis `invoice.payment_succeeded`), et chaque renvoi de Stripe en ajoute un, faute de clé unique.
+  - **Sécurité** : un propriétaire peut lier n'importe quel identifiant client Stripe à son agence. Le lien doit venir du webhook signé (métadonnées de la session).
+  - **Secret** : le webhook réutilise le secret de signature Stripe comme secret de la base (`stripe_webhook`), dont l'empreinte n'est enregistrée nulle part. Il faudrait aussi la changer à chaque changement de mode (test ou réel).
+  - **Interface** : les erreurs sont « lancées », ce qui affiche une page d'erreur ; les boutons apparaissent même sans Stripe configuré ; « Payer » reste proposé à une agence déjà abonnée par Stripe (risque de double abonnement) ; l'adresse de retour dépend de l'en-tête `Host`.
+  - **Manque** : aucun écran de la console pour relier une formule à son tarif Stripe.
+  - **Stripe Brésil** : la documentation confirme que les cartes Visa et Mastercard émises hors du Brésil sont acceptées, mais ne dit pas clairement dans quelles devises facturer. À vérifier en mode test (tarif en XAF).
+  - La migration Stripe n'est appliquée **ni** au projet de test **ni** au vrai projet : elle peut être corrigée sur place.
+* **Rappel de l'utilisateur** : seulement le paiement des **abonnements des agences à SELECT** (pas les paiements de leurs clients). Règle : 1 mois d'essai gratuit, puis l'agence paie, sinon elle est en consultation seulement. C'est la règle déjà en place (`org_can_write`).
+* **Corrections Stripe** (après « vas-y ») :
+  - **Migration `20261106100000_stripe_subscriptions.sql` réécrite** (elle n'était appliquée nulle part) :
+    - formats contrôlés (`price_`, `prod_`, `cus_`, `sub_`, `in_`) ;
+    - `platform_set_plan_stripe` est réservée à la console et inscrite au journal (`plan.stripe`) ;
+    - `platform_plans` renvoie le tarif Stripe ;
+    - `set_agency_stripe_customer` est **supprimée** : le lien vient du webhook signé (`stripe_link_checkout`, métadonnées `organization_id`), même pour une agence en consultation seulement ;
+    - `stripe_record_invoice` : clé unique `stripe_invoice_id` (renvoi de Stripe = « duplicate »), échéance prolongée, facture à 0 = « no_charge », référence tronquée à 80 caractères, moyen `card` ;
+    - `stripe_sync_subscription` : correspondance des statuts (actif, en retard, résilié, suspendu ; « incomplete » ne change rien) ;
+    - `private.stripe_organization` refuse un client ou un abonnement d'une autre agence, et une agence notée qui contredit le client connu (défaut trouvé par le test et corrigé) ;
+    - les appels de la base utilisent le secret serveur existant (`email_worker`, c'est-à-dire `CRON_SECRET`), déjà enregistré en production et en test.
+  - **Webhook `/api/webhooks/stripe` réécrit** :
+    - signature vérifiée ;
+    - événements traités : `checkout.session.completed`, `invoice.paid` / `invoice.payment_succeeded` et `customer.subscription.created/updated/deleted` ;
+    - **code 500 en cas d'erreur**, pour que Stripe réessaie ;
+    - réponse sans données.
+  - `src/lib/stripe/events.ts` lit la fin de période sur les éléments de l'abonnement et les lignes de facture, le tarif sur `pricing.price_details`, et l'agence dans les métadonnées.
+  - **Actions** (`startCardCheckoutAction`, `openCardPortalAction`) : messages clairs au lieu d'erreurs ; réservées au propriétaire et à l'administrateur, **même en consultation seulement** ; refus pour une démonstration ; **pas de second abonnement** ; formule sans tarif Stripe refusée ; adresse de retour `NEXT_PUBLIC_SITE_URL` (et plus l'en-tête `Host`) ; Stripe crée le client au paiement.
+  - **Page Abonnement** :
+    - boutons seulement si Stripe est configuré et que la formule a un tarif ;
+    - « Gérer ma carte et mon abonnement » quand un abonnement par carte est en cours ;
+    - messages après paiement réussi ou annulé ;
+    - le Mobile Money via le support reste proposé.
+  - **Console SELECT** : champ « Tarif Stripe » sur chaque formule. À l'enregistrement, l'application vérifie auprès de Stripe que le tarif est actif, récurrent, et qu'il a le même prix, la même devise et la même périodicité ; sinon, elle refuse.
+  - Libellé « Carte bancaire (Stripe) », qui ne peut pas être saisi à la main dans la console. `.env.example` documenté.
+* **Tests** :
+  - le test Stripe de la Session 24 est remplacé ;
+  - nouveaux tests : base (lien, doublon, échéance, facture à 0, agence inconnue, autre agence, statuts, agence en fin d'essai qui redevient modifiable après paiement) et webhook (signature, chaque événement, erreur 500) ;
+  - `tsc` 0 erreur, ESLint 0 erreur, **169 tests réussis**.
+* **Demande suivante** : « vas-y, à noter : pas encore les paiements des agences vers leurs clients ; seulement l'abonnement des agences, après le mois d'essai, sinon les options importantes ne sont plus accessibles », puis « applique directement ; trois tarifs STARTER, PRO et BUSINESS, selon les options ».
+  - Choix de l'utilisateur : répartition proposée (« Ma proposition ») ; prix **15 000 / 30 000 / 60 000 FCFA par mois** ; mise en route **directement en réel**.
+* **Objets créés dans le compte Stripe RÉEL** (par l'API, avec la clé de `.env.local`) :
+  - produits et tarifs mensuels en XAF : STARTER `price_1UYv0TDENw1uRDfuKP8XJlwx` (15 000), PRO `price_1UYv0UDENw1uRDfueQEZIlf8` (30 000), BUSINESS `price_1UYv0VDENw1uRDfujuyBG7nb` (60 000) ;
+  - webhook `we_1UYv1BDENw1uRDfuKKPlbcUQ` vers `https://www.myselectagency.com/api/webhooks/stripe` (5 événements). Son secret de signature est écrit dans `.env.local` (jamais affiché) ;
+  - portail client (changement entre les 3 formules, résiliation en fin de période, factures, carte).
+* **Formules et options — migration `20261106110000_formules.sql`** (appliquée **nulle part** pour l'instant) :
+  - colonne `plans.tier` (starter, pro, business) ; les 3 formules sont créées ou mises à jour avec leurs tarifs Stripe (STARTER 2 membres, PRO 5, BUSINESS illimité) ;
+  - `private.org_has_feature` : tout est ouvert pendant l'essai, dans une démonstration, avec une ancienne formule sans palier, en PRO et en BUSINESS ; en STARTER, les options PRO sont fermées ;
+  - **refus par la base** (message « … : option incluse dans les formules PRO et BUSINESS ») : créer une facture, un service, un client dans un service, une réservation, un partenaire ; rattacher un client à un partenaire ; créer ou modifier un modèle d'étapes ; activer un e-mail automatique (rappel, relance, avancement) ;
+  - les e-mails automatiques d'une agence STARTER ne sont plus mis en file ; la confirmation de paiement et les envois faits à la main restent permis ;
+  - **rien n'est perdu** : ce qui existe déjà reste consultable et modifiable ;
+  - la console voit le palier de chaque formule.
+* **Correction Stripe trouvée en chemin** : un changement de formule fait sur la page Stripe (STARTER vers PRO) n'était pris en compte qu'à la facture suivante. Désormais `stripe_sync_subscription` reçoit le tarif de l'abonnement et change la formule aussitôt. Pour une facture de changement de formule (avoir sur l'ancien tarif, puis le nouveau), la formule retenue est celle de la ligne au plus gros montant.
+* **Application** :
+  - `src/lib/domain/features.ts` reprend la règle de la base ; le contexte de l'agence connaît les options fermées (`locked`) ;
+  - menu : badge « PRO » à côté de Services, Partenaires et Rapports pour une agence STARTER ;
+  - avis « option incluse dans les formules PRO et BUSINESS » avec le bouton « Passez à PRO » sur les pages Services, Partenaires, Factures, Rapports, E-mails et Modèles d'étapes ; les boutons de création sont retirés ;
+  - Rapports et exports CSV bloqués (page et téléchargement, code 403) ;
+  - e-mails : les trois e-mails automatiques PRO sont grisés ;
+  - fiche client : le code partenaire passe en lecture seule (le partenaire déjà rattaché est conservé) ;
+  - page Abonnement : ce que comprend chaque formule, un avis pendant l'essai, la liste des options fermées en STARTER ;
+  - accueil : la FAQ « Combien coûte SELECT Agency ? » donne le mois gratuit et les 3 formules.
+* **Tests** : base (STARTER bloqué, PRO autorisé, essai ouvert, données de l'essai modifiables, e-mails automatiques non mis en file, formule suivie depuis Stripe) et unitaires (options, facture de changement de formule). `tsc` 0 erreur, ESLint 0 erreur, **172 tests réussis**.
+* **Reste à faire pour la mise en ligne** (dans cet ordre) :
+  1. l'utilisateur ajoute dans Vercel `STRIPE_SECRET_KEY` et `STRIPE_WEBHOOK_SECRET` ;
+  2. il lance `npx supabase db push` vers le vrai projet (2 migrations : `20261106100000` et `20261106110000`) ;
+  3. enregistrement Git, puis envoi sur GitHub **seulement sur sa demande** (« publie sur Vercel ») ;
+  4. vrai paiement d'essai, de préférence avec une carte émise hors du Brésil, puis remboursement ;
+  5. désactiver dans la console les anciennes formules éventuelles.

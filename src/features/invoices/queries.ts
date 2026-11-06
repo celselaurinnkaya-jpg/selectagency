@@ -124,7 +124,9 @@ export async function getInvoice(id: string) {
 export async function getInvoiceEditor(input: { invoiceId?: string; clientId?: string; caseId?: string }) {
   if (input.invoiceId && !UUID.test(input.invoiceId)) return null;
   const { data, ctx, now } = await readAgency({ clients: true, cases: true });
-  if (!allowed(ctx, "finance.write")) return { forbidden: forbiddenMessage(ctx, "finance.write") } as const;
+  if (!allowed(ctx, "finance.write")) return { forbidden: forbiddenMessage(ctx, "finance.write"), locked: false };
+  // Formule STARTER : les factures existantes restent modifiables, mais on n'en crée plus.
+  if (!input.invoiceId && ctx.locked.includes("invoices")) return { forbidden: "Les factures sont incluses dans les formules PRO et BUSINESS.", locked: true };
   const [invoice, settings, services] = await Promise.all([
     input.invoiceId ? readInvoice(ctx, input.invoiceId) : null,
     loadInvoiceSettings(ctx),

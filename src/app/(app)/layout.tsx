@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import { Menu } from "lucide-react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { DemoBanner } from "@/components/layout/DemoBanner";
-import { SidebarNav, SidebarNavFallback } from "@/components/layout/SidebarNav";
+import { AgencySidebarNav } from "@/components/layout/AgencyNav";
+import { SidebarNavFallback } from "@/components/layout/SidebarNav";
 import { SubscriptionBanner } from "@/components/layout/SubscriptionBanner";
 
 // Cadre commun de l'espace de travail : il n'est rendu qu'une fois et persiste entre les pages.
@@ -27,7 +28,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             Menu
           </p>
           <Suspense fallback={<SidebarNavFallback />}>
-            <SidebarNav />
+            <AgencySidebarNav />
           </Suspense>
         </aside>
         <main id="contenu" className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7 print:p-0">
