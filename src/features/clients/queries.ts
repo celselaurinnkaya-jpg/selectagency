@@ -6,6 +6,7 @@ import type { ClientType } from "@/lib/domain/types";
 import { dayKey } from "@/lib/format";
 import { summarizeCase } from "@/features/cases/summary";
 import { loadClientServices } from "@/features/services/queries";
+import { loadMessageTemplates } from "@/features/communications/queries";
 
 export interface ClientFilters {
   q?: string;
@@ -76,7 +77,7 @@ export async function getClientDetail(id: string) {
   // Étapes, pièces et prestations des dossiers du client (pour les soldes et les pièces manquantes),
   // et services qu'il suit.
   const caseIds = data.cases.map((k) => k.id);
-  const [related, services, partner] = await Promise.all([
+  const [related, services, partner, messageTemplates] = await Promise.all([
     caseIds.length
       ? loadTables(ctx, {
           steps: (q) => q.in("case_id", caseIds),
@@ -86,6 +87,7 @@ export async function getClientDetail(id: string) {
       : {},
     loadClientServices(ctx, id),
     client.partnerId ? fetchRows(ctx, "partners", PARTNER.list, (q) => q.eq("id", client.partnerId!)).then(([row]) => (row ? toPartner(row) : undefined)) : undefined,
+    loadMessageTemplates(ctx),
   ]);
   Object.assign(data, related);
 
@@ -113,7 +115,10 @@ export async function getClientDetail(id: string) {
     appointments: [...data.appointments].sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     payments: [...data.payments].sort((a, b) => b.paidAt.localeCompare(a.paidAt)),
     events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
-    communications: [...data.communications].sort((a, b) => b.at.localeCompare(a.at)),
+    // Un échange noté après coup se range à la date où il a eu lieu.
+    communications: [...data.communications].sort((a, b) => (b.occurredAt ?? b.at).localeCompare(a.occurredAt ?? a.at)),
+    messageTemplates,
+    canManageTemplates: allowed(ctx, "settings.manage"),
     caseReferences: new Map(cases.map((k) => [k.id, k.reference])),
     services,
     partner,

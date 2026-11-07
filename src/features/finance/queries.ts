@@ -10,6 +10,7 @@ import { agencyFinance } from "./calculations";
 import { documentFromPayment } from "./receipt";
 import { activeMembers } from "@/lib/domain/members";
 import type { Payment } from "@/lib/domain/types";
+import { campaignStats } from "@/features/communications/campaigns";
 
 export async function getFinanceOverview(periodKey?: string) {
   const { data, now, ctx } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true, expenses: true });
@@ -173,7 +174,12 @@ export async function getReports(periodKey?: string) {
     // Nouveaux contacts (prospects et clients) de la période, par origine ; prospects devenus clients.
     contacts: (() => {
       const added = data.clients.filter((c) => inPeriod(c.registeredAt));
-      return { total: added.length, converted: data.clients.filter((c) => inPeriod(c.convertedAt)).length, bySource: countBy(added, (c) => c.source ?? "unknown") };
+      return {
+        total: added.length,
+        converted: data.clients.filter((c) => inPeriod(c.convertedAt)).length,
+        bySource: countBy(added, (c) => c.source ?? "unknown"),
+        byCampaign: campaignStats(added),
+      };
     })(),
     waiting: countBy(active, (s) => s.waitingOn ?? "agency_action"),
     monthly: months.map((m) => ({

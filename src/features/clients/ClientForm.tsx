@@ -35,6 +35,8 @@ interface ClientFormProps {
   partnerCode?: string;
   /** Formule STARTER : le code partenaire ne peut plus être changé (option PRO). */
   partnersLocked?: boolean;
+  /** Campagnes déjà saisies (suggestions). */
+  campaigns?: string[];
 }
 
 /**
@@ -47,7 +49,7 @@ export function ClientForm(props: ClientFormProps) {
   return <ClientFormFields key={bfcacheId} {...props} />;
 }
 
-function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode, partnersLocked = false }: ClientFormProps) {
+function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode, partnersLocked = false, campaigns = [] }: ClientFormProps) {
   // En cas de succès, saveClientAction redirige elle-même vers la fiche (rien à rejouer ici).
   const [state, action, pending] = useActionState(saveClientAction, initialFormState);
   const v = state.values ?? {};
@@ -392,6 +394,14 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           </FormField>
           <FormField id="sourceDetail" label="Précision sur l'origine" error={e.sourceDetail} hint="Ex. : nom de la personne qui recommande, publicité de la rentrée.">
             <Input id="sourceDetail" name="sourceDetail" maxLength={120} defaultValue={v.sourceDetail ?? client?.sourceDetail} {...describedBy("sourceDetail", e.sourceDetail, "hint")} />
+          </FormField>
+          <FormField id="campaign" label="Campagne ou publication" error={e.campaign} hint="Ex. : Pub Facebook rentrée 2027. Reprenez le même nom d'une fiche à l'autre pour compter les contacts par campagne.">
+            <Input id="campaign" name="campaign" list="client-campaigns" maxLength={120} defaultValue={v.campaign ?? client?.campaign} {...describedBy("campaign", e.campaign, "hint")} />
+            <datalist id="client-campaigns">
+              {campaigns.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
           </FormField>
           <FormField
             id="partnerCode"

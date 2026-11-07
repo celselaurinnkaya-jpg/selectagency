@@ -9,6 +9,6 @@ const ITEMS = [
   { key: "abonnement", label: "Abonnement", href: "/settings/billing" },
 ];
 
-export function SettingsNav({ active }: { active: "agence" | "factures" | "emails" | "workflows" | "documents" | "abonnement" }) {
+export function SettingsNav({ active }: { active: "agence" | "factures" | "emails" | "messages" | "workflows" | "documents" | "abonnement" }) {
   return <Pills label="Sections des paramètres" active={active} items={ITEMS} />;
 }

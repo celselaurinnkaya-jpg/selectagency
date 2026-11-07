@@ -12,11 +12,22 @@ import { MobileMenu, NewMenu, UserMenu } from "./HeaderMenus";
 
 // Barre supérieure bleu marine pleine largeur (référence UNIP) : le logo est dessiné pour ce fond.
 
+// Logo de l'agence (Paramètres > Factures) sur un fond blanc arrondi : un logo sombre reste lisible sur le bleu marine.
 async function AgencyName() {
-  const { agency } = await getShell();
+  const { agency, logoUrl } = await getShell();
   return (
-    <span className="hidden truncate border-l border-white/25 pl-4 text-base font-semibold text-white md:block">
-      {agency.name}
+    // Sans logo, rien n'est affiché sur téléphone (le nom n'y a pas la place).
+    <span className={`min-w-0 items-center gap-3 border-l border-white/25 pl-3 sm:pl-4 ${logoUrl ? "flex" : "hidden md:flex"}`}>
+      {logoUrl && (
+        // Image privée servie par l'application (session requise) : pas d'optimisation next/image possible.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={logoUrl}
+          alt={`Logo de ${agency.name}`}
+          className="h-9 w-auto max-w-16 shrink-0 rounded-md bg-white object-contain p-0.5 sm:h-10 sm:max-w-28"
+        />
+      )}
+      <span className="hidden truncate text-base font-semibold text-white md:block">{agency.name}</span>
     </span>
   );
 }

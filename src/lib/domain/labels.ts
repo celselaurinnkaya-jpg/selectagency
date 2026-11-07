@@ -11,10 +11,12 @@ import type {
   ClientType,
   CommissionStatus,
   CommunicationChannel,
+  CommunicationDirection,
   CommunicationStatus,
   ConfirmationLevel,
   InvoiceStatus,
   MemberRole,
+  MessageAudience,
   PaymentMethodKind,
   PaymentStatus,
   QuoteStatus,
@@ -292,6 +294,24 @@ export const COMMUNICATION_CHANNEL: Record<CommunicationChannel, string> = {
   email: "E-mail",
   phone: "Téléphone",
   in_person: "En agence",
+  facebook: "Facebook (Messenger)",
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  sms: "SMS",
+};
+
+/** Canaux proposés pour noter un échange, dans l'ordre du quotidien des agences. */
+export const EXCHANGE_CHANNELS: CommunicationChannel[] = ["whatsapp", "phone", "in_person", "facebook", "instagram", "tiktok", "sms", "email"];
+
+export const COMMUNICATION_DIRECTION: Record<CommunicationDirection, string> = {
+  inbound: "Reçu du client",
+  outbound: "Fait par l'agence",
+};
+
+export const MESSAGE_AUDIENCE: Record<MessageAudience, string> = {
+  prospect: "Prospects",
+  client: "Clients",
+  any: "Prospects et clients",
 };
 
 /** Statut réel d'une communication (« Envoyé » = accepté par Brevo ; « Livré » = confirmé par Brevo). */

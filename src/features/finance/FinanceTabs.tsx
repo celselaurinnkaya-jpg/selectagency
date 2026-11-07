@@ -10,6 +10,7 @@ const TABS = [
   { href: "/finance/invoices", label: "Factures" },
   { href: "/finance/quotes", label: "Devis" },
   { href: "/finance/expenses", label: "Dépenses" },
+  { href: "/finance/calculator", label: "Calculatrice" },
 ];
 
 export function FinanceTabs() {

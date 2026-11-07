@@ -73,6 +73,11 @@ export function dayKey(iso: string | Date, timeZone: string): string {
   return parts;
 }
 
+/** Heure (HH:MM, sur 24 heures) dans le fuseau de l'agence. */
+export function timeKey(iso: string | Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("fr-FR", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(typeof iso === "string" ? new Date(iso) : iso);
+}
+
 /** « Aujourd'hui à 15:00 », « Demain à 10:30 », « Hier », sinon la date complète. */
 export function formatRelativeDay(iso: string, now: Date, timeZone: string, withTime = true): string {
   const target = dayKey(iso, timeZone);

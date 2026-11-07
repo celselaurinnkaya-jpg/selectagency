@@ -16,6 +16,7 @@ import type {
   InvoiceItem,
   InvoiceSettings,
   Member,
+  MessageTemplate,
   Payment,
   PaymentAllocation,
   Plan,
@@ -91,7 +92,7 @@ export const CLIENT = columns(
   "id", "reference", "client_type", "first_name", "last_name", "email", "phone_e164", "whatsapp_e164",
   "residence_country", "city", "preferred_language", "registered_at", "assigned_to", "passport_last4", "notes",
   "archived_at", "is_demo_fixture", "gender", "birth_date", "nationality", "marital_status", "id_doc_type",
-  "address", "service_motive", "is_self_responsible", "guardian1", "guardian2", "status", "source", "source_detail", "converted_at", "partner_id", "email_opt_out",
+  "address", "service_motive", "is_self_responsible", "guardian1", "guardian2", "status", "source", "source_detail", "converted_at", "partner_id", "email_opt_out", "campaign",
 );
 
 /** Numéro complet de la pièce d'identité (table à part, non lisible par le comptable ni la lecture seule). */
@@ -129,6 +130,7 @@ export function toClient(r: Row): Client {
     status: r.status === "prospect" ? "prospect" : "client",
     source: optStr(r.source) as Client["source"],
     sourceDetail: optStr(r.source_detail),
+    campaign: optStr(r.campaign),
     convertedAt: optIso(r.converted_at),
     partnerId: optStr(r.partner_id),
     emailOptOut: Boolean(r.email_opt_out),
@@ -165,6 +167,7 @@ export function clientToRow(c: Omit<Client, "id" | "reference" | "registeredAt" 
     guardian2: nul(c.guardian2),
     source: nul(c.source),
     source_detail: nul(c.sourceDetail),
+    campaign: nul(c.campaign),
   };
 }
 
@@ -518,10 +521,18 @@ export function expenseToRow(e: Expense): Row {
 
 // Historique et communications ------------------------------------------------------------------
 
-export const EVENT = columns("id", "at", "actor_id", "client_id", "case_id", "text");
+export const EVENT = columns("id", "at", "actor_id", "client_id", "case_id", "text", "origin");
 
 export function toEvent(r: Row): ActivityEvent {
-  return { id: str(r.id), at: iso(r.at), actorId: str(r.actor_id), clientId: optStr(r.client_id), caseId: optStr(r.case_id), text: str(r.text) };
+  return {
+    id: str(r.id),
+    at: iso(r.at),
+    actorId: str(r.actor_id),
+    clientId: optStr(r.client_id),
+    caseId: optStr(r.case_id),
+    text: str(r.text),
+    origin: r.origin === "note" ? "note" : "system",
+  };
 }
 
 export function eventToRow(e: ActivityEvent): Row {
@@ -529,7 +540,7 @@ export function eventToRow(e: ActivityEvent): Row {
 }
 
 export const COMMUNICATION = columns(
-  "id", "at", "client_id", "case_id", "channel", "status", "summary", "actor_id", "email_outbox_id", "recipient_email",
+  "id", "at", "client_id", "case_id", "channel", "status", "summary", "actor_id", "email_outbox_id", "recipient_email", "direction", "occurred_at",
 );
 
 export function toCommunication(r: Row): CommunicationLog {
@@ -544,6 +555,21 @@ export function toCommunication(r: Row): CommunicationLog {
     actorId: optStr(r.actor_id),
     emailOutboxId: optStr(r.email_outbox_id),
     recipientEmail: optStr(r.recipient_email),
+    direction: optStr(r.direction) as CommunicationLog["direction"],
+    occurredAt: r.occurred_at ? iso(r.occurred_at) : undefined,
+  };
+}
+
+export const MESSAGE_TEMPLATE = columns("id", "title", "body", "audience", "position", "is_active");
+
+export function toMessageTemplate(r: Row): MessageTemplate {
+  return {
+    id: str(r.id),
+    title: str(r.title),
+    body: str(r.body),
+    audience: r.audience as MessageTemplate["audience"],
+    position: Number(r.position),
+    isActive: Boolean(r.is_active),
   };
 }
 
@@ -936,4 +962,5 @@ export const READ_COLUMNS = {
   support_messages: TICKET_MESSAGE,
   email_settings: EMAIL_SETTINGS,
   email_outbox: EMAIL_OUTBOX,
+  message_templates: MESSAGE_TEMPLATE,
 } as const;

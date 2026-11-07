@@ -10,6 +10,8 @@ import { monthParts, shiftMonth } from "@/lib/period";
 import { activeMembers } from "@/lib/domain/members";
 import type { DocumentRequirement } from "@/lib/domain/types";
 import { tracksExpiry } from "@/features/documents/checklists";
+import { imageUrls } from "@/features/invoices/document";
+import { loadInvoiceSettings } from "@/features/invoices/queries";
 
 // Lectures des écrans opérationnels : documents, rendez-vous, tâches, équipe, recherche.
 
@@ -183,10 +185,24 @@ export async function getAgencySettings() {
 }
 
 /** Cadre de l'espace agence : en-tête, bandeaux (démonstration, abonnement), lien vers la console. */
+/**
+ * Logo de l'agence (Paramètres > Factures), pour la barre du haut. Il est lisible par les rôles qui voient la finance
+ * (bucket privé) : la lecture seule n'a que le nom. Une erreur de lecture ne doit jamais casser la barre.
+ */
+async function agencyLogoUrl(ctx: Awaited<ReturnType<typeof getAgencyContext>>): Promise<string | undefined> {
+  if (!allowed(ctx, "finance.read")) return undefined;
+  try {
+    return imageUrls(await loadInvoiceSettings(ctx)).logo;
+  } catch {
+    return undefined;
+  }
+}
+
 export const getShell = cache(async () => {
   const ctx = await getAgencyContext();
-  const { data: access } = await ctx.supabase.rpc("platform_access");
+  const [{ data: access }, logoUrl] = await Promise.all([ctx.supabase.rpc("platform_access"), agencyLogoUrl(ctx)]);
   return {
+    logoUrl,
     agency: ctx.agency,
     member: ctx.member,
     isDemo: ctx.isDemo,

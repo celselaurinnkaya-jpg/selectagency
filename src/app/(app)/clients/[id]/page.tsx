@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { BriefcaseBusiness, FolderKanban, FolderPlus, Lock, Pencil } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, BriefcaseBusiness, FolderKanban, FolderPlus, Lock, MessageCircle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
@@ -17,6 +17,7 @@ import {
   CLIENT_SOURCE,
   CLIENT_TYPE,
   COMMUNICATION_CHANNEL,
+  COMMUNICATION_DIRECTION,
   COMMUNICATION_STATUS,
   GENDER_OPTIONS,
   ID_DOC_TYPES,
@@ -31,11 +32,13 @@ import {
   STEP_KIND,
 } from "@/lib/domain/labels";
 import { activeMembers } from "@/lib/domain/members";
-import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
+import { formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/format";
 import { AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { getClientDetail } from "@/features/clients/queries";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
-import { buildMessageTemplates } from "@/features/communications/templates";
+import { AddNoteForm, LogExchangeForm } from "@/features/communications/ExchangeForms";
+import { QuickContact, whatsappDigits } from "@/features/communications/QuickContact";
+import { appointmentPhrase, bulletList, prepareMessages } from "@/features/communications/templates";
 import { ConvertProspectButton, FollowUpForm } from "@/features/prospects/ProspectForms";
 import { EnrollForm, ServiceClientActions } from "@/features/services/ServiceForms";
 import { caseKindLabel } from "@/features/workflows/templates";
@@ -55,6 +58,9 @@ const TABS = [
   { key: "historique", label: "Historique" },
 ] as const;
 
+/** Texte d'une note de suivi sans le préfixe posé par la base (un badge « Note » le remplace à l'écran). */
+const noteText = (e: { text: string; origin?: string }) => (e.origin === "note" ? e.text.replace(/^Note ajoutée à la main : /, "") : e.text);
+
 export default function ClientPage({ params, searchParams }: PageProps<"/clients/[id]">) {
   return (
     <Suspense fallback={<PageSkeleton />}>
@@ -67,7 +73,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services, followUps, today, partner } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/clients/${client.id}`;
@@ -75,6 +81,20 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
   const balance = cases.reduce((sum, s) => sum + s.finance.balanceMinor, 0);
   const isProspect = client.status === "prospect";
+  const messages = prepareMessages(
+    messageTemplates,
+    {
+      prenom: client.firstName,
+      nom: client.lastName,
+      agence: agency.name,
+      conseiller: advisor?.fullName,
+      dossier: cases.find((s) => s.travelCase.status === "active")?.travelCase.reference,
+      solde: balance > 0 && permissions.financeRead ? formatMoney(balance, agency.currency) : undefined,
+      pieces_manquantes: bulletList(missing.map((r) => r.label)),
+      rendez_vous: nextAppointment ? appointmentPhrase(nextAppointment, now, tz) : undefined,
+    },
+    isProspect ? "prospect" : "client",
+  );
   const origin = client.source ? `${CLIENT_SOURCE[client.source]}${client.sourceDetail ? ` — ${client.sourceDetail}` : ""}` : (client.sourceDetail ?? "Non précisée");
 
   return (
@@ -90,8 +110,8 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
         title={`${client.firstName} ${client.lastName}`}
         description={`${isProspect ? "Prospect" : CLIENT_TYPE[client.clientType]} · ${[client.city, countryName(client.residenceCountry)].filter(Boolean).join(", ")} · suivi par ${advisor?.fullName ?? "—"}`}
         actions={
-          permissions.write || permissions.delete ? (
           <>
+            <QuickContact client={client} />
             {permissions.write && (
             <Button asChild variant="outline">
               <Link href={`${base}/edit`}>
@@ -115,7 +135,6 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
             </>
             )}
           </>
-          ) : undefined
         }
       />
       {query.ok === "client-cree" && (
@@ -154,6 +173,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
             <Card className="space-y-3">
               <dl className="grid gap-3 sm:grid-cols-2">
                 <Field label="Origine du contact">{origin}</Field>
+                {client.campaign && <Field label="Campagne ou publication">{client.campaign}</Field>}
                 <Field label="Premier contact">{formatDate(client.registeredAt, tz)}</Field>
                 <Field label="Projet" className="sm:col-span-2">
                   {client.serviceMotive ? SERVICE_MOTIVES[client.serviceMotive] ?? client.serviceMotive : "Non précisé"}
@@ -228,6 +248,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                   </Field>
                   <Field label="Inscription">{formatDate(client.registeredAt, tz)}</Field>
                   <Field label="Origine du contact">{origin}</Field>
+                  {client.campaign && <Field label="Campagne ou publication">{client.campaign}</Field>}
                   {partner && (
                     <Field label="Apporté par">
                       <Link href={`/partners/${partner.id}`} className="font-medium text-navy-700 hover:underline">
@@ -530,41 +551,52 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
       )}
 
       {tab === "communications" && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Section title="Préparer un message WhatsApp">
-            <Card>
-              {!permissions.write ? (
-                <p className="text-sm text-slate-600">Votre rôle permet de consulter les communications, pas d&apos;en préparer.</p>
-              ) : (
-              <PrepareWhatsApp
-                clientId={client.id}
-                phoneDigits={client.isDemoFixture ? undefined : (client.whatsappE164 ?? client.phoneE164).replace(/\D/g, "")}
-                templates={buildMessageTemplates({
-                  firstName: client.firstName,
-                  agencyName: agency.name,
-                  caseReference: cases.find((s) => s.travelCase.status === "active")?.travelCase.reference,
-                  missingDocuments: missing.map((r) => r.label),
-                  nextAppointment: nextAppointment ? { title: nextAppointment.title, when: formatRelativeDay(nextAppointment.startsAt, now, tz, !nextAppointment.allDay).toLowerCase(), location: nextAppointment.location } : undefined,
-                  balance: balance && permissions.financeRead ? formatMoney(balance, agency.currency) : undefined,
-                })}
-              />
-              )}
-            </Card>
-          </Section>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="space-y-6">
+            {permissions.write ? (
+              <>
+                <Section title="Noter un échange">
+                  <Card>
+                    <LogExchangeForm clientId={client.id} today={today} nowTime={timeKey(now, tz)} />
+                  </Card>
+                </Section>
+                <Section title="Préparer un message WhatsApp">
+                  <Card>
+                    <PrepareWhatsApp
+                      clientId={client.id}
+                      phoneDigits={whatsappDigits(client)}
+                      templates={messages}
+                      manageHref={canManageTemplates ? "/settings/messages" : undefined}
+                    />
+                  </Card>
+                </Section>
+              </>
+            ) : (
+              <Notice>Votre rôle permet de consulter les communications, pas d&apos;en noter ni d&apos;en préparer.</Notice>
+            )}
+          </div>
           <Section title="Historique des communications">
             {communications.length === 0 ? (
-              <p className="text-sm text-slate-600">Aucune communication enregistrée. L&apos;envoi d&apos;e-mails sera disponible une fois un fournisseur configuré.</p>
+              <EmptyState
+                icon={MessageCircle}
+                title="Aucun échange noté"
+                description="Notez ici les appels, conversations WhatsApp, messages Facebook ou Instagram et visites à l'agence."
+              />
             ) : (
               <ul className="space-y-2">
                 {communications.map((c) => (
                   <li key={c.id}>
                     <Card className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <span className="block text-sm font-medium text-slate-900">
-                          {COMMUNICATION_CHANNEL[c.channel]} · {c.summary}
+                      <div className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-900">
+                          {c.direction === "inbound" && <ArrowDownLeft className="size-4 text-navy-700" aria-hidden />}
+                          {c.direction === "outbound" && <ArrowUpRight className="size-4 text-navy-700" aria-hidden />}
+                          {COMMUNICATION_CHANNEL[c.channel]}
+                          {c.direction && <span className="font-normal text-slate-500">· {COMMUNICATION_DIRECTION[c.direction]}</span>}
                         </span>
-                        <span className="block text-xs text-slate-500">
-                          {formatRelativeDay(c.at, now, tz)}
+                        <span className="mt-0.5 block text-sm whitespace-pre-line text-slate-700">{c.summary}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          {formatRelativeDay(c.occurredAt ?? c.at, now, tz)}
                           {c.recipientEmail ? ` · ${c.recipientEmail}` : ""}
                           {c.actorId ? ` · ${members.find((m) => m.id === c.actorId)?.fullName ?? ""}` : " · Automatique"}
                         </span>
@@ -580,21 +612,31 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
       )}
 
       {tab === "historique" && (
-        <Section title="Historique">
-          <ol className="space-y-3">
-            {events.map((e) => (
-              <li key={e.id} className="flex gap-3 text-sm">
-                <span className="mt-1.5 size-2 shrink-0 rounded-full bg-navy-700" aria-hidden />
-                <span>
-                  <span className="text-slate-900">{e.text}</span>
-                  <span className="block text-xs text-slate-500">
-                    {formatDate(e.at, tz, "dateTime")} · {members.find((m) => m.id === e.actorId)?.fullName}
+        <div className="space-y-6">
+          {permissions.write && (
+            <Section title="Ajouter une note de suivi">
+              <Card>
+                <AddNoteForm clientId={client.id} />
+              </Card>
+            </Section>
+          )}
+          <Section title="Historique">
+            <ol className="space-y-3">
+              {events.map((e) => (
+                <li key={e.id} className="flex gap-3 text-sm">
+                  <span className={`mt-1.5 size-2 shrink-0 rounded-full ${e.origin === "note" ? "bg-sky-500" : "bg-navy-700"}`} aria-hidden />
+                  <span className="min-w-0">
+                    {e.origin === "note" && <StatusBadge spec={{ label: "Note", tone: "info" }} className="mr-2" />}
+                    <span className="whitespace-pre-line text-slate-900">{noteText(e)}</span>
+                    <span className="block text-xs text-slate-500">
+                      {formatDate(e.at, tz, "dateTime")} · {members.find((m) => m.id === e.actorId)?.fullName}
+                    </span>
                   </span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        </Section>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        </div>
       )}
     </>
   );

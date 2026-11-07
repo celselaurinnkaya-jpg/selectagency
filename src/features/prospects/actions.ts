@@ -32,6 +32,7 @@ const prospectSchema = z.object({
   city: z.string().trim().max(80).optional(),
   source: z.enum(Object.keys(CLIENT_SOURCE) as [ClientSource, ...ClientSource[]], { error: "Indiquez d'où vient le contact." }),
   sourceDetail: z.string().trim().max(120).optional(),
+  campaign: z.string().trim().max(120, "La campagne est limitée à 120 caractères.").optional(),
   serviceMotive: z.string().max(40).optional(),
   assignedTo: z.string().min(1, "Choisissez le conseiller."),
   notes: z.string().trim().max(2000).optional(),
@@ -81,6 +82,7 @@ export async function saveProspectAction(raw: ProspectInput): Promise<FormState>
     serviceMotive: input.serviceMotive || undefined,
     source: input.source,
     sourceDetail: input.sourceDetail || undefined,
+    campaign: input.campaign || undefined,
   });
   const { data: row, error } = await ctx.supabase
     .from("clients")

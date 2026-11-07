@@ -14,6 +14,7 @@ import type { ClientType } from "@/lib/domain/types";
 import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { listClients } from "@/features/clients/queries";
 import { DeleteClientModal } from "@/features/clients/DeleteClientModal";
+import { QuickContact } from "@/features/communications/QuickContact";
 
 export const metadata: Metadata = { title: "Clients" };
 
@@ -162,6 +163,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                     <td className="px-4 py-3 text-slate-600">{formatRelativeDay(lastActivityAt, now, tz, false)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <QuickContact client={client} compact />
                         {canWrite && (
                         <Link
                           href={`/clients/${client.id}/edit`}
@@ -196,6 +198,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                   </span>
                   {balanceMinor > 0 && <span className="mt-1 block text-sm text-orange-800">Solde dû : {formatMoney(balanceMinor, agency.currency)}</span>}
                 </Link>
+                <QuickContact client={client} className="mt-3" />
                 {(canWrite || canDelete) && (
                 <div className="mt-3 flex items-center justify-end gap-2 border-t border-slate-100 pt-2 text-xs">
                   {canWrite && (

@@ -52,6 +52,7 @@ const clientSchema = z.object({
   // Suivi par l'agence
   source: z.union([z.literal(""), z.enum(Object.keys(CLIENT_SOURCE) as [string, ...string[]])]).optional(),
   sourceDetail: z.string().trim().max(120).optional(),
+  campaign: z.string().trim().max(120, "La campagne est limitée à 120 caractères.").optional(),
   partnerCode: z.string().trim().max(20).optional(),
   assignedTo: z.string().min(1, "Choisissez le conseiller."),
   notes: z.string().trim().max(2000).optional(),
@@ -168,6 +169,7 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     guardian2,
     source: (input.source || undefined) as Client["source"],
     sourceDetail: input.sourceDetail || undefined,
+    campaign: input.campaign || undefined,
   };
 
   const supabase = ctx.supabase;

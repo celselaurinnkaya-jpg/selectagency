@@ -93,6 +93,28 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
         />
       </Section>
 
+      <Section title="Contacts par campagne">
+        <p className="mb-3 text-sm text-slate-600">
+          D&apos;après la campagne ou la publication saisie sur chaque fiche (aucune donnée lue sur les réseaux sociaux) · {r.period.label.toLowerCase()}
+        </p>
+        {r.contacts.byCampaign.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-600">
+            Aucune campagne renseignée sur la période. Indiquez-la dans « Campagne ou publication » en enregistrant un prospect.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+            {r.contacts.byCampaign.map((x) => (
+              <li key={x.campaign} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                <span className="min-w-0 font-medium text-slate-900">{x.campaign}</span>
+                <span className="text-slate-600 tabular-nums">
+                  {x.contacts} contact{x.contacts > 1 ? "s" : ""} · {x.clients} devenu{x.clients > 1 ? "s" : ""} client{x.clients > 1 ? "s" : ""} ({Math.round((x.clients / x.contacts) * 100)} %)
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <Section title="Évolution mensuelle" className="lg:col-span-2">
           <MonthlyColumns

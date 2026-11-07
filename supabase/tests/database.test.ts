@@ -2241,3 +2241,85 @@ describe("sécurité S6 : l'historique est écrit par la base, les ajouts à la 
     expect(await last("text like '%Visa accordé par le consulat'", [])).toEqual({ text: "Note ajoutée à la main : Visa accordé par le consulat", origin: "note" });
   });
 });
+
+describe("prospection : échanges notés, campagne et modèles de messages", () => {
+  let org: string;
+  let karl: string;
+  let clientId: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    karl = await memberId(KARL);
+    clientId = (await createClient(LINA, org, karl, "Échanges")).id;
+  });
+
+  const note = (status: string, occurred: string | null, channel = "instagram") =>
+    one<{ summary: string; direction: string; occurred_days: number; actor_id: string; recipient_email: string | null }>(
+      LINA,
+      `insert into public.communication_logs (organization_id, client_id, channel, status, summary, direction, occurred_at, recipient_email)
+       values ($1, $2, $3, $4, '  A vu la publication Canada, demande les tarifs  ', 'inbound', $5::timestamptz, 'faux@exemple.test')
+       returning summary, direction, round(extract(epoch from now() - occurred_at) / 86400)::int as occurred_days, actor_id, recipient_email`,
+      [org, clientId, channel, status, occurred],
+    );
+
+  it("note un échange reçu par Instagram à sa vraie date, sans jamais se dire envoyé ni livré", async () => {
+    const lina = await memberId(LINA);
+    const yesterday = new Date(Date.now() - 86400_000).toISOString();
+    expect(await note("logged", yesterday)).toEqual({
+      summary: "A vu la publication Canada, demande les tarifs",
+      direction: "inbound",
+      occurred_days: 1,
+      actor_id: lina,
+      recipient_email: null,
+    });
+    expect((await note("prepared_manual", null, "whatsapp")).occurred_days).toBe(0);
+    await expect(note("delivered", null)).rejects.toThrow(/seul SELECT indique un e-mail envoyé ou livré/);
+    await expect(note("sent", null)).rejects.toThrow(/seul SELECT/);
+    await expect(note("logged", new Date(Date.now() + 86400_000).toISOString())).rejects.toThrow(/futur/);
+    await expect(note("logged", new Date(Date.now() - 400 * 86400_000).toISOString())).rejects.toThrow(/moins d'un an/);
+    await expect(note("logged", null, "telegram")).rejects.toThrow(/check constraint/);
+    for (const channel of ["facebook", "tiktok", "sms", "phone", "in_person"]) {
+      expect((await note("logged", null, channel)).direction).toBe("inbound");
+    }
+  });
+
+  it("garde la campagne ou la publication à l'origine du prospect", async () => {
+    await rows(LINA, "update public.clients set campaign = 'Pub Facebook rentrée 2027' where id = $1", [clientId]);
+    expect((await one<{ campaign: string }>(KARL, "select campaign from public.clients where id = $1", [clientId])).campaign).toBe("Pub Facebook rentrée 2027");
+    await expect(rows(LINA, "update public.clients set campaign = repeat('x', 121) where id = $1", [clientId])).rejects.toThrow(/check constraint/);
+  });
+
+  it("donne à chaque agence ses modèles de départ, modifiables par les responsables seulement", async () => {
+    const titles = await rows<{ title: string; audience: string }>(KARL, "select title, audience from public.message_templates order by position");
+    expect(titles.length).toBe(8);
+    expect(titles[0]).toEqual({ title: "Réponse à une demande (réseaux sociaux)", audience: "prospect" });
+    // Une autre agence a les siens, et ne voit pas ceux de l'agence K.
+    expect((await rows(ALICE, "select id from public.message_templates")).length).toBe(8);
+    const ids = new Set((await rows<{ id: string }>(ALICE, "select id from public.message_templates")).map((r) => r.id));
+    expect((await rows<{ id: string }>(KARL, "select id from public.message_templates")).some((r) => ids.has(r.id))).toBe(false);
+
+    const save = (who: User, id: string | null, title: string, audience = "prospect") =>
+      one<{ id: string }>(who, "select public.save_message_template($1, $2, $3, 'Bonjour {prenom}, suite à notre échange sur Campus France…', $4, true) as id", [org, id, title, audience]).then((r) => r.id);
+    await expect(save(LINA, null, "Relance Campus France")).rejects.toThrow(/propriétaire et les administrateurs/);
+    const id = await save(KARL, null, "Relance Campus France");
+    await expect(save(KARL, null, "relance campus france")).rejects.toThrow(/déjà le nom/);
+    await expect(save(KARL, null, "Autre", "tous")).rejects.toThrow(/pour qui/);
+    expect(await save(KARL, id, "Relance Campus France (étudiants)", "any")).toBe(id);
+    expect(await one(KARL, "select title, audience, position > 80 as last from public.message_templates where id = $1", [id])).toEqual({
+      title: "Relance Campus France (étudiants)",
+      audience: "any",
+      last: true,
+    });
+    await expect(rows(KARL, "insert into public.message_templates (organization_id, title, body) values ($1, 'Direct', 'Texte direct')", [org])).rejects.toThrow(/permission denied/);
+    await expect(one(LINA, "select public.delete_message_template($1)", [id])).rejects.toThrow(/pas le droit/);
+    await expect(one(ALICE, "select public.delete_message_template($1)", [id])).rejects.toThrow(/introuvable/);
+    await one(KARL, "select public.delete_message_template($1)", [id]);
+    expect((await rows(KARL, "select id from public.message_templates")).length).toBe(8);
+  });
+
+  it("une note de suivi ajoutée depuis la fiche est marquée comme une note", async () => {
+    await rows(LINA, "insert into public.activity_events (organization_id, client_id, text) values ($1, $2, 'Rappeler après les résultats du bac')", [org, clientId]);
+    const last = await one<{ text: string; origin: string }>(KARL, "select text, origin from public.activity_events where client_id = $1 order by at desc, id desc limit 1", [clientId]);
+    expect(last).toEqual({ text: "Note ajoutée à la main : Rappeler après les résultats du bac", origin: "note" });
+  });
+});

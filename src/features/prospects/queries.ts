@@ -6,6 +6,7 @@ import { ROLE } from "@/lib/domain/labels";
 import { activeMembers } from "@/lib/domain/members";
 import type { Appointment, Client, Task } from "@/lib/domain/types";
 import { dayKey } from "@/lib/format";
+import { loadCampaigns } from "@/features/communications/queries";
 
 // Prospects : fiches au statut « prospect », avec leur prochaine relance (tâche ouverte la plus
 // proche) et leur prochain rendez-vous. « À relancer » = relance prévue aujourd'hui ou en retard.
@@ -89,7 +90,10 @@ export async function listProspects(filter: ProspectFilter) {
 /** Données du formulaire « Nouveau prospect ». */
 export async function getProspectForm() {
   const { data, ctx, now } = await readAgency({});
+  const campaigns = await loadCampaigns(ctx);
   return {
+    campaigns,
+    partnersLocked: ctx.locked.includes("partners"),
     forbidden: allowed(ctx, "operations.write") ? undefined : forbiddenMessage(ctx, "operations.write"),
     defaultCountry: data.agency.countryCode,
     defaultMemberId: ctx.member.id,

@@ -41,12 +41,18 @@ export function ProspectForm({
   defaultCountry,
   defaultMemberId,
   today,
+  campaigns = [],
+  partnersLocked = false,
 }: {
   countries: Option[];
   members: Option[];
   defaultCountry: string;
   defaultMemberId: string;
   today: string;
+  /** Campagnes déjà saisies (suggestions). */
+  campaigns?: string[];
+  /** Formule STARTER : pas de partenaire (option PRO). */
+  partnersLocked?: boolean;
 }) {
   const [state, setState] = useState<FormState>(initialFormState);
   const [saving, startTransition] = useTransition();
@@ -61,6 +67,7 @@ export function ProspectForm({
   const [city, setCity] = useState("");
   const [source, setSource] = useState<ClientSource | "">("");
   const [sourceDetail, setSourceDetail] = useState("");
+  const [campaign, setCampaign] = useState("");
   const [motive, setMotive] = useState("study_abroad");
   const [assignedTo, setAssignedTo] = useState(defaultMemberId);
   const [followUp, setFollowUp] = useState(addDays(today, 1));
@@ -72,7 +79,7 @@ export function ProspectForm({
     startTransition(async () => {
       const result = await saveProspectAction({
         firstName, lastName, phone, whatsapp, email, residenceCountry: country, city, source: source as ClientSource,
-        sourceDetail, serviceMotive: motive, assignedTo, notes, followUpDate: followUp, partnerCode, confirmDuplicate,
+        sourceDetail, campaign, serviceMotive: motive, assignedTo, notes, followUpDate: followUp, partnerCode, confirmDuplicate,
       });
       // Chargement complet de la fiche : Next garde parfois l'ancienne page en mémoire.
       if (result.redirectTo) {
@@ -179,9 +186,19 @@ export function ProspectForm({
           >
             <Input id="p-source-detail" maxLength={120} value={sourceDetail} onChange={(ev) => setSourceDetail(ev.target.value)} {...describedBy("p-source-detail", e.sourceDetail, "hint")} />
           </FormField>
+          <FormField id="p-campaign" label="Campagne ou publication" error={e.campaign} hint="Ex. : Pub Facebook rentrée 2027. Reprenez le même nom d'une fiche à l'autre pour compter les contacts par campagne.">
+            <Input id="p-campaign" list="p-campaigns" maxLength={120} value={campaign} onChange={(ev) => setCampaign(ev.target.value)} {...describedBy("p-campaign", e.campaign, "hint")} />
+            <datalist id="p-campaigns">
+              {campaigns.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </FormField>
+          {!partnersLocked && (
           <FormField id="p-partner" label="Code partenaire" error={e.partnerCode} hint="Si un partenaire vous l'envoie : sa commission sera suivie.">
             <Input id="p-partner" maxLength={20} autoComplete="off" value={partnerCode} onChange={(ev) => setPartnerCode(ev.target.value.toUpperCase())} placeholder="Ex. : AMINA-2026" className="font-mono uppercase" {...describedBy("p-partner", e.partnerCode, "hint")} />
           </FormField>
+          )}
           <FormField id="p-motive" label="Projet" error={e.serviceMotive}>
             <select id="p-motive" value={motive} onChange={(ev) => setMotive(ev.target.value)} className={selectClass}>
               {Object.entries(SERVICE_MOTIVES).map(([value, label]) => (

@@ -94,6 +94,8 @@ export interface Client {
   status?: ClientStatus;
   source?: ClientSource;
   sourceDetail?: string;
+  /** Campagne ou publication à l'origine du contact (saisie par l'agence). */
+  campaign?: string;
   /** Date à laquelle le prospect est devenu client. */
   convertedAt?: string;
   /** Partenaire qui a apporté ce client (code saisi à son arrivée). */
@@ -548,9 +550,14 @@ export interface ActivityEvent {
   clientId?: string;
   caseId?: string;
   text: string;
+  /** « note » : ligne ajoutée à la main par un membre (la base préfixe son texte). */
+  origin?: "system" | "note";
 }
 
-export type CommunicationChannel = "whatsapp" | "email" | "phone" | "in_person";
+export type CommunicationChannel = "whatsapp" | "email" | "phone" | "in_person" | "facebook" | "instagram" | "tiktok" | "sms";
+
+/** Sens d'un échange noté à la main : le client a écrit ou appelé, ou l'agence l'a fait. */
+export type CommunicationDirection = "inbound" | "outbound";
 export type CommunicationStatus =
   | "prepared_manual"
   | "logged"
@@ -573,6 +580,21 @@ export interface CommunicationLog {
   actorId?: string;
   emailOutboxId?: string;
   recipientEmail?: string;
+  direction?: CommunicationDirection;
+  /** Moment de l'échange déclaré par l'agent (absent : l'heure de saisie). */
+  occurredAt?: string;
+}
+
+export type MessageAudience = "prospect" | "client" | "any";
+
+/** Modèle de message de l'agence (WhatsApp, Messenger…), avec des zones comme {prenom}. */
+export interface MessageTemplate {
+  id: string;
+  title: string;
+  body: string;
+  audience: MessageAudience;
+  position: number;
+  isActive: boolean;
 }
 
 export type EmailOutboxKind =

@@ -9,6 +9,7 @@ import { Card, EmptyState, PageHeader, StatCard, StatusBadge } from "@/component
 import { CLIENT_SOURCE, SERVICE_MOTIVES } from "@/lib/domain/labels";
 import { formatDate, formatRelativeDay, initials } from "@/lib/format";
 import { isProspectFilter, listProspects, type ProspectFilter } from "@/features/prospects/queries";
+import { QuickContact } from "@/features/communications/QuickContact";
 
 export const metadata: Metadata = { title: "Prospects" };
 
@@ -103,6 +104,7 @@ async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "search
                     {c.source && <StatusBadge spec={{ label: CLIENT_SOURCE[c.source], tone: "navy" }} />}
                   </div>
                   {c.sourceDetail && <p className="text-sm text-slate-600">{c.source === "referral" ? "Recommandé par" : "Origine"} : {c.sourceDetail}</p>}
+                  {c.campaign && <p className="text-sm text-slate-600">Campagne : {c.campaign}</p>}
                   <dl className="grid gap-1 border-t border-slate-100 pt-3 text-sm">
                     {filter === "devenus-clients" ? (
                       <div className="flex justify-between gap-2">
@@ -132,9 +134,12 @@ async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "search
                       <dd className="text-slate-900">{formatDate(c.registeredAt, tz)}</dd>
                     </div>
                   </dl>
-                  <Button asChild variant="outline">
-                    <Link href={`/clients/${c.id}`}>Ouvrir la fiche</Link>
-                  </Button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button asChild variant="outline" className="flex-1">
+                      <Link href={`/clients/${c.id}`}>Ouvrir la fiche</Link>
+                    </Button>
+                    <QuickContact client={c} />
+                  </div>
                 </Card>
               </li>
             ))}

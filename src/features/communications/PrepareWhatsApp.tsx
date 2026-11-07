@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { selectClass } from "@/components/shared/form";
 import { logPreparedMessageAction } from "./actions";
-import type { MessageTemplate } from "./templates";
+import type { PreparedMessage } from "./templates";
 
 // Prépare un message WhatsApp : l'agent l'envoie lui-même depuis WhatsApp.
 // Aucune intégration n'est simulée ; le journal indique « préparé, envoi manuel ».
@@ -16,15 +16,20 @@ export function PrepareWhatsApp({
   caseId,
   phoneDigits,
   templates,
+  manageHref,
 }: {
   clientId: string;
   caseId?: string;
   /** Absent pour les clients fictifs : leur numéro ne doit pas être contacté. */
   phoneDigits?: string;
-  templates: MessageTemplate[];
+  /** Modèles de l'agence déjà remplis ; ceux qui manquent d'une donnée sont proposés grisés. */
+  templates: PreparedMessage[];
+  /** Lien vers Paramètres > Modèles de messages (responsables seulement). */
+  manageHref?: string;
 }) {
-  const [templateKey, setTemplateKey] = useState(templates[0]?.key ?? "");
-  const [text, setText] = useState(templates[0]?.text ?? "");
+  const first = templates.find((t) => !t.unavailable);
+  const [templateKey, setTemplateKey] = useState(first?.key ?? "");
+  const [text, setText] = useState(first?.text ?? "");
   const [pending, startTransition] = useTransition();
   const [logged, setLogged] = useState(false);
 
@@ -54,11 +59,16 @@ export function PrepareWhatsApp({
           }}
         >
           {templates.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
+            <option key={t.key} value={t.key} disabled={Boolean(t.unavailable)}>
+              {t.unavailable ? `${t.label} (${t.unavailable})` : t.label}
             </option>
           ))}
         </select>
+        {manageHref && (
+          <a href={manageHref} className="mt-1 inline-block text-xs text-navy-700 underline-offset-2 hover:underline">
+            Modifier les modèles de l&apos;agence
+          </a>
+        )}
       </div>
       <div>
         <label htmlFor="texte-message" className="mb-1 block text-sm font-medium text-slate-800">

@@ -8,6 +8,7 @@ import { chargeProgress } from "@/features/finance/calculations";
 import { imageUrls } from "@/features/invoices/document";
 import { loadInvoices, loadInvoiceSettings } from "@/features/invoices/queries";
 import { loadQuotes, quoteTotal } from "@/features/quotes/queries";
+import { loadMessageTemplates } from "@/features/communications/queries";
 import { backOptions, forwardOptions, requiresConfirmation } from "@/features/workflows/rules";
 import { summarizeCase } from "./summary";
 import { caseSummarySpec } from "./summary-document";
@@ -124,7 +125,9 @@ export async function getCaseDetail(id: string) {
     payments,
     expenses: data.expenses,
     events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
-    communications: [...data.communications].sort((a, b) => b.at.localeCompare(a.at)),
+    communications: [...data.communications].sort((a, b) => (b.occurredAt ?? b.at).localeCompare(a.occurredAt ?? a.at)),
+    messageTemplates: await loadMessageTemplates(ctx),
+    canManageTemplates: allowed(ctx, "settings.manage"),
   };
 }
 

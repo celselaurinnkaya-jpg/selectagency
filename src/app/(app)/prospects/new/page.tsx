@@ -25,5 +25,5 @@ export default function NewProspectPage() {
 async function Form() {
   const form = await getProspectForm();
   if (form.forbidden) return <Notice>{form.forbidden}</Notice>;
-  return <ProspectForm countries={form.countries} members={form.members} defaultCountry={form.defaultCountry} defaultMemberId={form.defaultMemberId} today={form.today} />;
+  return <ProspectForm countries={form.countries} members={form.members} defaultCountry={form.defaultCountry} defaultMemberId={form.defaultMemberId} today={form.today} campaigns={form.campaigns} partnersLocked={form.partnersLocked} />;
 }

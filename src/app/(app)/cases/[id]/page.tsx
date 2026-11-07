@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { AlertTriangle, Check, CircleDashed, Clock, Download, Eye, FileText, Plus, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowDownLeft, ArrowUpRight, Check, CircleDashed, Clock, Download, Eye, FileText, Plus, Wallet } from "lucide-react";
 import { cn } from "cn";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
@@ -17,6 +17,7 @@ import {
   CASE_STATUS,
   CATEGORY_LABELS,
   COMMUNICATION_CHANNEL,
+  COMMUNICATION_DIRECTION,
   COMMUNICATION_STATUS,
   CONFIRMATION,
   INVOICE_OVERDUE,
@@ -29,11 +30,13 @@ import {
   STEP_KIND,
 } from "@/lib/domain/labels";
 import type { CaseStep } from "@/lib/domain/types";
-import { dayKey, formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
+import { dayKey, formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/format";
 import { getCaseDetail } from "@/features/cases/queries";
 import { StepTransitionForm } from "@/features/cases/StepTransitionForm";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
-import { buildMessageTemplates } from "@/features/communications/templates";
+import { AddNoteForm, LogExchangeForm } from "@/features/communications/ExchangeForms";
+import { whatsappDigits } from "@/features/communications/QuickContact";
+import { appointmentPhrase, bulletList, prepareMessages } from "@/features/communications/templates";
 import { CHECKLIST_DISCLAIMER, DOCUMENT_TYPES } from "@/features/documents/checklists";
 import { AddRequirementForm, RemoveFileButton, RequirementEditor, ReviewDocumentForm } from "@/features/documents/DocumentForms";
 import { DocumentUpload } from "@/features/documents/DocumentUpload";
@@ -102,7 +105,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getCaseDetail(id);
   if (!detail) notFound();
-  const { summary, agency, now, members, permissions, organizationId, notifyCaseStatus, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications } = detail;
+  const { summary, agency, now, members, permissions, organizationId, notifyCaseStatus, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications, messageTemplates, canManageTemplates } = detail;
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
@@ -628,42 +631,62 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
       )}
 
       {tab === "communications" && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Section title="Préparer un message WhatsApp">
-            <Card>
-              {!permissions.write ? (
-                <p className="text-sm text-slate-600">Votre rôle permet de consulter les communications, pas d&apos;en préparer.</p>
-              ) : (
-              <PrepareWhatsApp
-                clientId={client.id}
-                caseId={c.id}
-                phoneDigits={client.isDemoFixture ? undefined : (client.whatsappE164 ?? client.phoneE164).replace(/\D/g, "")}
-                templates={buildMessageTemplates({
-                  firstName: client.firstName,
-                  agencyName: agency.name,
-                  caseReference: c.reference,
-                  missingDocuments: missing.map((r) => r.label),
-                  nextAppointment: nextAppointment ? { title: nextAppointment.title, when: formatRelativeDay(nextAppointment.startsAt, now, tz, !nextAppointment.allDay).toLowerCase(), location: nextAppointment.location } : undefined,
-                  balance: permissions.financeRead ? balanceLabel : undefined,
-                })}
-              />
-              )}
-            </Card>
-          </Section>
+        <div className="grid gap-6 xl:grid-cols-2">
+          <div className="space-y-6">
+            {permissions.write ? (
+              <>
+                <Section title="Noter un échange">
+                  <Card>
+                    <LogExchangeForm clientId={client.id} caseId={c.id} today={dayKey(now, tz)} nowTime={timeKey(now, tz)} />
+                  </Card>
+                </Section>
+                <Section title="Préparer un message WhatsApp">
+                  <Card>
+                    <PrepareWhatsApp
+                      clientId={client.id}
+                      caseId={c.id}
+                      phoneDigits={whatsappDigits(client)}
+                      templates={prepareMessages(
+                        messageTemplates,
+                        {
+                          prenom: client.firstName,
+                          nom: client.lastName,
+                          agence: agency.name,
+                          conseiller: memberName(c.assignedTo) === "—" ? undefined : memberName(c.assignedTo),
+                          dossier: c.reference,
+                          solde: permissions.financeRead && finance.balanceMinor > 0 ? balanceLabel : undefined,
+                          pieces_manquantes: bulletList(missing.map((r) => r.label)),
+                          rendez_vous: nextAppointment ? appointmentPhrase(nextAppointment, now, tz) : undefined,
+                        },
+                        "client",
+                      )}
+                      manageHref={canManageTemplates ? "/settings/messages" : undefined}
+                    />
+                  </Card>
+                </Section>
+              </>
+            ) : (
+              <Notice>Votre rôle permet de consulter les communications, pas d&apos;en noter ni d&apos;en préparer.</Notice>
+            )}
+          </div>
           <Section title="Historique des communications">
             {communications.length === 0 ? (
-              <p className="text-sm text-slate-600">Aucune communication enregistrée pour ce dossier.</p>
+              <p className="text-sm text-slate-600">Aucun échange noté pour ce dossier.</p>
             ) : (
               <ul className="space-y-2">
                 {communications.map((m) => (
                   <li key={m.id}>
                     <Card className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <span className="block text-sm font-medium text-slate-900">
-                          {COMMUNICATION_CHANNEL[m.channel]} · {m.summary}
+                      <div className="min-w-0 flex-1">
+                        <span className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-slate-900">
+                          {m.direction === "inbound" && <ArrowDownLeft className="size-4 text-navy-700" aria-hidden />}
+                          {m.direction === "outbound" && <ArrowUpRight className="size-4 text-navy-700" aria-hidden />}
+                          {COMMUNICATION_CHANNEL[m.channel]}
+                          {m.direction && <span className="font-normal text-slate-500">· {COMMUNICATION_DIRECTION[m.direction]}</span>}
                         </span>
-                        <span className="block text-xs text-slate-500">
-                          {formatRelativeDay(m.at, now, tz)}
+                        <span className="mt-0.5 block text-sm whitespace-pre-line text-slate-700">{m.summary}</span>
+                        <span className="mt-0.5 block text-xs text-slate-500">
+                          {formatRelativeDay(m.occurredAt ?? m.at, now, tz)}
                           {m.recipientEmail ? ` · ${m.recipientEmail}` : ""}
                           {m.actorId ? ` · ${memberName(m.actorId)}` : " · Automatique"}
                         </span>
@@ -679,21 +702,31 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
       )}
 
       {tab === "historique" && (
-        <Section title="Historique du dossier">
-          <ol className="space-y-3">
-            {events.map((e) => (
-              <li key={e.id} className="flex gap-3 text-sm">
-                <span className="mt-1.5 size-2 shrink-0 rounded-full bg-navy-700" aria-hidden />
-                <span>
-                  <span className="text-slate-900">{e.text}</span>
-                  <span className="block text-xs text-slate-500">
-                    {formatDate(e.at, tz, "dateTime")} · {memberName(e.actorId)}
+        <div className="space-y-6">
+          {permissions.write && (
+            <Section title="Ajouter une note de suivi">
+              <Card>
+                <AddNoteForm clientId={client.id} caseId={c.id} />
+              </Card>
+            </Section>
+          )}
+          <Section title="Historique du dossier">
+            <ol className="space-y-3">
+              {events.map((e) => (
+                <li key={e.id} className="flex gap-3 text-sm">
+                  <span className={`mt-1.5 size-2 shrink-0 rounded-full ${e.origin === "note" ? "bg-sky-500" : "bg-navy-700"}`} aria-hidden />
+                  <span className="min-w-0">
+                    {e.origin === "note" && <StatusBadge spec={{ label: "Note", tone: "info" }} className="mr-2" />}
+                    <span className="whitespace-pre-line text-slate-900">{e.origin === "note" ? e.text.replace(/^Note ajoutée à la main : /, "") : e.text}</span>
+                    <span className="block text-xs text-slate-500">
+                      {formatDate(e.at, tz, "dateTime")} · {memberName(e.actorId)}
+                    </span>
                   </span>
-                </span>
-              </li>
-            ))}
-          </ol>
-        </Section>
+                </li>
+              ))}
+            </ol>
+          </Section>
+        </div>
       )}
     </>
   );

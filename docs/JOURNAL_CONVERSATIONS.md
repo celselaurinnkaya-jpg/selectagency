@@ -932,3 +932,54 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   3. enregistrement Git, puis envoi sur GitHub **seulement sur sa demande** (« publie sur Vercel ») ;
   4. vrai paiement d'essai, de préférence avec une carte émise hors du Brésil, puis remboursement ;
   5. désactiver dans la console les anciennes formules éventuelles.
+* **Mise en ligne** (demande : « vas-y, fais le push sur GitHub ») :
+  - avant l'envoi, vérifié en lecture seule que le vrai projet a reçu les 2 migrations : colonnes `plans.stripe_price_id` et `plans.tier` présentes, `stripe_link_checkout` et `stripe_sync_subscription` (avec le tarif) présentes. Les témoins (colonne et fonction inventées) répondent bien « absente » ;
+  - aucune clé secrète dans les fichiers enregistrés ; `.env.local` reste ignoré par Git ;
+  - enregistrement `a8b349e` « paiement par carte Stripe et formules STARTER, PRO, BUSINESS », envoyé sur GitHub (`main`), donc publié par Vercel.
+
+---
+
+### Session 26 — 7 Novembre 2026 (Claude Code) — WhatsApp et réseaux sociaux : état des lieux de la phase 1
+* **Demande** : passer à « WhatsApp et réseaux sociaux », en deux phases. Phase 1 : provenance des prospects, échanges et notes de suivi, ouverture rapide d'une conversation WhatsApp, modèles de messages. Phase 2 : étude de WhatsApp Business Platform (API officielle), notifications automatiques, attribution des conversations, mesure par campagne. Rien ne doit être promis avant d'avoir vérifié les API et leurs conditions.
+* **Déjà en place (vérifié dans le code)** :
+  - provenance : Facebook, Instagram, WhatsApp, TikTok, recommandation, visite, site, téléphone, autre, avec une précision libre ; répartition par provenance dans les Rapports ;
+  - « Préparer un message » WhatsApp (fiche client et dossier) : 4 modèles écrits dans le code, ouverture de `wa.me`, échange noté « préparé, envoi manuel » ;
+  - relances des prospects sous forme de tâches.
+* **Manque** : saisir un échange (appel, conversation WhatsApp, message Facebook ou Instagram, visite) ; ajouter une note de suivi depuis l'écran ; bouton WhatsApp rapide sur les listes ; modèles de messages modifiables par l'agence ; champ « campagne » pour la mesure de la phase 2.
+* **Plan proposé puis validé** (« vas-y ») : noter un échange, note de suivi, bouton WhatsApp rapide, modèles modifiables par l'agence, champ « campagne ». Tout est dans la formule STARTER.
+* **Base — migration `20261107100000_prospection.sql`** (appliquée **nulle part** pour l'instant) :
+  - échanges : nouveaux canaux Facebook (Messenger), Instagram, TikTok et SMS ; sens (reçu du client ou fait par l'agence) ; date réelle de l'échange (`occurred_at`, ni dans le futur ni plus d'un an en arrière) ; résumé jusqu'à 1 000 caractères ;
+  - **garde-fou** : un membre ne peut écrire qu'un échange « préparé » ou « noté ». Les statuts « envoyé » et « livré » restent réservés aux e-mails confirmés par Brevo. Avant cette migration, l'API permettait d'écrire un faux « livré » ;
+  - `clients.campaign` (campagne ou publication, 120 caractères) ;
+  - table `message_templates` (lecture par l'agence ; écriture par `save_message_template` et `delete_message_template`, réservées au propriétaire et aux administrateurs ; noms uniques sans tenir compte des majuscules) ;
+  - 8 modèles de départ créés pour chaque agence, existante ou nouvelle : réponse à une demande venue des réseaux sociaux, relance après un premier contact, invitation à un rendez-vous, bienvenue, pièces manquantes, rappel de rendez-vous, solde à régler, message libre.
+* **Application** :
+  - fiche client ou prospect, onglet Communications : **« Noter un échange »** (canal, qui a pris contact, date et heure, résumé, prochaine relance qui crée une tâche) ; « Préparer un message WhatsApp » utilise les modèles de l'agence, et ceux qui manquent d'une donnée sont grisés avec la raison ; historique avec le sens et la date réelle ;
+  - onglet Historique : **« Ajouter une note de suivi »**, affichée avec un badge « Note » ;
+  - page dossier : mêmes formulaires (l'échange et la note sont rattachés au dossier) ;
+  - **bouton WhatsApp** en haut de la fiche, sur les cartes de la liste des prospects, et dans la liste des clients (tableau et cartes). Sur téléphone, il s'accompagne d'un bouton « Appeler ». Rien pour les fiches fictives de la démonstration ;
+  - champ **« Campagne ou publication »** dans les formulaires prospect et client, avec les campagnes déjà saisies en suggestion ;
+  - **Paramètres › Modèles de messages** : liste, ajout, modification, suppression, zones à insérer d'un clic ({prenom}, {nom}, {agence}, {conseiller}, {dossier}, {solde}, {pieces_manquantes}, {rendez_vous}), aperçu avec un client fictif ;
+  - **Rapports** : contacts par campagne, avec le nombre devenus clients et le taux (chiffres tirés des fiches, aucune donnée lue sur les réseaux) ;
+  - formule STARTER : le code partenaire est retiré du formulaire prospect (option PRO).
+* **Tests** : base (échange daté, statuts interdits, date future ou trop ancienne, canaux, campagne, modèles par agence, droits, doublons, note) et unitaires (zones, modèles grisés, message libre, campagnes, numéro WhatsApp). `tsc` 0 erreur, ESLint 0 erreur, **181 tests réussis**.
+* **Reste à faire** : l'utilisateur lance `npx supabase db push` (une seule migration : `20261107100000_prospection.sql`), puis l'envoi sur GitHub **sur sa demande**. Phase 2 (WhatsApp Business Platform) : étude des conditions avant toute promesse.
+* **Mise à jour de la vraie base faite par l'utilisateur** : vérifié en lecture seule que la table `message_templates` et la colonne `clients.campaign` sont présentes. Le serveur local a été démarré sur `http://localhost:3000` pour qu'il voie la phase 1 (pages compilées sans erreur ; les pages de l'agence demandent la connexion). Le code n'est pas encore envoyé sur GitHub.
+* **Demande (capture de la barre du haut)** : afficher le logo de l'agence à côté de son nom, le même que dans les paramètres.
+  - Le logo vient de Paramètres › Factures (bucket privé `branding`). Il est affiché dans la barre du haut, sur un fond blanc arrondi pour rester lisible sur le bleu marine, et également sur téléphone (le nom reste réservé aux grands écrans).
+  - Il est visible par les rôles qui ont déjà accès aux images de l'agence (propriétaire, administrateur, conseiller, comptable). Le rôle « lecture seule » ne voit que le nom : les règles de la base n'ont pas changé.
+  - Une erreur de lecture du logo ne casse jamais la barre (`src/features/operations/queries.ts`, `src/components/layout/AppHeader.tsx`).
+* **Demande (capture des onglets Finance)** : ajouter une calculatrice dans Finance.
+  - Nouvel onglet **« Calculatrice »** (`/finance/calculator`), après Dépenses.
+  - Calcul sans `eval` (`src/features/finance/pocket-calculator.ts`) : + − × ÷, parenthèses, virgule, pourcentage comme sur une calculatrice de poche (150 000 + 10 % = 165 000). Les erreurs sont expliquées en français (division par zéro, parenthèse…).
+  - Écran : pavé de touches (avec « 000 » pour les montants en FCFA), saisie au clavier (Entrée, Échap), résultat en direct au format français, bouton « Copier », 12 derniers calculs réutilisables d'un clic.
+  - Conversion **euro ⇄ FCFA** à la parité fixe (1 € = 655,957 FCFA, XAF et XOF). Les autres devises ne sont pas proposées, car leur cours change chaque jour.
+  - Tout se calcule dans le navigateur : rien n'est enregistré dans l'agence. Ouvert à tous les rôles, dans toutes les formules.
+  - Tests unitaires : 4 nouveaux, tous réussis.
+* **Demande (capture du convertisseur)** : ajouter d'autres devises, avec un choix de la devise de chaque côté et la conversion dans les deux sens.
+  - Cours : **taux de référence de la Banque centrale européenne**, lus côté serveur par le service public Frankfurter (`api.frankfurter.dev`, sans clé), gardés une heure (`"use cache"` + `cacheLife("hours")`, `src/features/finance/exchange-rates.ts`). 29 devises (dollar, dollar canadien, livre, franc suisse, yuan, livre turque, rand, yen…). Le XAF et le XOF s'en déduisent par la parité fixe.
+  - Les devises absentes de la BCE (dirham marocain, dirham des Émirats, naira, cedi, rouble) ne sont pas proposées : aucun cours inventé.
+  - Écran « Conversion de devises » : montant et devise « De » et « Vers », listes cliquables avec le nom en français, bouton pour inverser le sens, saisie possible des deux côtés, arrondi selon la devise (0 décimale pour le FCFA et le yen), ligne « 1 USD = … XAF », date et source des cours, et rappel que la banque applique son propre taux. La devise de l'agence est choisie par défaut.
+  - Si la source ne répond pas : seuls l'euro et le franc CFA sont proposés, avec un message.
+  - Tests unitaires de la conversion, tous réussis.
+* **Mise en ligne** (demande : « vas-y, fais le push sur GitHub ») : la migration `20261107100000_prospection.sql` est déjà dans la vraie base (vérifié en lecture seule) ; `tsc` 0 erreur, ESLint 0 erreur, **188 tests réussis** ; aucune clé dans les fichiers. Enregistrement et envoi sur GitHub (`main`), donc publication par Vercel : phase 1 WhatsApp et réseaux sociaux, logo de l'agence dans la barre du haut, calculatrice et conversion de devises.

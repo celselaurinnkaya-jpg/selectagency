@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/shared/ui";
 import { countryOptions, RESIDENCE_COUNTRIES } from "@/lib/countries";
 import { ROLE } from "@/lib/domain/labels";
 import { getShell, getTeam } from "@/features/operations/queries";
+import { getAgencyContext } from "@/lib/auth/context";
+import { loadCampaigns } from "@/features/communications/queries";
 import { ClientForm } from "@/features/clients/ClientForm";
 
 export const metadata: Metadata = { title: "Nouveau client" };
@@ -25,9 +27,10 @@ export default function NewClientPage() {
 }
 
 async function Form() {
-  const [{ agency, members, currentMemberId }, { locked }] = await Promise.all([getTeam(), getShell()]);
+  const [{ agency, members, currentMemberId }, { locked }, campaigns] = await Promise.all([getTeam(), getShell(), getAgencyContext().then(loadCampaigns)]);
   return (
     <ClientForm
+      campaigns={campaigns}
       partnersLocked={locked.includes("partners")}
       defaultCountry={agency.countryCode}
       defaultMemberId={currentMemberId}

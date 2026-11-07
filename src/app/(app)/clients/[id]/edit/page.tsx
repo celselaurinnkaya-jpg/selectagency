@@ -7,6 +7,8 @@ import { countryOptions, RESIDENCE_COUNTRIES } from "@/lib/countries";
 import { ROLE } from "@/lib/domain/labels";
 import { getClientDetail } from "@/features/clients/queries";
 import { getShell, getTeam } from "@/features/operations/queries";
+import { getAgencyContext } from "@/lib/auth/context";
+import { loadCampaigns } from "@/features/communications/queries";
 import { ClientForm } from "@/features/clients/ClientForm";
 
 export const metadata: Metadata = { title: "Modifier la fiche client" };
@@ -23,7 +25,7 @@ export default function EditClientPage({ params }: PageProps<"/clients/[id]">) {
 
 async function EditForm({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [detail, team, { locked }] = await Promise.all([getClientDetail(id), getTeam(), getShell()]);
+  const [detail, team, { locked }, campaigns] = await Promise.all([getClientDetail(id), getTeam(), getShell(), getAgencyContext().then(loadCampaigns)]);
 
   if (!detail) {
     notFound();
@@ -44,6 +46,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
         client={client}
         partnerCode={detail.partner?.code}
         partnersLocked={locked.includes("partners")}
+        campaigns={campaigns}
         defaultCountry={client.residenceCountry || agency.countryCode}
         defaultMemberId={client.assignedTo || currentMemberId}
         countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name }))}
