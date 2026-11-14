@@ -47,6 +47,17 @@ export async function exchangeCode(f: Fetch, appId: string, appSecret: string, c
   return body.access_token;
 }
 
+/**
+ * 1 bis. Compte WhatsApp Business relié, quand la fenêtre Meta ne l'a pas transmis à la page : Meta l'indique dans
+ * les autorisations du jeton (debug_token, « granular_scopes » → whatsapp_business_management, le plus récent en premier).
+ */
+export async function findWabaId(f: Fetch, appId: string, appSecret: string, token: string): Promise<string | undefined> {
+  const query = new URLSearchParams({ input_token: token, access_token: `${appId}|${appSecret}` });
+  type Scope = { scope?: string; target_ids?: string[] };
+  const body = await call<{ data?: { granular_scopes?: Scope[] } }>(f, `${GRAPH}/${GRAPH_VERSION}/debug_token?${query}`);
+  return body.data?.granular_scopes?.find((s) => s.scope === "whatsapp_business_management")?.target_ids?.[0];
+}
+
 /** 2. Le numéro connecté : celui indiqué par Meta, sinon le premier numéro du compte WhatsApp Business. */
 export async function findPhone(f: Fetch, token: string, wabaId: string, phoneNumberId?: string): Promise<MetaPhone> {
   const fields = "id,display_phone_number,verified_name";

@@ -8,7 +8,7 @@ import { formValues, type FormState } from "@/lib/form-state";
 import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
 import { cronSecret } from "@/lib/email/system-worker";
 import { createSystemClient } from "@/lib/supabase/system";
-import { exchangeCode, findPhone, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "@/lib/whatsapp/meta-signup";
+import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "@/lib/whatsapp/meta-signup";
 import { encryptToken } from "@/lib/whatsapp/token-crypto";
 
 const connectSchema = z.object({
@@ -291,10 +291,9 @@ export async function completeWhatsAppSignupAction(input: {
   phoneNumberId?: string;
 }): Promise<{ ok: boolean; message: string; historyShared?: boolean }> {
   const code = typeof input.code === "string" ? input.code.trim() : "";
-  const wabaId = typeof input.wabaId === "string" && META_ID.test(input.wabaId) ? input.wabaId : undefined;
+  let wabaId = typeof input.wabaId === "string" && META_ID.test(input.wabaId) ? input.wabaId : undefined;
   const phoneNumberId = typeof input.phoneNumberId === "string" && META_ID.test(input.phoneNumberId) ? input.phoneNumberId : undefined;
   if (!code || code.length > 2000) return { ok: false, message: "Meta n'a pas renvoyé de code de connexion. Recommencez." };
-  if (!wabaId) return { ok: false, message: "Meta n'a pas indiqué le compte WhatsApp Business. Recommencez le scan." };
 
   const ctx = await getAgencyContext();
   if (!["owner", "admin"].includes(ctx.member.role)) {
@@ -316,6 +315,19 @@ export async function completeWhatsAppSignupAction(input: {
     token = await exchangeCode(fetch, appId, appSecret, code);
   } catch {
     return { ok: false, message: "Meta a refusé le code de connexion (il n'est valable que 30 secondes). Recommencez le scan." };
+  }
+
+  // La fenêtre Meta n'a pas transmis le compte à la page : on le demande à Meta avec le jeton obtenu.
+  if (!wabaId) {
+    const found = await findWabaId(fetch, appId, appSecret, token).catch(() => undefined);
+    wabaId = found && META_ID.test(found) ? found : undefined;
+  }
+  if (!wabaId) {
+    return {
+      ok: false,
+      message:
+        "Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta. Recommencez et allez jusqu'au bout : numéro de l'agence, confirmation dans WhatsApp Business sur le téléphone, puis « Terminer ».",
+    };
   }
 
   let phone;

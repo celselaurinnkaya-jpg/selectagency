@@ -15,6 +15,57 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 50 — 14 Novembre 2026 (Claude Code) — Fenêtre Meta terminée mais « Meta n'a pas indiqué le compte WhatsApp Business »
+* **Demande** : l'utilisateur a suivi la fenêtre officielle de Meta jusqu'au bout. La fenêtre « Connexion WhatsApp par QR code » affiche ensuite « Meta n'a pas indiqué le compte WhatsApp Business. Recommencez le scan. » Il demande une analyse.
+* **Analyse** :
+  - Meta a bien renvoyé son code de connexion : le parcours est allé jusqu'au bout.
+  - L'identifiant du compte WhatsApp Business (WABA) arrive par un message séparé de la fenêtre Meta. Il n'est pas arrivé dans les 3 secondes d'attente, ou il est arrivé sous la forme `waba_ids` (liste), que la page ne lisait pas.
+  - Le serveur refusait alors avant même d'utiliser le code, qui expire en 30 secondes.
+  - Documentation de Meta consultée le 14 novembre 2026 : événements `FINISH`, `FINISH_ONLY_WABA`, `FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING` (champ `waba_id`, ou `waba_ids` quand plusieurs comptes sont reliés). Solution de repli documentée : `debug_token` sur le jeton obtenu, `granular_scopes` → `whatsapp_business_management` → premier identifiant (le plus récent).
+* **Corrections (local, rien de poussé)** :
+  - `src/lib/whatsapp/meta-signup.ts` : nouvelle fonction `findWabaId` (appel `debug_token` avec le jeton d'application `APP_ID|APP_SECRET`, côté serveur seulement).
+  - `completeWhatsAppSignupAction` (`whatsapp-actions.ts`) : sans identifiant reçu de la page, le serveur échange le code puis retrouve le compte auprès de Meta. S'il n'y en a aucun, message clair : aller jusqu'au bout (numéro, confirmation dans WhatsApp Business, « Terminer »).
+  - `WhatsAppQrConnectModal.tsx` : lit `waba_id` ou `waba_ids[0]`. L'attente du message de Meta passe de 3 à 5 secondes.
+* **Constat signalé à l'utilisateur, non modifié** :
+  - Le commit `f7c5ed0` (autre outil, déjà en ligne) affiche sur la page Connexion un QR code fabriqué (`WhatsAppWebQrCard.tsx`, lien `wa.me/qr/` au hasard), qu'aucun téléphone ne peut relier.
+  - Sa validation appelle `pairWhatsAppDeviceAction`, qui enregistre un faux numéro et **déconnecte le vrai numéro Meta** s'il est connecté.
+* **Tests** : `tsc` 0 erreur. Tests WhatsApp 15 sur 15, dont un nouveau test pour `findWabaId`.
+* **Suite** : la correction n'agit qu'en ligne (https). Il faut la publier, seulement sur demande (« publie sur Vercel »), puis recommencer la connexion dans la fenêtre de Meta.
+
+### Session 49 — 14 Novembre 2026 à 16:35
+* **Objet** : Migration complète de la configuration technique WhatsApp Cloud API (Meta Phone Number ID, WABA ID, Webhooks) vers la console Super Admin (`/admin/agences/[id]`). Épuration de l'espace Agence (`/agent-ia/connexion`) pour une expérience 100% sans jargon technique.
+* **Demande / Contexte** :
+  - L'utilisateur a précisé : *« le mode API CLOUD devais peut etre se passer dans mon espace admi , parceque l'agence doit se connecter directement »*.
+  - L'utilisateur a confirmé (*« oui »*) le déplacement des paramètres Cloud API vers la console Super Admin SELECT.
+  - Objectif : L'agence cliente ne doit voir aucun code de développeur (Phone Number ID, WABA ID, URL de rappel Webhook, jeton de vérification). Ces paramètres officiels Meta sont gérés par le Super Admin de la plateforme pour chaque agence.
+* **Modifications apportées** :
+  1. **Migration SQL sécurisée** (`supabase/migrations/20261114160000_platform_whatsapp.sql`) :
+     - RPC `platform_agency_whatsapp(p_org uuid)` : lecture sécurisée du compte WhatsApp de l'agence.
+     - RPC `platform_configure_agency_whatsapp(p_org, p_waba_id, p_phone_number_id, p_display_phone_number, p_verified_name, p_coexistence)` : insertion / mise à jour officielle de la ligne et inscription automatique dans `private.platform_audit_log` (`action = 'whatsapp.configured'`).
+     - RPC `platform_disconnect_agency_whatsapp(p_org, p_account_id)` : déconnexion sécurisée et traçabilité audit (`action = 'whatsapp.disconnected'`).
+  2. **Audit & Libellés Console Admin** (`src/features/admin/display.ts`) :
+     - Ajout des libellés d'audit : *"Ligne WhatsApp configurée"* et *"Ligne WhatsApp déconnectée"*.
+  3. **Requêtes & Actions Serveur Admin** (`src/features/admin/queries.ts` & `src/features/admin/actions.ts`) :
+     - `getAgency(id)` charge automatiquement l'état WhatsApp via `platform_agency_whatsapp`.
+     - Création de `configureAgencyWhatsAppAction` (validation Zod, contrôle administrateur de plateforme).
+     - Création de `disconnectAgencyWhatsAppAction` pour débrancher une ligne depuis la fiche agence.
+  4. **Formulaire Dédié Super Admin** (`src/features/admin/AdminForms.tsx` & `src/app/(admin)/admin/agences/[id]/page.tsx`) :
+     - Création du composant `AdminAgencyWhatsAppForm` dans la fiche de chaque agence (`/admin/agences/[id]`).
+     - Champs : Numéro de téléphone affiché, Nom vérifié de l'agence, Phone Number ID Meta, WABA ID Meta, case à cocher Mode Coexistence Mobile.
+     - Bloc d'aide avec copie en 1 clic de l'URL de rappel Webhook (`/api/webhooks/whatsapp`) et du Verify Token (`select_agency_wa_token_2026`).
+     - Bouton de déconnexion d'urgence et affichage du statut en ligne.
+  5. **Épuration de l'Espace Agence** (`src/features/agent-ia/WhatsAppConnectionManager.tsx`) :
+     - Suppression définitive de l'affichage des identifiants bruts (Phone Number ID et WABA ID).
+     - Suppression de la carte *« Paramètres Webhook Meta »* de l'espace agence.
+     - Remplacement par une interface claire et valorisante : indicateur de ligne officielle active, confirmation du mode coexistence (utilisation simultanée du smartphone sans coupure), accès direct en 1 clic vers la messagerie WhatsApp Web et bloc de test d'envoi.
+* **Validation Globale** :
+  - **TypeScript** : 0 erreur (`tsc --noEmit`).
+  - **Tests Unitaires** : 31 suites passées, 244/244 tests validés (`npm test`).
+  - **Tests Base de données (PGlite)** : 95/95 tests réussis (`supabase/tests/database.test.ts`).
+  - **Règle Git** : Strictement local (`localhost:3000`), aucun `git push` vers GitHub.
+
+---
+
 ### Session 48 — 14 Novembre 2026 à 15:45
 * **Objet** : Explication de l'architecture Vercel (serverless sans VPS) et clarification sur la génération du vrai QR code Meta vs passerelles non officielles. Intégration du bouton d'ouverture Meta officielle dans la carte WhatsApp Web.
 * **Demande / Contexte** :

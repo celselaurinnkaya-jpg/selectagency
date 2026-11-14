@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { accountAccessToken, echoMessages, historyMessages, messageContent, syncedContacts } from "./coexistence";
-import { exchangeCode, findPhone, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "./meta-signup";
+import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "./meta-signup";
 import { decryptToken, encryptToken } from "./token-crypto";
 
 const SECRET = "secret-serveur-0123456789abcdef-0123456789";
@@ -91,6 +91,26 @@ describe("appels à Meta après le scan", () => {
     await requestSync(fake, "EAAG-jeton", "555000", "history");
     expect(calls.at(-1)!.url).toContain("/555000/smb_app_data");
     expect(JSON.parse(calls.at(-1)!.body!)).toEqual({ messaging_product: "whatsapp", sync_type: "history" });
+  });
+
+  it("retrouve le compte WhatsApp Business relié quand la fenêtre Meta ne l'a pas transmis", async () => {
+    let asked = "";
+    const fake = (async (url: string | URL | Request) => {
+      asked = String(url);
+      return ok({
+        data: {
+          granular_scopes: [
+            { scope: "business_management", target_ids: ["111"] },
+            { scope: "whatsapp_business_management", target_ids: ["777000", "666000"] },
+          ],
+        },
+      });
+    }) as typeof fetch;
+    expect(await findWabaId(fake, "APPID", "APPSECRET", "EAAG-jeton")).toBe("777000");
+    expect(asked).toContain("/debug_token?");
+    expect(asked).toContain("input_token=EAAG-jeton");
+    const none = (async () => ok({ data: { granular_scopes: [{ scope: "business_management", target_ids: ["111"] }] } })) as typeof fetch;
+    expect(await findWabaId(none, "APPID", "APPSECRET", "EAAG-jeton")).toBeUndefined();
   });
 
   it("transmet l'erreur de Meta (ex. historique refusé par l'agence)", async () => {

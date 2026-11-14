@@ -99,7 +99,7 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
 
     const onMessage = (event: MessageEvent) => {
       if (!isFacebookOrigin(event.origin)) return;
-      let data: { type?: string; event?: string; data?: Record<string, string> } | null = null;
+      let data: { type?: string; event?: string; data?: { waba_id?: string; waba_ids?: string[]; phone_number_id?: string; error_message?: string } } | null = null;
       try {
         data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
       } catch {
@@ -107,7 +107,8 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
       }
       if (data?.type !== "WA_EMBEDDED_SIGNUP") return;
       if (data.event?.startsWith("FINISH")) {
-        session.current = { wabaId: data.data?.waba_id, phoneNumberId: data.data?.phone_number_id };
+        // « waba_id », ou « waba_ids » quand Meta relie plusieurs comptes.
+        session.current = { wabaId: data.data?.waba_id ?? data.data?.waba_ids?.[0], phoneNumberId: data.data?.phone_number_id };
       } else if (data.event === "CANCEL") {
         setPhase("ready");
         setMessage("Connexion interrompue avant la fin. Vous pouvez recommencer.");
@@ -129,8 +130,9 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
 
   const finish = async (code: string) => {
     setPhase("finishing");
-    // Les informations du compte arrivent par un message séparé de la fenêtre Meta : on les attend un instant.
-    for (let i = 0; i < 15 && !session.current.wabaId; i++) await new Promise((r) => setTimeout(r, 200));
+    // Les informations du compte arrivent par un message séparé de la fenêtre Meta : on les attend un instant
+    // (le code reste valable 30 secondes). Sans elles, le serveur retrouve le compte auprès de Meta.
+    for (let i = 0; i < 25 && !session.current.wabaId; i++) await new Promise((r) => setTimeout(r, 200));
     const result = await completeWhatsAppSignupAction({ code, ...session.current });
     setMessage(result.message);
     if (!result.ok) {
