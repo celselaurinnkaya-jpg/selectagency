@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bot,
   BriefcaseBusiness,
   CalendarDays,
   FileText,
@@ -33,6 +34,7 @@ export const NAV_MAIN: NavItem[] = [
   { label: "Documents", href: "/documents", icon: FileText, match: ["/documents"] },
   { label: "Services", href: "/services", icon: BriefcaseBusiness, match: ["/services"] },
   { label: "Rendez-vous", href: "/appointments", icon: CalendarDays, match: ["/appointments"] },
+  { label: "Agent IA", href: "/agent-ia/agents", icon: Bot, match: ["/agent-ia"] },
   { label: "Tâches", href: "/tasks", icon: ListChecks, match: ["/tasks"] },
   { label: "Finance", href: "/finance", icon: Wallet, match: ["/finance"] },
   { label: "Partenaires", href: "/partners", icon: Handshake, match: ["/partners"] },

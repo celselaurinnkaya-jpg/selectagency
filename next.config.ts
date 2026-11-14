@@ -21,6 +21,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   poweredByHeader: false,
+  // Documents de la base de connaissances de l'Agent IA (PDF, Word) : 3,5 Mo au plus, sous la limite de 4,5 Mo de Vercel.
+  experimental: {
+    serverActions: { bodySizeLimit: "4mb" },
+  },
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
   },

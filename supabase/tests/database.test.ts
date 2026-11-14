@@ -58,6 +58,12 @@ async function as<T>(who: User | null, fn: (tx: Transaction) => Promise<T>): Pro
   });
 }
 
+/** Requête du système (propriétaire de la base) : prépare des données qu'aucun membre ne peut écrire lui-même. */
+async function asSystem<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T> {
+  const { rows: result } = await db.query<T>(sql, params);
+  return result[0]!;
+}
+
 async function one<T = Record<string, unknown>>(who: User | null, sql: string, params: unknown[] = []): Promise<T> {
   return as(who, async (tx) => (await tx.query<T>(sql, params)).rows[0]!);
 }
@@ -2321,5 +2327,528 @@ describe("prospection : échanges notés, campagne et modèles de messages", () 
     await rows(LINA, "insert into public.activity_events (organization_id, client_id, text) values ($1, $2, 'Rappeler après les résultats du bac')", [org, clientId]);
     const last = await one<{ text: string; origin: string }>(KARL, "select text, origin from public.activity_events where client_id = $1 order by at desc, id desc limit 1", [clientId]);
     expect(last).toEqual({ text: "Note ajoutée à la main : Rappeler après les résultats du bac", origin: "note" });
+  });
+});
+
+describe("présences : pointage des arrivées et des départs", () => {
+  let org: string;
+  let lina: string;
+  let karl: string;
+  let max: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    lina = await memberId(LINA);
+    karl = await memberId(KARL);
+    max = await memberId(MAX);
+  });
+
+  const iso = (hoursFromNow: number) => new Date(Date.now() + hoursFromNow * 3600_000).toISOString();
+  const entry = (id: string) =>
+    db.query<{ status: string; arrival_source: string; departure_source: string | null; note: string | null; corrected_by: string | null; has_left: boolean }>(
+      "select status, arrival_source, departure_source, note, corrected_by, left_at is not null as has_left from public.attendance_entries where id = $1",
+      [id],
+    ).then((r) => r.rows[0]!);
+
+  it("pointe l'arrivée puis le départ à l'heure du serveur, une seule présence en cours", async () => {
+    const id = (await one<{ id: string }>(LINA, "select public.clock_in($1) as id", [org])).id;
+    await expect(one(LINA, "select public.clock_in($1)", [org])).rejects.toThrow(/déjà pointée/);
+    await expect(rows(LINA, "insert into public.attendance_entries (organization_id, member_id, work_day, arrived_at, arrival_source, status) values ($1, $2, current_date, now(), 'clock', 'closed')", [org, lina])).rejects.toThrow(/permission denied/);
+    // Chacun voit ses présences ; le propriétaire voit l'équipe ; la lecture seule ne voit pas celles des autres.
+    expect((await rows(LINA, "select id from public.attendance_entries")).map((r) => (r as { id: string }).id)).toEqual([id]);
+    expect((await rows(KARL, "select id from public.attendance_entries where member_id = $1", [lina])).length).toBe(1);
+    expect(await rows(NOAH, "select id from public.attendance_entries")).toEqual([]);
+    expect((await one<{ id: string }>(LINA, "select public.clock_out($1) as id", [org])).id).toBe(id);
+    expect(await entry(id)).toMatchObject({ status: "closed", arrival_source: "clock", departure_source: "clock", has_left: true });
+    await expect(one(LINA, "select public.clock_out($1)", [org])).rejects.toThrow(/Aucune arrivée pointée/);
+  });
+
+  it("ne devine jamais un départ oublié : le membre le déclare, avec une raison, dans les 7 jours", async () => {
+    // Présence d'avant-hier restée ouverte (départ jamais pointé).
+    const forgotten = (await db.query<{ id: string }>(
+      "insert into public.attendance_entries (organization_id, member_id, work_day, arrived_at, arrival_source, status) values ($1, $2, (now() - interval '2 days')::date, now() - interval '50 hours', 'clock', 'open') returning id",
+      [org, lina],
+    )).rows[0]!.id;
+    await expect(one(LINA, "select public.clock_out($1)", [org])).rejects.toThrow(/n'a pas de départ pointé/);
+    const today = (await one<{ id: string }>(LINA, "select public.clock_in($1) as id", [org])).id;
+    expect((await entry(forgotten)).status).toBe("missing_departure");
+
+    const declare = (entryId: string | null, arrived: string | null, left: string | null, reason = "Oubli de pointage") =>
+      one<{ id: string }>(LINA, "select public.declare_attendance($1, $2, $3, $4, $5) as id", [org, entryId, arrived, left, reason]).then((r) => r.id);
+    await expect(declare(forgotten, null, iso(-42), "x")).rejects.toThrow(/raison/);
+    await expect(declare(forgotten, null, iso(-51))).rejects.toThrow(/doit suivre l'arrivée/);
+    await declare(forgotten, null, iso(-42));
+    expect(await entry(forgotten)).toMatchObject({ status: "closed", arrival_source: "clock", departure_source: "declared", note: "Oubli de pointage" });
+    await expect(declare(forgotten, null, iso(-41))).rejects.toThrow(/déjà connu/);
+
+    // Arrivée oubliée d'il y a 4 jours, avec son départ ; chevauchement, futur et plus de 7 jours refusés.
+    const past = await declare(null, iso(-96), iso(-88));
+    expect(await entry(past)).toMatchObject({ status: "closed", arrival_source: "declared", departure_source: "declared" });
+    await expect(declare(null, iso(-95), iso(-90))).rejects.toThrow(/chevaucherait/);
+    await expect(declare(null, iso(-24 * 8), iso(-24 * 8 + 8))).rejects.toThrow(/plus de 7 jours/);
+    await expect(declare(null, iso(1), null)).rejects.toThrow(/passée/);
+    await expect(declare(null, iso(-72), null)).rejects.toThrow(/indiquez aussi l'heure de départ/);
+    await expect(declare(null, iso(-0.5), null)).rejects.toThrow(/déjà en cours|chevaucherait/);
+    expect((await one<{ id: string }>(LINA, "select public.clock_out($1) as id", [org])).id).toBe(today);
+  });
+
+  it("le propriétaire corrige ou ajoute une présence, avec une raison ; un membre ne le peut pas", async () => {
+    const id = (await rows<{ id: string }>(KARL, "select id from public.attendance_entries where member_id = $1 and arrival_source = 'declared'", [lina]))[0]!.id;
+    const correct = (who: User, entryId: string | null, member: string | null, arrived: string, left: string | null, reason = "Correction après vérification") =>
+      one<{ id: string }>(who, "select public.correct_attendance($1, $2, $3, $4, $5, $6) as id", [org, entryId, member, arrived, left, reason]).then((r) => r.id);
+    await expect(correct(LINA, id, null, iso(-97), iso(-88))).rejects.toThrow(/propriétaire et les administrateurs/);
+    await correct(KARL, id, null, iso(-97), iso(-88));
+    expect(await entry(id)).toMatchObject({ status: "closed", arrival_source: "corrected", corrected_by: karl, note: "Correction après vérification" });
+    // Présence ajoutée pour un membre sans téléphone ; un départ manquant d'un jour passé reste « non pointé ».
+    const added = await correct(KARL, null, max, iso(-30), null);
+    expect(await entry(added)).toMatchObject({ status: "missing_departure", arrival_source: "corrected", has_left: false });
+    // Départ inconnu : seule l'heure d'arrivée est occupée (un retour plus tard le même jour reste possible).
+    await expect(correct(KARL, null, max, iso(-31), iso(-28))).rejects.toThrow(/chevaucherait/);
+    await correct(KARL, null, max, iso(-27), iso(-25));
+    await expect(correct(KARL, null, max, iso(-10), iso(-12))).rejects.toThrow(/doit suivre l'arrivée/);
+    await expect(correct(KARL, null, "00000000-0000-4000-8000-000000000000", iso(-10), null)).rejects.toThrow(/Membre introuvable/);
+  });
+
+  it("garde les horaires de l'agence, modifiables par les responsables seulement", async () => {
+    const save = (who: User, start: string, end: string, days: number[], grace: number) =>
+      one(who, "select public.save_attendance_settings($1, $2::time, $3::time, $4::smallint[], $5::smallint)", [org, start, end, days, grace]);
+    await expect(save(LINA, "08:00", "17:00", [1, 2, 3, 4, 5], 10)).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(save(KARL, "17:00", "08:00", [1, 2, 3, 4, 5], 10)).rejects.toThrow(/doit suivre/);
+    await expect(save(KARL, "08:00", "17:00", [], 10)).rejects.toThrow(/au moins un jour/);
+    await expect(save(KARL, "08:00", "17:00", [1, 8], 10)).rejects.toThrow(/au moins un jour/);
+    await expect(save(KARL, "08:00", "17:00", [1], 200)).rejects.toThrow(/0 à 120/);
+    await save(KARL, "07:30", "16:30", [6, 1, 2, 2, 3, 4, 5], 15);
+    expect(await one(LINA, "select expected_start::text as start, expected_end::text as end, work_days, grace_minutes from public.attendance_settings")).toEqual({
+      start: "07:30:00",
+      end: "16:30:00",
+      work_days: [1, 2, 3, 4, 5, 6],
+      grace_minutes: 15,
+    });
+  });
+});
+
+
+describe("Agent IA et WhatsApp", () => {
+  let orgA: string;
+  let orgB: string;
+  let starterPlan: string;
+  let proPlan: string;
+
+  beforeAll(async () => {
+    orgA = (await one<{ id: string }>(ALICE, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    orgB = (await one<{ id: string }>(BRUNO, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+    starterPlan = (await one<{ id: string }>(GRACE_MFA, "select id from public.plans where tier = 'starter' limit 1")).id;
+    proPlan = (await one<{ id: string }>(GRACE_MFA, "select id from public.plans where tier = 'pro' limit 1")).id;
+  });
+
+  it("bloque la création d'agent et de compte WhatsApp en formule STARTER", async () => {
+    // Passer orgA en STARTER (fin d'essai)
+    await db.query("update public.subscriptions set status = 'active', plan_id = $1 where organization_id = $2", [starterPlan, orgA]);
+
+    await expect(
+      one(ALICE, "select public.save_ai_agent(null, $1, 'Assistant Starter', null, 'Accueil')", [orgA])
+    ).rejects.toThrow(/L'Agent IA : option incluse dans les formules PRO et BUSINESS/);
+
+    await expect(
+      one(ALICE, "select public.connect_wa_account($1, 'waba_1', 'phone_1', '+237690000000', null, false)", [orgA])
+    ).rejects.toThrow(/L'Agent IA : option incluse dans les formules PRO et BUSINESS/);
+  });
+
+  it("autorise la création en PRO, respecte le quota (1 agent max) et isole totalement entre agences", async () => {
+    // Passer orgA en PRO
+    await db.query("update public.subscriptions set status = 'active', plan_id = $1 where organization_id = $2", [proPlan, orgA]);
+    // Passer orgB en PRO
+    await db.query("update public.subscriptions set status = 'active', plan_id = $1 where organization_id = $2", [proPlan, orgB]);
+
+    // 1. Agence A crée son premier agent
+    const agentA = (await one<{ id: string }>(
+      ALICE,
+      "select public.save_ai_agent(null, $1, 'Agent Voyage A', null, 'Conseiller Voyages', 'travel', 'chaleureux', 'Expert et bienveillant', 'Renseigner sur les billets et hôtels.') as id",
+      [orgA]
+    )).id;
+    expect(agentA).toBeTruthy();
+
+    // 2. Tentative de créer un 2ème agent pour Agence A -> dépassement de quota (1 max en PRO)
+    await expect(
+      one(ALICE, "select public.save_ai_agent(null, $1, 'Deuxième Agent', null, 'Support')", [orgA])
+    ).rejects.toThrow(/Limite d'agents atteinte/);
+
+    // 3. Agence B ne voit absolument pas l'agent d'Agence A
+    const listB = await rows(BRUNO, "select * from public.ai_agents where organization_id = $1", [orgB]);
+    expect(listB).toEqual([]);
+
+    // Agence B tente de modifier ou supprimer l'agent d'Agence A -> refus
+    await expect(
+      one(BRUNO, "select public.save_ai_agent($1, $2, 'Piratage', null, 'Hacker')", [agentA, orgB])
+    ).rejects.toThrow(/Agent IA introuvable ou accès refusé/);
+
+    await one(BRUNO, "select public.delete_ai_agent($1, $2)", [agentA, orgB]);
+    // L'agent existe toujours chez Agence A
+    const checkA = await one(ALICE, "select * from public.ai_agents where id = $1 and organization_id = $2", [agentA, orgA]);
+    expect(checkA).toBeTruthy();
+  });
+
+  it("gère les conversations, messages et le changement de mode (ai, assist, human)", async () => {
+    // 1. Ajouter un compte WhatsApp pour orgA
+    // Un membre n'écrit jamais directement dans les tables WhatsApp (faux message, faux numéro).
+    await expect(
+      one(ALICE, "insert into public.wa_accounts (organization_id, waba_id, phone_number_id, display_phone_number) values ($1, 'waba_x', 'phone_x', '+237690000001')", [orgA])
+    ).rejects.toThrow(/permission denied/);
+
+    const waAcc = (await asSystem<{ id: string }>(
+      "insert into public.wa_accounts (organization_id, waba_id, phone_number_id, display_phone_number, verified_name) values ($1, 'waba_100', 'phone_100', '+237699112233', 'Agence A Voyage') returning id",
+      [orgA]
+    )).id;
+
+    // 2. Ajouter un contact WhatsApp
+    const contact = (await asSystem<{ id: string }>(
+      "insert into public.wa_contacts (organization_id, wa_id, profile_name) values ($1, '237677889900', 'Jean Dupont') returning id",
+      [orgA]
+    )).id;
+
+    // 3. Créer une conversation
+    const conv = (await asSystem<{ id: string }>(
+      "insert into public.wa_conversations (organization_id, account_id, contact_id, mode) values ($1, $2, $3, 'ai') returning id",
+      [orgA, waAcc, contact]
+    )).id;
+
+    // 4. Ajouter des messages dans le fil
+    await asSystem(
+      "insert into public.wa_messages (organization_id, conversation_id, direction, body, author_kind, status) values ($1, $2, 'inbound', 'Bonjour, avez-vous des vols pour Paris ?', 'contact', 'delivered')",
+      [orgA, conv]
+    );
+    await expect(
+      one(ALICE, "insert into public.wa_messages (organization_id, conversation_id, direction, body, author_kind, status) values ($1, $2, 'outbound', 'Faux message', 'member', 'read')", [orgA, conv])
+    ).rejects.toThrow(/permission denied/);
+    await expect(
+      one(ALICE, "update public.wa_conversations set mode = 'ai' where id = $1 returning id", [conv])
+    ).rejects.toThrow(/permission denied/);
+
+    // 5. Basculer le mode de la conversation de 'ai' à 'human'
+    await one(CARINE, "select public.set_conversation_mode($1, $2, 'human')", [conv, orgA]);
+    const updatedConv = await one<{ mode: string; assigned_to: string }>(ALICE, "select mode, assigned_to from public.wa_conversations where id = $1", [conv]);
+    expect(updatedConv.mode).toBe("human");
+    expect(updatedConv.assigned_to).toBeTruthy();
+
+    // 6. Cloisonnement : Agence B ne peut pas lire les messages ni les conversations d'Agence A
+    const msgsB = await rows(BRUNO, "select * from public.wa_messages where organization_id = $1", [orgB]);
+    expect(msgsB).toEqual([]);
+    const convsB = await rows(BRUNO, "select * from public.wa_conversations where organization_id = $1", [orgB]);
+    expect(convsB).toEqual([]);
+  });
+
+  it("gère la base de connaissances (sources, chunks, recherche RAG et étanchéité)", async () => {
+    // Récupérer l'agent existant d'Agence A
+    const agentRow = await one<{ id: string }>(ALICE, "select id from public.ai_agents where organization_id = $1 limit 1", [orgA]);
+    const agentAId = agentRow.id;
+
+    // 1. Ajouter une source de connaissances pour l'agent A
+    const sourceId = (await one<{ id: string }>(
+      ALICE,
+      "select public.save_ai_knowledge_source(null, $1, $2, 'text', 'Tarifs Officiels Visas', 'Visa Schengen court séjour : 80 EUR. Frais de dossier agence : 50 000 FCFA.') as id",
+      [orgA, agentAId]
+    )).id;
+    expect(sourceId).toBeTruthy();
+
+    // 2. Synchroniser les fragments (chunks) indexés
+    const chunks = [
+      "Tarifs officiels 2026 : Le visa Schengen court séjour coûte 80 EUR au consulat. L'agence applique des frais de dossier de 50 000 FCFA pour la constitution intégrale du dossier.",
+      "Délais consulaires : Le traitement moyen d'un visa touristique est de 15 jours ouvrés à compter du dépôt biométrique."
+    ];
+    const chunkCount = (await one<{ count: number }>(
+      ALICE,
+      "select public.save_ai_knowledge_chunks($1, $2, $3, $4) as count",
+      [orgA, sourceId, agentAId, chunks]
+    )).count;
+    expect(chunkCount).toBe(2);
+
+    // Vérifier l'état de la source mis à jour en 'ready'
+    const sourceRow = await one<{ status: string; chunks_count: number }>(
+      ALICE,
+      "select status, chunks_count from public.ai_knowledge_sources where id = $1",
+      [sourceId]
+    );
+    expect(sourceRow.status).toBe("ready");
+    expect(sourceRow.chunks_count).toBe(2);
+
+    // 3. Tester la recherche RAG dans les connaissances
+    const searchResults = await rows<{ source_title: string; content: string }>(
+      ALICE,
+      "select * from public.search_ai_knowledge($1, $2, 'frais de dossier schengen', 2)",
+      [orgA, agentAId]
+    );
+    expect(searchResults.length).toBeGreaterThanOrEqual(1);
+    expect(searchResults[0].content).toContain("50 000 FCFA");
+
+    // 4. Cloisonnement : Bruno (Agence B) ne peut pas rechercher ni lire les fragments d'Agence A
+    const brunoSearch = await rows(
+      BRUNO,
+      "select * from public.search_ai_knowledge($1, $2, 'schengen', 2)",
+      [orgB, agentAId]
+    );
+    expect(brunoSearch).toEqual([]);
+
+    const brunoChunks = await rows(
+      BRUNO,
+      "select * from public.ai_knowledge_chunks where organization_id = $1",
+      [orgA]
+    );
+    expect(brunoChunks).toEqual([]);
+
+    // 5. Suppression de la source et cascade sur les fragments
+    await one(ALICE, "select public.delete_ai_knowledge_source($1, $2)", [sourceId, orgA]);
+    const remainingChunks = await rows(
+      ALICE,
+      "select * from public.ai_knowledge_chunks where source_id = $1",
+      [sourceId]
+    );
+    expect(remainingChunks).toEqual([]);
+  });
+
+  it("gère la connexion WhatsApp et l'ingestion d'événements webhook", async () => {
+    // 0. Nettoyer ou déconnecter l'ancien compte pour respecter le quota de 1 numéro
+    await db.query("delete from public.wa_accounts where organization_id = $1", [orgA]);
+
+    // 1. Connecter un numéro officiel via connect_wa_account
+    const waId = (await one<{ id: string }>(
+      ALICE,
+      "select public.connect_wa_account($1, 'waba_test_999', 'phone_test_999', '+237699001122', 'Agence A WhatsApp', false) as id",
+      [orgA]
+    )).id;
+    expect(waId).toBeTruthy();
+
+    // 2. Ingestion d'un message entrant reçu du webhook Meta, avec le secret serveur de SELECT
+    const SECRET = "secret-serveur-0123456789abcdef-whatsapp";
+    await db.query(
+      `insert into private.system_secrets (key, secret_sha256) values ('email_worker', encode(sha256(convert_to($1, 'UTF8')), 'hex'))
+       on conflict (key) do update set secret_sha256 = excluded.secret_sha256`,
+      [SECRET],
+    );
+    const inbound = "select public.record_inbound_wa_message($1, 'phone_test_999', '237670001122', 'Mamadou Touré', 'wamid_test_001', 'Bonjour, j''aimerais un renseignement pour le Canada.') as r";
+
+    // Sans le bon secret (n'importe qui sur Internet avec la clé publique) : refusé.
+    await expect(one(null, inbound, ["mauvais-secret-0123456789abcdef-0123"])).rejects.toThrow(/Secret système invalide/);
+    await expect(one(null, "select public.update_wa_message_status('x', 'wamid_test_001', 'read')")).rejects.toThrow(/Secret système invalide/);
+
+    const inboundRes = await one<{ r: { ok: boolean; conversation_id: string; mode: string } }>(null, inbound, [SECRET]);
+    expect(inboundRes.r.ok).toBe(true);
+    expect(inboundRes.r.mode).toBe("ai");
+
+    // Meta renvoie le même message : enregistré une seule fois, compteur de non-lus inchangé.
+    const again = await one<{ r: { ok: boolean; duplicate: boolean } }>(null, inbound, [SECRET]);
+    expect(again.r.duplicate).toBe(true);
+    const copies = await asSystem<{ n: number }>("select count(*)::int as n from public.wa_messages where meta_message_id = 'wamid_test_001'");
+    expect(copies.n).toBe(1);
+
+    // 3. Vérifier le contact créé
+    const contact = await one<{ wa_id: string; profile_name: string }>(
+      ALICE,
+      "select wa_id, profile_name from public.wa_contacts where organization_id = $1 and wa_id = '237670001122'",
+      [orgA]
+    );
+    expect(contact.profile_name).toBe("Mamadou Touré");
+
+    // 4. Mise à jour de l'accusé de réception (read)
+    const updated = await one<{ updated: boolean }>(
+      null,
+      "select public.update_wa_message_status($1, 'wamid_test_001', 'read') as updated",
+      [SECRET]
+    );
+    expect(updated.updated).toBe(true);
+    // Un accusé arrivé en retard ne fait pas reculer le statut (« lu » ne redevient pas « livré »).
+    const late = await one<{ updated: boolean }>(null, "select public.update_wa_message_status($1, 'wamid_test_001', 'delivered') as updated", [SECRET]);
+    expect(late.updated).toBe(false);
+
+    const msg = await one<{ status: string; read_at: string | null }>(
+      ALICE,
+      "select status, read_at from public.wa_messages where meta_message_id = 'wamid_test_001'"
+    );
+    expect(msg.status).toBe("read");
+    expect(msg.read_at).toBeTruthy();
+
+    // 5. Liaison à un client et un dossier
+    const memberA = await memberId(ALICE);
+    const client = await createClient(ALICE, orgA, memberA, "Mbassi");
+    const travelCase = await createCase(ALICE, orgA, client.id, memberA);
+
+    await one(
+      ALICE,
+      "select public.link_wa_conversation_to_client($1, $2, $3, $4)",
+      [orgA, inboundRes.r.conversation_id, client.id, travelCase.id]
+    );
+
+    const linkedConv = await one<{ client_id: string; case_id: string }>(
+      ALICE,
+      "select client_id, case_id from public.wa_conversations where id = $1",
+      [inboundRes.r.conversation_id]
+    );
+    expect(linkedConv.client_id).toBe(client.id);
+    expect(linkedConv.case_id).toBe(travelCase.id);
+
+    // Vérifier que le contact est également rattaché
+    const linkedContact = await one<{ client_id: string }>(
+      ALICE,
+      "select client_id from public.wa_contacts where organization_id = $1 and wa_id = '237670001122'",
+      [orgA]
+    );
+    expect(linkedContact.client_id).toBe(client.id);
+
+    // 6. Délier la conversation
+    await one(
+      ALICE,
+      "select public.unlink_wa_conversation_from_client($1, $2)",
+      [orgA, inboundRes.r.conversation_id]
+    );
+    const unlinkedConv = await one<{ client_id: string | null }>(
+      ALICE,
+      "select client_id from public.wa_conversations where id = $1",
+      [inboundRes.r.conversation_id]
+    );
+    expect(unlinkedConv.client_id).toBeNull();
+
+    // 7. Déconnexion du compte
+    await one(ALICE, "select public.disconnect_wa_account($1, $2)", [waId, orgA]);
+    const disconnected = await one<{ status: string }>(
+      ALICE,
+      "select status from public.wa_accounts where id = $1",
+      [waId]
+    );
+    expect(disconnected.status).toBe("disconnected");
+  });
+
+  it("Studio, connaissances et réponse automatique : contrôles de la base", async () => {
+    const SECRET = "secret-serveur-0123456789abcdef-autoreply";
+    await db.query(
+      `insert into private.system_secrets (key, secret_sha256) values ('email_worker', encode(sha256(convert_to($1, 'UTF8')), 'hex'))
+       on conflict (key) do update set secret_sha256 = excluded.secret_sha256`,
+      [SECRET],
+    );
+    const agent = await one<{ id: string }>(ALICE, "select id from public.ai_agents where organization_id = $1 order by created_at limit 1", [orgA]);
+
+    // 1. Le modèle et le délai sont enregistrés ; une adresse enregistrée deux fois n'est plus effacée ;
+    //    un champ absent (null) garde sa valeur.
+    const save = (delay: number | null, facebook: string | null, tier: string | null) =>
+      one(
+        ALICE,
+        "select public.save_ai_agent($1, $2, 'Assistant', null, 'Service client', 'general', 'courtois', null, 'Consignes', null, null, null, true, $3, $4, null, $5)",
+        [agent.id, orgA, delay, facebook, tier],
+      );
+    await save(20, "https://facebook.com/agence", "sonnet");
+    await save(20, "https://facebook.com/agence", "sonnet");
+    await save(null, null, null);
+    expect(await one(ALICE, "select model_tier, response_delay_seconds, facebook_url from public.ai_agents where id = $1", [agent.id])).toEqual({
+      model_tier: "sonnet",
+      response_delay_seconds: 20,
+      facebook_url: "https://facebook.com/agence",
+    });
+    await expect(save(500, null, null)).rejects.toThrow(/délai de réponse/);
+
+    // 2. Connaissances : chaque mot du message compte ; une autre agence ne lit rien et ne peut rien y rattacher.
+    const source = await one<{ id: string }>(
+      ALICE,
+      "select public.save_ai_knowledge_source(null, $1, $2, 'text', 'Tarifs', 'Visa étudiant : frais de dossier de l''agence 75 000 FCFA.', null, null) as id",
+      [orgA, agent.id],
+    );
+    await one(ALICE, "select public.save_ai_knowledge_chunks($1, $2, $3, array['Visa étudiant : frais de dossier de l''agence 75 000 FCFA.'])", [orgA, source.id, agent.id]);
+    expect(await rows(ALICE, "select * from public.search_ai_knowledge($1, $2, 'Bonjour, combien coûte le visa étudiant ?')", [orgA, agent.id])).toHaveLength(1);
+    expect(await rows(BRUNO, "select * from public.search_ai_knowledge($1, $2, 'visa')", [orgA, agent.id])).toEqual([]);
+    await expect(one(BRUNO, "select public.save_ai_knowledge_chunks($1, $2, $3, array['intrus'])", [orgB, source.id, agent.id])).rejects.toThrow(
+      /introuvable dans cette agence/,
+    );
+
+    // 3. Un message entrant ouvre une conversation en mode IA ; une autre agence ne peut pas la marquer « lue ».
+    await asSystem("insert into public.wa_accounts (organization_id, waba_id, phone_number_id, display_phone_number) values ($1, 'waba_auto', 'phone_auto', '+237600000000')", [orgA]);
+    const inbound = (metaId: string, text: string) =>
+      one<{ r: { conversation_id: string } }>(null, "select public.record_inbound_wa_message($1, 'phone_auto', '237699887766', 'Awa', $2, $3) as r", [SECRET, metaId, text]);
+    const conv = (await inbound("wamid_auto_1", "Bonjour, combien coûte le visa étudiant ?")).r.conversation_id;
+    await expect(one(BRUNO, "select public.mark_wa_conversation_read($1, $2)", [conv, orgA])).rejects.toThrow(/non autorisée/);
+
+    // 4. Contexte de la réponse : secret obligatoire, agent, conversation et connaissances de l'agence.
+    type Ctx = { reply: boolean; reason?: string; agent?: { model_tier: string; response_delay_seconds: number }; knowledge?: { content: string }[]; messages?: { body: string }[] };
+    const context = async (metaId: string) => (await one<{ r: Ctx }>(null, "select public.ai_reply_context($1, $2, $3) as r", [SECRET, conv, metaId])).r;
+    await expect(one(null, "select public.ai_reply_context('mauvais-secret-0123456789abcdef-0000', $1, 'wamid_auto_1')", [conv])).rejects.toThrow(/Secret système invalide/);
+    const ready = await context("wamid_auto_1");
+    expect(ready.reply).toBe(true);
+    expect(ready.agent).toMatchObject({ model_tier: "sonnet", response_delay_seconds: 20 });
+    expect(ready.knowledge?.[0]?.content).toContain("75 000 FCFA");
+    expect(ready.messages?.at(-1)?.body).toContain("visa étudiant");
+
+    // Le client écrit de nouveau avant la fin du délai : la première réponse est abandonnée.
+    await inbound("wamid_auto_2", "Et pour le Canada ?");
+    expect((await context("wamid_auto_1")).reason).toBe("newer");
+    expect((await context("wamid_auto_2")).reply).toBe(true);
+
+    // 5. Réponse enregistrée : l'IA demande un conseiller, elle se tait ; consommation comptée.
+    await one(null, "select public.record_ai_reply($1, $2, $3, 'Un conseiller va vous répondre.', 'wamid_ai_1', 'claude-sonnet-5-5', 900, 40, 0.0022, 700, true)", [SECRET, conv, agent.id]);
+    expect(await one(ALICE, "select mode, status from public.wa_conversations where id = $1", [conv])).toEqual({ mode: "human", status: "pending" });
+    expect((await one<{ n: number }>(ALICE, "select ai_replies_count as n from public.ai_usage_monthly where organization_id = $1", [orgA])).n).toBe(1);
+    expect((await context("wamid_auto_2")).reason).toBe("mode");
+
+    // 6. Quota du mois atteint : l'IA ne répond plus.
+    await one(ALICE, "select public.set_conversation_mode($1, $2, 'ai')", [conv, orgA]);
+    await inbound("wamid_auto_3", "Merci, et les délais ?");
+    expect((await context("wamid_auto_3")).reply).toBe(true);
+    await asSystem("update public.ai_usage_monthly set ai_replies_count = 2000 where organization_id = $1", [orgA]);
+    expect((await context("wamid_auto_3")).reason).toBe("quota");
+  });
+
+  it("connexion par le QR code de Meta : numéro, jeton chiffré, historique et messages du téléphone", async () => {
+    const SECRET = "secret-serveur-0123456789abcdef-qrcode-meta";
+    await db.query(
+      `insert into private.system_secrets (key, secret_sha256) values ('email_worker', encode(sha256(convert_to($1, 'UTF8')), 'hex'))
+       on conflict (key) do update set secret_sha256 = excluded.secret_sha256`,
+      [SECRET],
+    );
+    const BAD = "mauvais-secret-0123456789abcdef-000000";
+
+    // 1. Quota respecté (1 numéro en PRO) ; le nouveau numéro n'a ni qualité ni palier inventés.
+    const connect = () => one<{ id: string }>(ALICE, "select public.connect_wa_account($1, '777000', '555000', '+242 06 400 99 99', 'Agence A', true) as id", [orgA]);
+    await expect(connect()).rejects.toThrow(/Limite de numéros/);
+    const previous = await asSystem<{ id: string }>("select id from public.wa_accounts where phone_number_id = 'phone_auto'");
+    await one(ALICE, "select public.disconnect_wa_account($1, $2)", [previous.id, orgA]);
+    const account = (await connect()).id;
+    expect(await one(ALICE, "select quality_rating, messaging_tier, coexistence, status from public.wa_accounts where id = $1", [account])).toEqual({
+      quality_rating: null,
+      messaging_tier: null,
+      coexistence: true,
+      status: "connected",
+    });
+
+    // 2. Jeton du numéro : écrit et lu seulement avec le secret serveur, jamais lisible par un membre.
+    await expect(one(null, "select public.save_wa_account_token($1, $2, '555000', 'v1.chiffre.chiffre.chiffre')", [BAD, orgA])).rejects.toThrow(/Secret système invalide/);
+    expect((await one<{ ok: boolean }>(null, "select public.save_wa_account_token($1, $2, '555000', 'v1.chiffre.chiffre.chiffre') as ok", [SECRET, orgA])).ok).toBe(true);
+    expect((await one<{ t: string }>(null, "select public.wa_account_token($1, '555000') as t", [SECRET])).t).toBe("v1.chiffre.chiffre.chiffre");
+    await expect(one(null, "select public.wa_account_token($1, '555000')", [BAD])).rejects.toThrow(/Secret système invalide/);
+    await expect(one(ALICE, "select * from private.wa_account_tokens")).rejects.toThrow(/permission denied/);
+
+    // 3. Historique du téléphone : conversation créée, aucun non-lu, aucun doublon.
+    const history = (metaId: string, direction: string, text: string, at: string, echo = false) =>
+      one<{ r: { ok: boolean; duplicate?: boolean; conversation_id?: string } }>(
+        null,
+        "select public.record_wa_history_message($1, '555000', '242061112233', null, $2, $3, 'text', $4, $5, $6) as r",
+        [SECRET, direction, metaId, text, at, echo],
+      );
+    const conv = (await history("wamid.h1", "inbound", "Bonjour, le visa ?", "2026-11-01T10:00:00Z")).r.conversation_id;
+    await history("wamid.h2", "outbound", "Oui, passez à l'agence.", "2026-11-01T10:01:00Z");
+    expect((await history("wamid.h1", "inbound", "Bonjour, le visa ?", "2026-11-01T10:00:00Z")).r.duplicate).toBe(true);
+    // Un morceau d'historique plus ancien, arrivé ensuite, ne remplace pas le dernier message.
+    await history("wamid.h0", "inbound", "Message plus ancien", "2026-10-01T10:00:00Z");
+    expect(await one(ALICE, "select unread_count, mode, last_message_text from public.wa_conversations where id = $1", [conv])).toEqual({
+      unread_count: 0,
+      mode: "ai",
+      last_message_text: "Oui, passez à l'agence.",
+    });
+    expect((await one<{ n: number }>(ALICE, "select count(*)::int as n from public.wa_messages where conversation_id = $1", [conv])).n).toBe(3);
+
+    // 4. L'agence répond depuis son téléphone : l'IA se tait dans cette conversation.
+    await history("wamid.e1", "outbound", "Je vous rappelle.", "2026-11-14T09:00:00Z", true);
+    expect((await one<{ mode: string }>(ALICE, "select mode from public.wa_conversations where id = $1", [conv])).mode).toBe("human");
+
+    // 5. Nom du contact venu du téléphone ; secret obligatoire.
+    expect((await one<{ ok: boolean }>(null, "select public.record_wa_contact($1, '555000', '242061112233', 'Awa Mbemba') as ok", [SECRET])).ok).toBe(true);
+    expect((await one<{ n: string }>(ALICE, "select profile_name as n from public.wa_contacts where organization_id = $1 and wa_id = '242061112233'", [orgA])).n).toBe("Awa Mbemba");
+    await expect(
+      one(null, "select public.record_wa_history_message($1, '555000', '1', null, 'inbound', 'x', 'text', 'x', now(), false)", [BAD]),
+    ).rejects.toThrow(/Secret système invalide/);
   });
 });

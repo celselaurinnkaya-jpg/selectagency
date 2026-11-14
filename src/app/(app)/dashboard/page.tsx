@@ -26,6 +26,8 @@ import { APPOINTMENT_KIND, APPOINTMENT_STATUS, STEP_KIND } from "@/lib/domain/la
 import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getDashboard } from "@/features/dashboard/queries";
+import { ClockPanel } from "@/features/attendance/AttendanceForms";
+import { getMyClock } from "@/features/attendance/queries";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
 
@@ -45,7 +47,7 @@ const CONFIRMATIONS: Record<string, string> = {
 
 async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "searchParams">) {
   const { periode, ok } = await searchParams;
-  const d = await getDashboard(typeof periode === "string" ? periode : undefined);
+  const [d, clock] = await Promise.all([getDashboard(typeof periode === "string" ? periode : undefined), getMyClock()]);
   const tz = d.agency.timezone;
   const confirmation = typeof ok === "string" ? CONFIRMATIONS[ok] : undefined;
 
@@ -53,6 +55,9 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
     return (
       <div className="space-y-4">
       {confirmation && <Notice tone="success">{confirmation}</Notice>}
+      <Card>
+        <ClockPanel clock={clock} showMissingLink />
+      </Card>
       <EmptyState
         icon={FolderPlus}
         title="Bienvenue dans votre espace"
@@ -74,13 +79,19 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
     <div className="space-y-6">
       {confirmation && <Notice tone="success">{confirmation}</Notice>}
       {/* Bannière de bienvenue (référence UNIP) */}
-      <div className="rounded-2xl bg-linear-to-r from-navy-900 via-navy-800 to-navy-600 px-5 py-5 text-white shadow-sm sm:px-7 sm:py-6">
+      <div className="flex flex-col gap-4 rounded-2xl bg-linear-to-r from-navy-900 via-navy-800 to-navy-600 px-5 py-5 text-white shadow-sm sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
+        <div>
         <h1 className="text-xl font-semibold sm:text-2xl">
           Bienvenue à nouveau, <span className="text-citron-400 uppercase">{d.member.fullName}</span>
         </h1>
         <p className="mt-1 text-sm text-navy-100 sm:text-base">
           {d.agency.name} · <span className="inline-block first-letter:uppercase">{formatDate(d.now.toISOString(), tz, "weekday")}</span>
         </p>
+        </div>
+        {/* Pointage de l'arrivée et du départ (Présences). */}
+        <div className="rounded-xl border border-white/15 bg-white/5 p-3 lg:max-w-md">
+          <ClockPanel clock={clock} onNavy showMissingLink />
+        </div>
       </div>
 
       <Section title="Accès rapide">

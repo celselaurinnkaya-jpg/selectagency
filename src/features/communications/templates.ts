@@ -69,7 +69,7 @@ export function prepareMessages(templates: MessageTemplate[], values: TemplateVa
     });
   // Toujours au moins un message libre, même si l'agence a supprimé tous ses modèles.
   if (!prepared.some((m) => !m.unavailable)) {
-    prepared.push({ key: "libre", label: "Message libre", text: `Bonjour ${values.prenom},\n\n\n\n${values.agence}` });
+    prepared.push({ key: "libre", label: "Message libre", text: `Bonjour ${values.prenom},\n\n\n\n${values.agence}`, unavailable: undefined });
   }
   return prepared;
 }

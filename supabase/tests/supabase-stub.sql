@@ -9,6 +9,7 @@ create role service_role nologin bypassrls;
 create schema auth;
 create schema storage;
 create schema extensions;
+create domain extensions.vector as text;
 
 create table auth.users (
   id uuid primary key,

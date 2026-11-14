@@ -10,6 +10,7 @@ import { PRIORITY, ROLE } from "@/lib/domain/labels";
 import { dayKey, formatRelativeDay } from "@/lib/format";
 import { listTasks, type TaskScope } from "@/features/operations/queries";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
+import { TasksSubNav } from "@/features/tasks/TasksSubNav";
 
 export const metadata: Metadata = { title: "Tâches" };
 
@@ -51,14 +52,7 @@ async function Tasks({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">
     <div className="space-y-6">
       <div>
         <Pills label="Filtre" active={scope} items={SCOPES.map((s) => ({ key: s.key, label: s.label, count: data.counts[s.key], href: query({ vue: s.key }) }))} />
-        <div className="-mt-1 mb-4 flex gap-4 text-sm">
-          <Link href={query({ qui: undefined })} aria-current={!mine ? "page" : undefined} className={cn("font-medium", !mine ? "text-navy-800 underline underline-offset-4" : "text-slate-600 hover:text-navy-800")}>
-            Toute l&apos;équipe
-          </Link>
-          <Link href={query({ qui: "moi" })} aria-current={mine ? "page" : undefined} className={cn("font-medium", mine ? "text-navy-800 underline underline-offset-4" : "text-slate-600 hover:text-navy-800")}>
-            Mes tâches
-          </Link>
-        </div>
+        <TasksSubNav active={mine ? "moi" : "equipe"} teamHref={query({ qui: undefined })} mineHref={query({ qui: "moi" })} />
 
         {data.rows.length === 0 ? (
           <EmptyState icon={ListChecks} title="Aucune tâche dans cette vue" />

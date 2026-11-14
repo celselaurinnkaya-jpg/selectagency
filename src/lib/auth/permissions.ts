@@ -22,6 +22,7 @@ export const PERMISSIONS = {
   "billing.read": ["owner", "admin"],
   "reports.export": ["owner", "admin"],
   "finance.export": ["owner", "admin", "accountant"],
+  "attendance.manage": ["owner", "admin"],
 } as const satisfies Record<string, readonly MemberRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;
@@ -37,7 +38,7 @@ export const READ_ONLY_MESSAGE =
 
 // Écritures bloquées par la base quand l'abonnement ne permet plus d'écrire. La gestion de l'équipe
 // reste ouverte : retirer l'accès d'une personne partie ne doit jamais être bloqué.
-const WRITES = new Set<Permission>(["operations.write", "client.delete", "finance.write", "payment.void", "invoice.delete", "settings.manage", "services.manage", "partners.manage", "commission.manage"]);
+const WRITES = new Set<Permission>(["operations.write", "client.delete", "finance.write", "payment.void", "invoice.delete", "settings.manage", "services.manage", "partners.manage", "commission.manage", "attendance.manage"]);
 
 /** Droit du rôle, et pour une écriture, abonnement qui permet d'écrire. */
 export function allowed(ctx: { member: { role: MemberRole }; writable: boolean }, permission: Permission): boolean {

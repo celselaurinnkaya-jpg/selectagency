@@ -12,6 +12,7 @@ import type {
   CommissionStatus,
   CommunicationChannel,
   CommunicationDirection,
+  AttendanceSource,
   CommunicationStatus,
   ConfirmationLevel,
   InvoiceStatus,
@@ -306,6 +307,12 @@ export const EXCHANGE_CHANNELS: CommunicationChannel[] = ["whatsapp", "phone", "
 export const COMMUNICATION_DIRECTION: Record<CommunicationDirection, string> = {
   inbound: "Reçu du client",
   outbound: "Fait par l'agence",
+};
+
+export const ATTENDANCE_SOURCE: Record<AttendanceSource, LabelSpec> = {
+  clock: { label: "Pointée", tone: "neutral" },
+  declared: { label: "Déclarée après coup", tone: "warning" },
+  corrected: { label: "Corrigée par un responsable", tone: "navy" },
 };
 
 export const MESSAGE_AUDIENCE: Record<MessageAudience, string> = {

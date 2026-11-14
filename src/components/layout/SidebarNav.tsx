@@ -37,20 +37,23 @@ function NavLink({ item, active, locked, onNavigate }: { item: NavItem; active: 
   );
 }
 
-/** `locked` : adresses des entrées réservées à une option non incluse dans la formule (badge « PRO »). */
-export function SidebarNav({ onNavigate, locked = [] }: { onNavigate?: () => void; locked?: string[] }) {
-  return <NavList current={usePathname()} onNavigate={onNavigate} locked={locked} />;
+/**
+ * `locked` : adresses des entrées réservées à une option non incluse dans la formule (badge « PRO »).
+ * `hidden` : adresses des entrées que le rôle du membre ne voit pas (ex. « Agent IA » pour la lecture seule).
+ */
+export function SidebarNav({ onNavigate, locked = [], hidden = [] }: { onNavigate?: () => void; locked?: string[]; hidden?: string[] }) {
+  return <NavList current={usePathname()} onNavigate={onNavigate} locked={locked} hidden={hidden} />;
 }
 
 /** Version sans état actif, affichée tant que l'URL courante n'est pas connue. */
 export function SidebarNavFallback() {
-  return <NavList current={null} locked={[]} />;
+  return <NavList current={null} locked={[]} hidden={[]} />;
 }
 
-function NavList({ current, onNavigate, locked }: { current: string | null; onNavigate?: () => void; locked: string[] }) {
+function NavList({ current, onNavigate, locked, hidden }: { current: string | null; onNavigate?: () => void; locked: string[]; hidden: string[] }) {
   return (
     <nav aria-label="Menu principal" className="flex flex-col gap-2">
-      {NAV_MAIN.map((item) => (
+      {NAV_MAIN.filter((item) => !hidden.includes(item.href)).map((item) => (
         <NavLink key={item.href} item={item} active={isActive(item, current)} locked={locked.includes(item.href)} onNavigate={onNavigate} />
       ))}
       <div className="my-2 border-t border-slate-200" />

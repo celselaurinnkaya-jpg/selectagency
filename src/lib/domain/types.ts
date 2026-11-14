@@ -497,11 +497,14 @@ export interface Plan {
   stripeProductId?: string;
   /** Absent pour une ancienne formule : toutes les options sont alors ouvertes. */
   tier?: PlanTier;
+  maxAiAgents?: number;
+  maxWaNumbers?: number;
+  monthlyAiReplies?: number;
 }
 
 export interface Subscription {
   status: SubscriptionStatus;
-  plan?: Pick<Plan, "id" | "name" | "maxMembers" | "tier">;
+  plan?: Pick<Plan, "id" | "name" | "maxMembers" | "tier" | "maxAiAgents" | "maxWaNumbers" | "monthlyAiReplies">;
   trialEndsAt?: string;
   currentPeriodEnd?: string;
   stripeCustomerId?: string;
@@ -583,6 +586,34 @@ export interface CommunicationLog {
   direction?: CommunicationDirection;
   /** Moment de l'échange déclaré par l'agent (absent : l'heure de saisie). */
   occurredAt?: string;
+}
+
+/** Origine d'une heure de présence : pointée à l'instant, déclarée après coup par le membre, ou corrigée par un responsable. */
+export type AttendanceSource = "clock" | "declared" | "corrected";
+export type AttendanceStatus = "open" | "closed" | "missing_departure";
+
+export interface AttendanceEntry {
+  id: string;
+  memberId: string;
+  /** Jour de l'arrivée (AAAA-MM-JJ), dans le fuseau de l'agence. */
+  workDay: string;
+  arrivedAt: string;
+  leftAt?: string;
+  arrivalSource: AttendanceSource;
+  departureSource?: AttendanceSource;
+  status: AttendanceStatus;
+  note?: string;
+  correctedBy?: string;
+}
+
+/** Horaires de l'agence pour le calcul des retards et des absences. */
+export interface AttendanceSettings {
+  /** HH:MM */
+  expectedStart: string;
+  expectedEnd: string;
+  /** 1 = lundi … 7 = dimanche. */
+  workDays: number[];
+  graceMinutes: number;
 }
 
 export type MessageAudience = "prospect" | "client" | "any";

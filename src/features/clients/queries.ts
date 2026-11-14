@@ -98,6 +98,47 @@ export async function getClientDetail(id: string) {
     if (sensitive?.id_doc_number) client.idDocNumber = String(sensitive.id_doc_number);
   }
 
+  // Conversations WhatsApp officielles liées au client (Agent IA)
+  let aiConversations: Array<{
+    id: string;
+    mode: string;
+    status: string;
+    unreadCount: number;
+    lastMessageText?: string;
+    lastMessageAt?: string;
+    agentName?: string;
+    contactPhone: string;
+  }> = [];
+
+  const hasAiAgent = !ctx.locked.includes("ai_agent");
+  if (hasAiAgent) {
+    const { data: rawAiConvs } = await ctx.supabase
+      .from("wa_conversations")
+      .select(`
+        id, mode, status, unread_count, last_message_text, last_message_at,
+        agent:ai_agents(name),
+        contact:wa_contacts(profile_name, wa_id)
+      `)
+      .eq("organization_id", ctx.organizationId)
+      .eq("client_id", id)
+      .order("last_message_at", { ascending: false });
+
+    aiConversations = (rawAiConvs ?? []).map((c: Record<string, unknown>) => {
+      const agent = (c.agent as Record<string, unknown>) ?? {};
+      const contact = (c.contact as Record<string, unknown>) ?? {};
+      return {
+        id: String(c.id),
+        mode: String(c.mode),
+        status: String(c.status),
+        unreadCount: Number(c.unread_count ?? 0),
+        lastMessageText: c.last_message_text ? String(c.last_message_text) : undefined,
+        lastMessageAt: c.last_message_at ? String(c.last_message_at) : undefined,
+        agentName: agent.name ? String(agent.name) : undefined,
+        contactPhone: String(contact.wa_id ?? ""),
+      };
+    });
+  }
+
   const cases = data.cases;
   return {
     client,
@@ -117,6 +158,8 @@ export async function getClientDetail(id: string) {
     events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
     // Un échange noté après coup se range à la date où il a eu lieu.
     communications: [...data.communications].sort((a, b) => (b.occurredAt ?? b.at).localeCompare(a.occurredAt ?? a.at)),
+    aiConversations,
+    hasAiAgent,
     messageTemplates,
     canManageTemplates: allowed(ctx, "settings.manage"),
     caseReferences: new Map(cases.map((k) => [k.id, k.reference])),

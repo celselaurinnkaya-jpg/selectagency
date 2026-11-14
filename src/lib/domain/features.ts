@@ -4,9 +4,9 @@ import type { PlanTier, Subscription } from "./types";
 // (supabase/migrations/20261106110000_formules.sql) : l'écran grise les options non incluses, mais c'est la
 // base qui refuse d'y créer des données.
 
-export type Feature = "invoices" | "services" | "partners" | "auto_emails" | "custom_workflows" | "reports";
+export type Feature = "invoices" | "services" | "partners" | "auto_emails" | "custom_workflows" | "reports" | "ai_agent";
 
-export const FEATURES: readonly Feature[] = ["invoices", "services", "partners", "auto_emails", "custom_workflows", "reports"];
+export const FEATURES: readonly Feature[] = ["invoices", "services", "partners", "auto_emails", "custom_workflows", "reports", "ai_agent"];
 
 export const FEATURE_LABEL: Record<Feature, string> = {
   invoices: "Factures",
@@ -15,6 +15,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   auto_emails: "E-mails automatiques",
   custom_workflows: "Modèles d'étapes personnalisés",
   reports: "Rapports et exports",
+  ai_agent: "L'Agent IA",
 };
 
 /**
@@ -37,6 +38,7 @@ export const NAV_FEATURE: Record<string, Feature> = {
   "/services": "services",
   "/partners": "partners",
   "/reports": "reports",
+  "/agent-ia": "ai_agent",
 };
 
 /** Ce que comprend chaque formule, pour la page Abonnement et l'accueil. */
@@ -56,8 +58,14 @@ export const TIER_INCLUDES: Record<PlanTier, string[]> = {
     "E-mails automatiques (rappels, relances, avancement)",
     "Modèles d'étapes personnalisés",
     "Rapports et exports",
+    "Agent IA (1 numéro, 1 agent, 2 000 réponses/mois)",
   ],
-  business: ["Tout PRO", "Support prioritaire", "Nouvelles options en premier"],
+  business: [
+    "Tout PRO",
+    "Agent IA étendu (1 numéro, 3 agents, 10 000 réponses/mois)",
+    "Support prioritaire",
+    "Nouvelles options en premier",
+  ],
 };
 
 export const TIER_ORDER: readonly PlanTier[] = ["starter", "pro", "business"];

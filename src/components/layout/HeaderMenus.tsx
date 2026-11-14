@@ -17,7 +17,7 @@ import { Logo } from "@/components/brand/Logo";
 import { signOutAction } from "@/features/auth/actions";
 import { SidebarNav } from "./SidebarNav";
 
-export function MobileMenu({ locked = [] }: { locked?: string[] }) {
+export function MobileMenu({ locked = [], hidden = [] }: { locked?: string[]; hidden?: string[] }) {
   const [open, setOpen] = useState(false);
   return (
     <Sheet open={open} onOpenChange={setOpen}>
@@ -33,7 +33,7 @@ export function MobileMenu({ locked = [] }: { locked?: string[] }) {
           <Logo className="h-8" />
         </SheetHeader>
         <div className="overflow-y-auto p-3">
-          <SidebarNav locked={locked} onNavigate={() => setOpen(false)} />
+          <SidebarNav locked={locked} hidden={hidden} onNavigate={() => setOpen(false)} />
         </div>
       </SheetContent>
     </Sheet>

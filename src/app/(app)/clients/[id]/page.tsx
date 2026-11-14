@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { ArrowDownLeft, ArrowUpRight, BriefcaseBusiness, FolderKanban, FolderPlus, Lock, MessageCircle, Pencil } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Bot, BriefcaseBusiness, FolderKanban, FolderPlus, Lock, MessageCircle, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TabNav } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
@@ -55,6 +55,7 @@ const TABS = [
   { key: "rendez-vous", label: "Rendez-vous" },
   { key: "paiements", label: "Paiements" },
   { key: "communications", label: "Communications" },
+  { key: "agent-ia", label: "Agent IA" },
   { key: "historique", label: "Historique" },
 ] as const;
 
@@ -73,7 +74,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const base = `/clients/${client.id}`;
@@ -213,11 +214,20 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
       <TabNav
         label="Sections de la fiche client"
         active={tab}
-        items={TABS.map((t) => ({
+        items={TABS.filter((t) => t.key !== "agent-ia" || hasAiAgent).map((t) => ({
           key: t.key,
           label: t.label,
           href: t.key === "apercu" ? base : `${base}?tab=${t.key}`,
-          count: t.key === "dossiers" ? cases.length : t.key === "services" ? services.followed.length || undefined : t.key === "documents" ? missing.length || undefined : undefined,
+          count:
+            t.key === "dossiers"
+              ? cases.length
+              : t.key === "services"
+                ? services.followed.length || undefined
+                : t.key === "documents"
+                  ? missing.length || undefined
+                  : t.key === "agent-ia"
+                    ? aiConversations.length || undefined
+                    : undefined,
         }))}
       />
 
@@ -606,6 +616,92 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
                   </li>
                 ))}
               </ul>
+            )}
+          </Section>
+        </div>
+      )}
+
+      {tab === "agent-ia" && (
+        <div className="space-y-6">
+          <Section title="Échanges WhatsApp Officiels (Agent IA & Conseillers)">
+            {aiConversations.length === 0 ? (
+              <EmptyState
+                icon={Bot}
+                title="Aucune conversation WhatsApp liée"
+                description="Ce client n'a pas encore échangé sur le numéro WhatsApp officiel de l'agence ou la discussion n'a pas encore été rattachée à cette fiche."
+                action={
+                  <Button asChild className="bg-navy-800 text-white hover:bg-navy-700">
+                    <Link href="/agent-ia">Ouvrir la boîte de réception Agent IA</Link>
+                  </Button>
+                }
+              />
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {aiConversations.map((conv) => (
+                  <Card key={conv.id} className="flex flex-col justify-between gap-4 p-5">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-800 text-citron-400 font-bold">
+                            <Bot className="h-4 w-4" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-navy-900">
+                              {conv.agentName || "Agent IA de l'agence"}
+                            </h4>
+                            <p className="text-[11px] text-slate-500 font-mono">
+                              {conv.contactPhone}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-medium border ${
+                            conv.mode === "ai"
+                              ? "bg-blue-50 text-blue-800 border-blue-200"
+                              : conv.mode === "assist"
+                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                : "bg-purple-50 text-purple-800 border-purple-200"
+                          }`}
+                        >
+                          {conv.mode === "ai"
+                            ? "🤖 IA auto"
+                            : conv.mode === "assist"
+                              ? "💡 Assistée"
+                              : "👤 Conseiller direct"}
+                        </span>
+                      </div>
+
+                      {conv.lastMessageText && (
+                        <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-700 border border-slate-100">
+                          <p className="line-clamp-2 italic">« {conv.lastMessageText} »</p>
+                          {conv.lastMessageAt && (
+                            <span className="block mt-1 text-[10px] text-slate-400">
+                              Dernier échange : {formatRelativeDay(conv.lastMessageAt, now, tz)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between border-t border-slate-100 pt-3">
+                      <span className="text-xs text-slate-500">
+                        {conv.unreadCount > 0 ? (
+                          <span className="font-semibold text-emerald-600">
+                            {conv.unreadCount} message(s) non lu(s)
+                          </span>
+                        ) : (
+                          "À jour"
+                        )}
+                      </span>
+                      <Button asChild size="sm" className="bg-navy-800 text-white hover:bg-navy-700 text-xs h-8">
+                        <Link href={`/agent-ia?c=${conv.id}`}>
+                          Accéder au fil en direct
+                        </Link>
+                      </Button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             )}
           </Section>
         </div>

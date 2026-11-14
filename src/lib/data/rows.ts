@@ -15,6 +15,8 @@ import type {
   Invoice,
   InvoiceItem,
   InvoiceSettings,
+  AttendanceEntry,
+  AttendanceSettings,
   Member,
   MessageTemplate,
   Payment,
@@ -560,6 +562,38 @@ export function toCommunication(r: Row): CommunicationLog {
   };
 }
 
+export const ATTENDANCE_ENTRY = columns(
+  "id", "member_id", "work_day", "arrived_at", "left_at", "arrival_source", "departure_source", "status", "note", "corrected_by",
+);
+
+export function toAttendanceEntry(r: Row): AttendanceEntry {
+  return {
+    id: str(r.id),
+    memberId: str(r.member_id),
+    workDay: str(r.work_day).slice(0, 10),
+    arrivedAt: iso(r.arrived_at),
+    leftAt: r.left_at ? iso(r.left_at) : undefined,
+    arrivalSource: r.arrival_source as AttendanceEntry["arrivalSource"],
+    departureSource: optStr(r.departure_source) as AttendanceEntry["departureSource"],
+    status: r.status as AttendanceEntry["status"],
+    note: optStr(r.note),
+    correctedBy: optStr(r.corrected_by),
+  };
+}
+
+export const ATTENDANCE_SETTINGS = columns("organization_id", "expected_start", "expected_end", "work_days", "grace_minutes");
+
+/** Horaires de l'agence ; ceux par défaut (8 h – 17 h, du lundi au samedi, 10 min) tant qu'elle n'en a pas choisi. */
+export function toAttendanceSettings(r: Row | null | undefined): AttendanceSettings {
+  if (!r) return { expectedStart: "08:00", expectedEnd: "17:00", workDays: [1, 2, 3, 4, 5, 6], graceMinutes: 10 };
+  return {
+    expectedStart: str(r.expected_start).slice(0, 5),
+    expectedEnd: str(r.expected_end).slice(0, 5),
+    workDays: (Array.isArray(r.work_days) ? r.work_days : []).map(Number),
+    graceMinutes: Number(r.grace_minutes),
+  };
+}
+
 export const MESSAGE_TEMPLATE = columns("id", "title", "body", "audience", "position", "is_active");
 
 export function toMessageTemplate(r: Row): MessageTemplate {
@@ -865,6 +899,7 @@ export const SUBSCRIPTION = columns(
 
 export const PLAN = columns(
   "id", "name", "description", "price_minor", "currency", "billing_period", "max_members", "is_active", "stripe_price_id", "stripe_product_id", "tier",
+  "max_ai_agents", "max_wa_numbers", "monthly_ai_replies",
 );
 
 export function toPlan(r: Row): Plan {
@@ -879,13 +914,24 @@ export function toPlan(r: Row): Plan {
     stripePriceId: optStr(r.stripe_price_id),
     stripeProductId: optStr(r.stripe_product_id),
     tier: optStr(r.tier) as Plan["tier"],
+    maxAiAgents: r.max_ai_agents === null || r.max_ai_agents === undefined ? 0 : Number(r.max_ai_agents),
+    maxWaNumbers: r.max_wa_numbers === null || r.max_wa_numbers === undefined ? 0 : Number(r.max_wa_numbers),
+    monthlyAiReplies: r.monthly_ai_replies === null || r.monthly_ai_replies === undefined ? 0 : Number(r.monthly_ai_replies),
   };
 }
 
 export function toSubscription(r: Row, plan?: Plan): Subscription {
   return {
     status: r.status as Subscription["status"],
-    plan: plan && { id: plan.id, name: plan.name, maxMembers: plan.maxMembers, tier: plan.tier },
+    plan: plan && {
+      id: plan.id,
+      name: plan.name,
+      maxMembers: plan.maxMembers,
+      tier: plan.tier,
+      maxAiAgents: plan.maxAiAgents,
+      maxWaNumbers: plan.maxWaNumbers,
+      monthlyAiReplies: plan.monthlyAiReplies,
+    },
     trialEndsAt: optIso(r.trial_ends_at),
     currentPeriodEnd: optIso(r.current_period_end),
     stripeCustomerId: optStr(r.stripe_customer_id),
@@ -963,4 +1009,6 @@ export const READ_COLUMNS = {
   email_settings: EMAIL_SETTINGS,
   email_outbox: EMAIL_OUTBOX,
   message_templates: MESSAGE_TEMPLATE,
+  attendance_entries: ATTENDANCE_ENTRY,
+  attendance_settings: ATTENDANCE_SETTINGS,
 } as const;
