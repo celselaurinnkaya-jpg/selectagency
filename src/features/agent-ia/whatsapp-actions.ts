@@ -196,36 +196,34 @@ export async function pairWhatsAppDeviceAction(
   const cleanPhoneId = cleanPhone.replace(/\D/g, "") || "24206400999";
   const name = verifiedName?.trim() || `${ctx.agency.name} (WhatsApp Officiel)`;
 
-  // Vérifier si un compte existe déjà pour cette organisation
+  // Vérifier et libérer le quota si un autre compte est déjà connecté
   const { data: existingAccounts } = await ctx.supabase
     .from("wa_accounts")
-    .select("id")
-    .eq("organization_id", ctx.organizationId)
-    .limit(1);
+    .select("id, phone_number_id, status")
+    .eq("organization_id", ctx.organizationId);
 
   if (existingAccounts && existingAccounts.length > 0) {
-    const accountId = existingAccounts[0].id;
-    await ctx.supabase
-      .from("wa_accounts")
-      .update({
-        display_phone_number: cleanPhone,
-        verified_name: name,
-        status: "connected",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", accountId);
-  } else {
-    const { data: newId, error: connectErr } = await ctx.supabase.rpc("connect_wa_account", {
-      p_org: ctx.organizationId,
-      p_waba_id: `waba_${cleanPhoneId}`,
-      p_phone_number_id: `phone_${cleanPhoneId}`,
-      p_display_phone_number: cleanPhone,
-      p_verified_name: name,
-      p_coexistence: true,
-    });
-    if (connectErr || !newId) {
-      return { ok: false, message: connectErr ? dbMessage(connectErr) : "Échec d'enregistrement du numéro WhatsApp." };
+    for (const oldAcc of existingAccounts) {
+      if (oldAcc.status === "connected" && oldAcc.phone_number_id !== `phone_${cleanPhoneId}`) {
+        await ctx.supabase.rpc("disconnect_wa_account", {
+          p_account_id: oldAcc.id,
+          p_org: ctx.organizationId,
+        });
+      }
     }
+  }
+
+  const { data: newId, error: connectErr } = await ctx.supabase.rpc("connect_wa_account", {
+    p_org: ctx.organizationId,
+    p_waba_id: `waba_${cleanPhoneId}`,
+    p_phone_number_id: `phone_${cleanPhoneId}`,
+    p_display_phone_number: cleanPhone,
+    p_verified_name: name,
+    p_coexistence: true,
+  });
+
+  if (connectErr || !newId) {
+    return { ok: false, message: connectErr ? dbMessage(connectErr) : "Échec d'enregistrement du numéro WhatsApp." };
   }
 
   // Si aucune conversation n'existe encore, on injecte les discussions de départ
@@ -274,6 +272,8 @@ export async function pairWhatsAppDeviceAction(
     }
   }
 
+  revalidatePath("/agent-ia/connexion");
+  revalidatePath("/agent-ia");
   refresh();
   return { ok: true, message: "Appareil WhatsApp connecté avec succès !" };
 }

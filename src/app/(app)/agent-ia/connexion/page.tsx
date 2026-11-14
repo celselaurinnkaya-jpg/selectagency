@@ -14,7 +14,7 @@ export default function Page() {
     <>
       <PageHeader
         title="Agent IA"
-        description="Le numéro WhatsApp Business de l'agence, connecté par la fenêtre officielle de Meta : l'agence garde son application sur le téléphone."
+        description="Connectez l'application WhatsApp Business de l'agence par simple scan du code QR ou association de numéro : gardez votre téléphone actif et laissez l'IA répondre 24h/24."
       />
       <AgentIaSubNav active="connexion" />
       <Suspense fallback={<PageSkeleton />}>

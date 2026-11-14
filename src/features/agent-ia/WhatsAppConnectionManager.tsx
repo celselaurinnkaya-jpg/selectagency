@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Plug,
   Smartphone,
@@ -10,15 +11,13 @@ import {
   Trash2,
   Copy,
   Check,
-  Radio,
-  QrCode,
 } from "lucide-react";
 import { Card, Section } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ConnectWhatsAppModal } from "./ConnectWhatsAppModal";
-import { WhatsAppMetaConnectModal } from "./WhatsAppMetaConnectModal";
 import { WhatsAppQrConnectModal } from "./WhatsAppQrConnectModal";
+import { WhatsAppWebQrCard } from "./WhatsAppWebQrCard";
 import {
   disconnectWhatsAppAccountAction,
   reconnectWhatsAppAccountAction,
@@ -42,7 +41,6 @@ export function WhatsAppConnectionManager({
   const router = useRouter();
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
-  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [testPhoneNumber, setTestPhoneNumber] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [isSendingTest, startSendingTest] = useTransition();
@@ -127,89 +125,21 @@ export function WhatsAppConnectionManager({
           <button
             type="button"
             onClick={() => setActionFeedback(null)}
-            className="text-xs opacity-60 hover:opacity-100 ml-3"
+            className="text-xs opacity-60 hover:opacity-100 ml-3 cursor-pointer"
           >
             ✕
           </button>
         </div>
       )}
 
-      {/* Si aucun compte n'est actuellement connecté */}
+      {/* Si aucun compte n'est actuellement connecté : AFFICHER DIRECTEMENT LE SCANNER WHATSAPP WEB */}
       {!activeAccount ? (
         <div className="space-y-6">
-          <Card className="p-6 md:p-8 border-slate-200 space-y-6">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="space-y-2 max-w-xl">
-                <div className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 border border-emerald-200">
-                  <Radio className="h-3.5 w-3.5 text-emerald-600 animate-pulse" />
-                  Meta Cloud API Officielle
-                </div>
-                <h3 className="text-xl font-bold text-navy-900">
-                  Branchez le numéro WhatsApp officiel de {agencyName}
-                </h3>
-                <p className="text-sm text-slate-600 leading-relaxed">
-                  Connectez votre compte WhatsApp Business officiel pour que votre Agent IA puisse répondre
-                  immédiatement 24h/24 aux questions consulaires, de voyages et d&apos;études de vos clients.
-                </p>
-              </div>
-
-              {canManage && (
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-                  <Button
-                    type="button"
-                    onClick={() => setIsQrModalOpen(true)}
-                    variant="accent"
-                    className="h-11 px-5 rounded-xl font-semibold gap-2"
-                  >
-                    <QrCode className="h-4 w-4" />
-                    <span>Connecter par Code QR (WhatsApp Web)</span>
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsConnectModalOpen(true)}
-                    className="h-11 px-4 rounded-xl font-medium gap-2 border-slate-300 text-slate-700 bg-white"
-                  >
-                    <Plug className="h-4 w-4" />
-                    <span>Mode API Cloud</span>
-                  </Button>
-                </div>
-              )}
-            </div>
-
-            {/* Les 3 piliers de la connexion */}
-            <div className="grid gap-4 sm:grid-cols-3 pt-4 border-t border-slate-100">
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-800 text-citron-400 font-bold text-xs">
-                  1
-                </span>
-                <h4 className="font-bold text-navy-900 text-sm">Zéro mot de passe partagé</h4>
-                <p className="text-xs text-slate-600">
-                  La connexion utilise les jetons chiffrés de Meta. Votre agence garde la maîtrise totale de sa ligne.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-800 text-citron-400 font-bold text-xs">
-                  2
-                </span>
-                <h4 className="font-bold text-navy-900 text-sm">Mode Coexistence</h4>
-                <p className="text-xs text-slate-600">
-                  Gardez votre application mobile WhatsApp Business active sur le téléphone pendant que l&apos;IA répond.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-800 text-citron-400 font-bold text-xs">
-                  3
-                </span>
-                <h4 className="font-bold text-navy-900 text-sm">Passage de relais humain</h4>
-                <p className="text-xs text-slate-600">
-                  Dès qu&apos;un client formule une négociation ou demande un responsable, la main repasse à votre équipe.
-                </p>
-              </div>
-            </div>
-          </Card>
+          <WhatsAppWebQrCard
+            agencyName={agencyName}
+            onOpenCloudApiModal={() => setIsConnectModalOpen(true)}
+            onOpenMetaModal={() => setIsMetaModalOpen(true)}
+          />
 
           {/* Ligne précédemment déconnectée si existante */}
           {disconnectedAccounts.length > 0 && (
@@ -229,7 +159,7 @@ export function WhatsAppConnectionManager({
                     Numéro : <strong className="font-mono text-navy-900">{disconnectedAccounts[0].displayPhoneNumber}</strong> ({disconnectedAccounts[0].verifiedName || agencyName})
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Cette ligne est actuellement en sommeil. Vous pouvez la rebrancher en 1 clic ou connecter une nouvelle ligne ci-dessus.
+                    Cette ligne est actuellement en sommeil. Vous pouvez la rebrancher en 1 clic ou scanner le code QR ci-dessus.
                   </p>
                 </div>
 
@@ -240,7 +170,7 @@ export function WhatsAppConnectionManager({
                     size="sm"
                     disabled={isReconnecting}
                     onClick={() => handleReconnect(disconnectedAccounts[0].id)}
-                    className="h-9 px-3.5 text-xs border-slate-300 text-navy-900 hover:bg-white shrink-0 gap-1.5"
+                    className="h-9 px-3.5 text-xs border-slate-300 text-navy-900 hover:bg-white shrink-0 gap-1.5 cursor-pointer"
                   >
                     <Plug className="h-3.5 w-3.5 text-emerald-600" />
                     <span>{isReconnecting ? "Reconnexion..." : "Rebrancher ce numéro"}</span>
@@ -287,19 +217,33 @@ export function WhatsAppConnectionManager({
                     </div>
                   </div>
 
-                  {canManage && (
+                  <div className="flex items-center gap-2 shrink-0">
                     <Button
-                      type="button"
-                      variant="outline"
+                      asChild
+                      variant="accent"
                       size="sm"
-                      disabled={isDisconnecting}
-                      onClick={() => handleDisconnect(activeAccount.id)}
-                      className="text-red-700 hover:text-red-800 hover:bg-red-50 border-red-200 text-xs gap-1.5"
+                      className="h-9 px-3.5 rounded-xl font-semibold text-xs gap-1.5 shadow-xs cursor-pointer"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      <span>{isDisconnecting ? "Déconnexion..." : "Déconnecter"}</span>
+                      <Link href="/agent-ia">
+                        <Smartphone className="h-3.5 w-3.5" />
+                        <span>Ouvrir WhatsApp Web</span>
+                      </Link>
                     </Button>
-                  )}
+
+                    {canManage && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isDisconnecting}
+                        onClick={() => handleDisconnect(activeAccount.id)}
+                        className="text-red-700 hover:text-red-800 hover:bg-red-50 border-red-200 text-xs gap-1.5 cursor-pointer"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        <span>{isDisconnecting ? "Déconnexion..." : "Déconnecter"}</span>
+                      </Button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Métriques et détails techniques */}
@@ -374,7 +318,7 @@ export function WhatsAppConnectionManager({
                           variant="outline"
                           size="sm"
                           onClick={handleCopyWebhookUrl}
-                          className="h-8 w-8 p-0 shrink-0"
+                          className="h-8 w-8 p-0 shrink-0 cursor-pointer"
                           title="Copier l'URL complète"
                         >
                           {copiedUrl ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
@@ -415,7 +359,7 @@ export function WhatsAppConnectionManager({
                     <Button
                       type="submit"
                       disabled={isSendingTest || !testPhoneNumber.trim()}
-                      className="w-full h-8 text-xs bg-navy-800 text-white hover:bg-navy-900"
+                      className="w-full h-8 text-xs bg-navy-800 text-white hover:bg-navy-900 cursor-pointer"
                     >
                       {isSendingTest ? "Envoi..." : "Envoyer le test"}
                     </Button>
@@ -439,21 +383,15 @@ export function WhatsAppConnectionManager({
         </div>
       )}
 
-      {/* Modale de connexion */}
+      {/* Modale de connexion manuelle Cloud API (optionnelle) */}
       {isConnectModalOpen && (
         <ConnectWhatsAppModal onClose={() => setIsConnectModalOpen(false)} />
       )}
 
-      {/* Connexion officielle de Meta */}
-      <WhatsAppMetaConnectModal
+      {/* Modale officielle Meta pour afficher le QR code officiel scannable par le téléphone */}
+      <WhatsAppQrConnectModal
         isOpen={isMetaModalOpen}
         onClose={() => setIsMetaModalOpen(false)}
-      />
-
-      {/* Connexion par Code QR WhatsApp Web */}
-      <WhatsAppQrConnectModal
-        isOpen={isQrModalOpen}
-        onClose={() => setIsQrModalOpen(false)}
       />
     </div>
   );

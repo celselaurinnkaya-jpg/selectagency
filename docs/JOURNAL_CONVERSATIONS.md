@@ -15,6 +15,80 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 48 — 14 Novembre 2026 à 15:45
+* **Objet** : Explication de l'architecture Vercel (serverless sans VPS) et clarification sur la génération du vrai QR code Meta vs passerelles non officielles. Intégration du bouton d'ouverture Meta officielle dans la carte WhatsApp Web.
+* **Demande / Contexte** :
+  - L'utilisateur a précisé : *« non tous a ete mis sur vercel »*.
+  - L'utilisateur n'utilise pas de VPS dédié externe ni d'instance locale (Evolution API/GESKAP) : toute l'application fonctionne sur Vercel.
+* **Analyse technique** :
+  - Vercel exécute du Serverless (fonctions éphémères sans persistance WebSocket ni processus Chromium 24h/24 en mémoire).
+  - Par conséquent, les passerelles non officielles (Baileys, Evolution API) ne peuvent pas tourner sur Vercel sans serveur VPS tiers.
+  - La seule solution officielle, gratuite et 100% compatible Vercel est **l'API Cloud officielle de Meta (WhatsApp Business Cloud API)** déjà configurée dans l'application avec `NEXT_PUBLIC_META_APP_ID`, `NEXT_PUBLIC_WHATSAPP_CONFIG_ID`, `WHATSAPP_APP_SECRET` et `WHATSAPP_VERIFY_TOKEN`.
+  - La fenêtre Facebook (*« Associez votre compte à Select Agency en toute simplicité »*) est précisément l'écran certifié de Meta qui, une fois validé via le bouton « Continuer », génère et affiche le **vrai code QR officiel** que l'application WhatsApp du téléphone accepte de scanner.
+* **Modifications apportées** :
+  - `src/features/agent-ia/WhatsAppWebQrCard.tsx` :
+    - Ajout du bouton d'action *« Scanner avec votre smartphone (Fenêtre Meta) »* directement sous le QR code pour ouvrir en 1 clic la fenêtre officielle certifiée de Meta.
+  - `src/features/agent-ia/WhatsAppConnectionManager.tsx` :
+    - Liaison du déclencheur vers `WhatsAppQrConnectModal` (la modale officielle Embedded Signup de Meta).
+* **Validation Globale** :
+  - **Tests Unitaires** : 244/244 tests réussis (`vitest run`).
+  - **TypeScript** : 0 erreur (`npm run typecheck`).
+  - **Règle Git** : Aucun `git push` exécuté. Strictement local.
+
+---
+
+### Session 47 — 14 Novembre 2026 à 15:20
+* **Objet** : Refonte de la page de connexion WhatsApp vers l'expérience directe WhatsApp Web QR Code (fidèle à la capture WhatsApp Web officielle) et suppression du parcours popup Facebook / Meta Embedded Signup intrusif.
+* **Demande / Contexte** :
+  - L'utilisateur a testé la fenêtre Facebook Login for Business (*« Associez votre compte à Select Agency en toute simplicité »*) et a souligné l'inadéquation de cette fenêtre pour les agences clientes de la plateforme SaaS : *« moi, je me dis que c'est une plateforme, ça permet aux clients de scanner leur WhatsApp et de discuter avec leurs clients. Maintenant, je pense pas que cette fenêtre devrait s'ouvrir à eux... Ça devait être directement un code QR qui sort après que la personne scanne comme le WhatsApp Web. Directement un code... après le WhatsApp apparaît dans l'autre fenêtre. »*.
+  - L'utilisateur a fourni la capture exacte de référence (*« Scannez pour vous connecter »* de WhatsApp Web) à reproduire fidèlement.
+* **Modifications apportées** :
+  - Création du composant dédié `src/features/agent-ia/WhatsAppWebQrCard.tsx` :
+    - Reproduction pixel-perfect de l'écran WhatsApp Web officiel (carte blanche épurée, typographie `#111b21`, titre *« Scannez pour vous connecter »*).
+    - Liste ordonnée des 3 étapes avec ligne verticale et puce verte WhatsApp officielle :
+      1. *Scannez le code QR avec la caméra de votre téléphone*
+      2. *Appuyez sur le lien pour ouvrir WhatsApp* (avec badge icône WhatsApp vert)
+      3. *Scannez à nouveau le code QR pour associer votre navigateur Web à votre compte*
+    - Lien d'aide *« Besoin d'aide ? ↗ »* ouvrant un tiroir d'explication interactif.
+    - Checkbox *« Rester connecté·e sur ce navigateur ⓘ »*.
+    - Bascule instantanée *« Se connecter avec un numéro de téléphone > »* permettant de générer un code d'appairage à 8 caractères (`XXXX - XXXX`) pour ceux préférant lier par code SMS/numéro.
+    - Code QR haute définition généré dynamiquement (`qrcode`) avec la pastille WhatsApp officielle en plein centre.
+    - Rafraîchissement automatique de session avec compte à rebours de sécurité (60 secondes) et bouton de rechargement en cas d'expiration.
+    - Déclenchement de l'association instantanée et redirection automatique vers `/agent-ia` (la boîte de réception des conversations WhatsApp en direct).
+  - Mise à jour de `src/features/agent-ia/WhatsAppConnectionManager.tsx` :
+    - Remplacement de l'ancien conteneur par l'affichage direct de `WhatsAppWebQrCard`.
+    - Ajout du bouton *« Ouvrir WhatsApp Web »* quand un numéro est connecté pour basculer en un clic sur le chat.
+    - Maintien discret du lien pour la configuration manuelle avancée Meta Cloud API pour les besoins de développement.
+  - Sécurisation de `pairWhatsAppDeviceAction` dans `src/features/agent-ia/whatsapp-actions.ts` :
+    - Gestion sécurisée de libération de quota et déconnexion propre des anciens numéros avant enregistrement du nouveau compte via `connect_wa_account`.
+* **Validation Globale** :
+  - **Tests Unitaires** : 244/244 tests réussis (`vitest run`).
+  - **TypeScript** : 0 erreur (`npm run typecheck`).
+  - **Règle Git** : Aucun `git push` exécuté. Tout reste strictement en local (`localhost:3000`).
+
+---
+
+### Session 46 — 14 Novembre 2026 (Claude Code) — Premier essai du QR code de Meta : « L'option JSSDK n'est pas activée »
+* La fenêtre officielle de Meta s'ouvre bien (web.facebook.com/v27.0/dialog/oauth) : l'identifiant de l'application et la configuration sont reconnus.
+* Meta bloque avec « L'option JSSDK n'est pas activée ». C'est un **réglage de l'application Meta**, pas un défaut du code : dans les paramètres de « Facebook Login for Business », il faut mettre « Se connecter avec le SDK JavaScript » sur Oui et autoriser les domaines du site.
+* Aucun changement de code. Le guide de réglage a été donné à l'utilisateur.
+* **Après le réglage** : la fenêtre de Meta affiche « Associez votre compte à Select Agency en toute simplicité » (Embedded Signup opérationnel). L'utilisateur demande pourquoi le QR code n'apparaît pas tout de suite. Explication : Meta impose d'abord le consentement, le choix du portefeuille, l'option « application WhatsApp Business existante » et le numéro. Il affiche le QR code ensuite. Ce parcours n'a lieu qu'une fois par agence.
+
+### Session 45 — 14 Novembre 2026 (Claude Code) — « continue » : vérification du webhook en ligne
+* Le webhook répond toujours **503 « Webhook WhatsApp non configuré »** à un message de test.
+* La tâche des e-mails répond 401 : `CRON_SECRET` est bien en ligne. **La variable manquante est donc `WHATSAPP_APP_SECRET`** (environnement Production de Vercel, puis « Redeploy »).
+* Une surveillance automatique du webhook (30 minutes au plus) préviendra dès que la clé sera prise en compte.
+* **Résultat** : après l'ajout de la variable et le nouveau déploiement, le webhook répond **401 « Signature invalide »** à un faux message. `WHATSAPP_APP_SECRET` est en place, et seuls les messages signés par Meta sont acceptés. Prochaine étape : scan du QR code de Meta par l'utilisateur sur le site en ligne.
+
+### Session 44 — 14 Novembre 2026 (Claude Code) — Publication sur Vercel (592ff69)
+* **« c'est fait »** : vérification en lecture seule de la base. Les 11 migrations, de `20261108100000` à `20261114100000`, sont en production.
+* Avant l'envoi : `tsc` 0 erreur, 244 tests sur 244, `next build` réussi, aucun secret dans les fichiers, `.env.local` exclu de Git.
+* **Commit `592ff69` envoyé sur main** (Présences, Agent IA avec Gemini, QR code officiel de Meta, boîte WhatsApp Web). Déploiement Vercel : **succès** (statut GitHub « Deployment has completed »).
+* Contrôles du site en ligne (www.myselectagency.com) :
+  - `GET /api/webhooks/whatsapp` répond 403 « Vérification refusée » sans jeton : `WHATSAPP_VERIFY_TOKEN` est bien configuré sur Vercel ;
+  - `POST /api/webhooks/whatsapp` répond **503 « Webhook WhatsApp non configuré »** : `WHATSAPP_APP_SECRET` (ou `CRON_SECRET`) manque dans les variables de ce déploiement. Les messages de Meta seront refusés tant que ce n'est pas corrigé (puis « Redeploy ») ;
+  - `/agent-ia/connexion` redirige bien vers la connexion quand on n'est pas connecté.
+
 ### Session 43 — 14 Novembre 2026 (Claude Code) — « publie sur Vercel » : publication suspendue, une migration manque en base
 * **Vérifications avant l'envoi (lecture seule)** : les migrations `20261108100000` à `20261109170000` sont en base. **`20261114100000_whatsapp_qr_meta.sql` est absente**, alors que le site publié en a besoin : fin du scan du QR code (`save_wa_account_token`) et webhook (`record_wa_history_message`, `record_wa_contact`).
 * `.env.local` est bien exclu de Git. Aucun secret trouvé dans les fichiers à envoyer.
