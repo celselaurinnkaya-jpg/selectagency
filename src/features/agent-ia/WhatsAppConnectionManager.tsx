@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField, FormMessage } from "@/components/shared/form";
 import { initialFormState } from "@/lib/form-state";
-import { WhatsAppWebQrCard } from "./WhatsAppWebQrCard";
+import { WhatsAppQrConnectModal } from "./WhatsAppQrConnectModal";
 import {
   connectWhatsAppAccountAction,
   disconnectWhatsAppAccountAction,
@@ -31,6 +31,12 @@ interface WhatsAppConnectionManagerProps {
   agencyName: string;
   maxWaNumbers: number;
 }
+
+const CONNECT_STEPS = [
+  { title: "Vos informations", text: "Déjà remplies avec celles de l'agence : vérifiez-les." },
+  { title: "À lire d'abord", text: "Téléphone à portée de main, WhatsApp Business à jour." },
+  { title: "Fenêtre de Meta", text: "Code ou QR code à confirmer dans WhatsApp Business." },
+];
 
 function AgencyCloudApiForm() {
   const [state, formAction, isPending] = useActionState(
@@ -173,6 +179,7 @@ export function WhatsAppConnectionManager({
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
 
   // Un compte n'est actif que si son statut est explicitement 'connected'
   const activeAccount = accounts.find((a) => a.status === "connected");
@@ -253,17 +260,58 @@ export function WhatsAppConnectionManager({
       {/* Si aucun compte n'est actuellement connecté */}
       {!activeAccount ? (
         <div className="space-y-6">
+          {/* Parcours officiel de Meta en 3 étapes (informations, conseils, fenêtre de Meta) */}
+          <Section title="Connecter WhatsApp Business">
+            <Card className="space-y-5 p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-navy-800 text-citron-400">
+                  <Smartphone className="size-5" aria-hidden />
+                </span>
+                <div>
+                  <p className="font-semibold text-navy-900">Reliez l&apos;application WhatsApp Business de l&apos;agence en quelques minutes</p>
+                  <p className="mt-0.5 text-sm text-slate-600">
+                    Connexion officielle de Meta. Votre équipe garde WhatsApp Business sur le téléphone, et l&apos;Agent IA répond depuis SELECT.
+                  </p>
+                </div>
+              </div>
+
+              <ol className="grid gap-3 sm:grid-cols-3">
+                {CONNECT_STEPS.map((s, i) => (
+                  <li key={s.title} className="flex gap-3 rounded-xl border border-border bg-surface p-3">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-navy-800 text-xs font-semibold text-citron-400 tabular-nums">
+                      {i + 1}
+                    </span>
+                    <span className="text-sm">
+                      <span className="block font-semibold text-navy-900">{s.title}</span>
+                      <span className="text-slate-600">{s.text}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+
+              {canManage ? (
+                <Button type="button" variant="accent" className="h-11 w-full gap-2 sm:w-auto" onClick={() => setIsConnectOpen(true)}>
+                  <Plug className="size-4" aria-hidden />
+                  Connecter WhatsApp Business
+                </Button>
+              ) : (
+                <p className="rounded-xl border border-slate-200 bg-slate-100 p-3 text-sm text-slate-700">
+                  Seul le propriétaire ou un administrateur de l&apos;agence peut connecter le numéro WhatsApp.
+                </p>
+              )}
+            </Card>
+          </Section>
+
           {canManage && (
-            <Section title="Ligne WhatsApp Business (Cloud API Meta)">
-              <Card className="p-5">
+            <details className="rounded-2xl border border-border bg-surface p-4">
+              <summary className="flex min-h-10 cursor-pointer items-center text-sm font-medium text-navy-800">
+                Configuration manuelle : vous avez déjà des identifiants Meta Cloud API (Phone Number ID et WABA ID)
+              </summary>
+              <Card className="mt-3 p-5">
                 <AgencyCloudApiForm />
               </Card>
-            </Section>
+            </details>
           )}
-
-          <Section title="Connexion WhatsApp Web (QR Code)">
-            <WhatsAppWebQrCard agencyName={agencyName} />
-          </Section>
 
           {/* Ligne précédemment déconnectée si existante */}
           {disconnectedAccounts.length > 0 && (
@@ -283,7 +331,7 @@ export function WhatsAppConnectionManager({
                     Numéro : <strong className="font-mono text-navy-900">{disconnectedAccounts[0].displayPhoneNumber}</strong> ({disconnectedAccounts[0].verifiedName || agencyName})
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Cette ligne est actuellement en sommeil. Vous pouvez la rebrancher en 1 clic ou scanner le code QR ci-dessus.
+                    Cette ligne est actuellement en sommeil. Vous pouvez la rebrancher en 1 clic ou relancer la connexion ci-dessus.
                   </p>
                 </div>
 
@@ -486,6 +534,8 @@ export function WhatsAppConnectionManager({
           </Section>
         </div>
       )}
+
+      {canManage && <WhatsAppQrConnectModal isOpen={isConnectOpen} onClose={() => setIsConnectOpen(false)} />}
     </div>
   );
 }

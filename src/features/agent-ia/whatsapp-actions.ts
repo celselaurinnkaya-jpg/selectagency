@@ -9,7 +9,7 @@ import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
 import { cronSecret } from "@/lib/email/system-worker";
 import { createSystemClient } from "@/lib/supabase/system";
 import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "@/lib/whatsapp/meta-signup";
-import { buildSignupSetup, type EmbeddedSignupSetup } from "@/lib/whatsapp/signup-prefill";
+import { buildSignupSetup, type EmbeddedSignupSetup, type SignupInfo } from "@/lib/whatsapp/signup-prefill";
 import { encryptToken } from "@/lib/whatsapp/token-crypto";
 
 const connectSchema = z.object({
@@ -177,109 +177,6 @@ export async function sendTestWhatsAppMessageAction(
   return { ok: true, message: `Message de test transmis avec succès à Meta (ID : ${result.metaMessageId}).` };
 }
 
-export async function pairWhatsAppDeviceAction(
-  phoneNumber: string,
-  verifiedName?: string
-): Promise<{ ok: boolean; message: string }> {
-  const cleanPhone = phoneNumber.trim();
-  if (!cleanPhone || cleanPhone.length < 6) {
-    return { ok: false, message: "Veuillez entrer un numéro de téléphone valide." };
-  }
-
-  const ctx = await getAgencyContext();
-  if (!["owner", "admin"].includes(ctx.member.role)) {
-    return { ok: false, message: "Action réservée aux administrateurs." };
-  }
-  if (ctx.locked.includes("ai_agent")) {
-    return { ok: false, message: "L'option Agent IA est incluse uniquement dans les formules PRO et BUSINESS." };
-  }
-
-  const cleanPhoneId = cleanPhone.replace(/\D/g, "") || "24206400999";
-  const name = verifiedName?.trim() || `${ctx.agency.name} (WhatsApp Officiel)`;
-
-  // Vérifier et libérer le quota si un autre compte est déjà connecté
-  const { data: existingAccounts } = await ctx.supabase
-    .from("wa_accounts")
-    .select("id, phone_number_id, status")
-    .eq("organization_id", ctx.organizationId);
-
-  if (existingAccounts && existingAccounts.length > 0) {
-    for (const oldAcc of existingAccounts) {
-      if (oldAcc.status === "connected" && oldAcc.phone_number_id !== `phone_${cleanPhoneId}`) {
-        await ctx.supabase.rpc("disconnect_wa_account", {
-          p_account_id: oldAcc.id,
-          p_org: ctx.organizationId,
-        });
-      }
-    }
-  }
-
-  const { data: newId, error: connectErr } = await ctx.supabase.rpc("connect_wa_account", {
-    p_org: ctx.organizationId,
-    p_waba_id: `waba_${cleanPhoneId}`,
-    p_phone_number_id: `phone_${cleanPhoneId}`,
-    p_display_phone_number: cleanPhone,
-    p_verified_name: name,
-    p_coexistence: true,
-  });
-
-  if (connectErr || !newId) {
-    return { ok: false, message: connectErr ? dbMessage(connectErr) : "Échec d'enregistrement du numéro WhatsApp." };
-  }
-
-  // Si aucune conversation n'existe encore, on injecte les discussions de départ
-  const { count } = await ctx.supabase
-    .from("wa_conversations")
-    .select("*", { count: "exact", head: true })
-    .eq("organization_id", ctx.organizationId);
-
-  if (!count || count === 0) {
-    const sampleConversations = [
-      {
-        wa_id: "+242067110175",
-        name: "Celse I.. NK.",
-        text: "Bonjour, je voudrais des renseignements pour la constitution d'un dossier de visa Schengen.",
-      },
-      {
-        wa_id: "+5511933533665",
-        name: "Mascotinho Biruta",
-        text: "Bonjour SELECT Agency ! Quelles sont les dates de rentrée pour les universités partenaires ?",
-      },
-      {
-        wa_id: "+242064937310",
-        name: "Presta-cash Congo Brazzaville",
-        text: "Bonjour, nous souhaitons réserver un vol Brazzaville - Paris pour la semaine prochaine.",
-      },
-      {
-        wa_id: "+242067110999",
-        name: "Vinho",
-        text: "Bonjour, quel est le montant des honoraires pour l'assistance Campus France ?",
-      },
-    ];
-
-    for (const sample of sampleConversations) {
-      try {
-        await ctx.supabase.rpc("record_inbound_wa_message", {
-          p_phone_number_id: `phone_${cleanPhoneId}`,
-          p_sender_wa_id: sample.wa_id,
-          p_sender_name: sample.name,
-          p_meta_message_id: `meta_msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          p_message_text: sample.text,
-          p_timestamp: new Date().toISOString(),
-        });
-      } catch (ingestErr) {
-        console.warn("Ingestion discussion d'exemple ignorée :", ingestErr);
-      }
-    }
-  }
-
-  revalidatePath("/agent-ia/connexion");
-  revalidatePath("/agent-ia");
-  refresh();
-  return { ok: true, message: "Appareil WhatsApp connecté avec succès !" };
-}
-
-
 // --- Connexion par le vrai QR code de Meta ---------------------------------------------------------------------
 // Appelée à la fin du parcours officiel de Meta (fenêtre « Continuer avec Facebook » où Meta affiche le QR code à
 // scanner avec l'application WhatsApp Business). Le code reçu expire en 30 secondes : il est échangé tout de suite.
@@ -287,27 +184,70 @@ export async function pairWhatsAppDeviceAction(
 const META_ID = /^\d{5,30}$/;
 
 /**
- * Données de l'agence pour pré-remplir la fenêtre de Meta : nom, ville, pays et fuseau de l'agence, et coordonnées
- * des factures (raison sociale, adresse, téléphone, e-mail ; à défaut, l'e-mail du responsable connecté).
- * Rien de secret : ce sont les informations de l'agence elle-même.
+ * Étape « Vos informations » : données de l'agence proposées pour la fenêtre de Meta. Nom, ville, pays et fuseau de
+ * l'agence, et coordonnées des factures (raison sociale, adresse, téléphone, e-mail ; à défaut, l'e-mail du
+ * responsable connecté). Rien de secret : ce sont les informations de l'agence elle-même.
  */
-export async function getWhatsAppSignupPrefillAction(): Promise<EmbeddedSignupSetup> {
+export async function getWhatsAppSignupPrefillAction(): Promise<SignupInfo> {
   const ctx = await getAgencyContext();
   const { data: invoice } = await ctx.supabase
     .from("invoice_settings")
     .select("legal_name, address, phone, email")
     .eq("organization_id", ctx.organizationId)
     .maybeSingle();
-  return buildSignupSetup({
-    agencyName: ctx.agency.name,
-    legalName: invoice?.legal_name ?? undefined,
-    email: invoice?.email || ctx.email,
-    address: invoice?.address ?? undefined,
-    city: ctx.agency.city,
+  return {
+    name: invoice?.legal_name?.trim() || ctx.agency.name,
+    email: invoice?.email?.trim() || ctx.email,
+    phone: invoice?.phone?.trim() ?? "",
+    address: invoice?.address?.trim() ?? "",
+    city: ctx.agency.city ?? "",
+    countryCode: ctx.agency.countryCode ?? "",
+    timezone: ctx.agency.timezone ?? "",
+  };
+}
+
+const PREFILL_LABELS = { name: "nom", email: "e-mail", phone: "téléphone", address: "adresse", city: "ville" } as const;
+type PrefillField = keyof typeof PREFILL_LABELS;
+
+/**
+ * Informations vérifiées (et éventuellement corrigées) par l'agence → objet « setup » de la fenêtre de Meta.
+ * Pays et fuseau sont relus dans le profil de l'agence. Les valeurs au mauvais format sont laissées vides chez Meta
+ * et signalées (« omitted »). Rien n'est enregistré : les paramètres de l'agence ne changent pas.
+ */
+export async function prepareWhatsAppSignupAction(
+  input: Partial<Record<PrefillField, string>>,
+): Promise<{ setup: EmbeddedSignupSetup; omitted: string[] }> {
+  const ctx = await getAgencyContext();
+  const text = (field: PrefillField, max: number) => {
+    const value = input?.[field];
+    return typeof value === "string" ? value.trim().slice(0, max) : "";
+  };
+  const values: Record<PrefillField, string> = {
+    name: text("name", 200),
+    email: text("email", 254),
+    phone: text("phone", 40),
+    address: text("address", 300),
+    city: text("city", 100),
+  };
+  const setup = buildSignupSetup({
+    agencyName: values.name,
+    email: values.email,
+    phone: values.phone,
+    address: values.address,
+    city: values.city,
     countryCode: ctx.agency.countryCode,
-    phone: invoice?.phone ?? undefined,
     timezone: ctx.agency.timezone,
   });
+  const business = setup.business;
+  const kept: Record<PrefillField, unknown> = {
+    name: business?.name,
+    email: business?.email,
+    phone: business?.phone,
+    address: business?.address?.streetAddress1,
+    city: business?.address?.city,
+  };
+  const omitted = (Object.keys(PREFILL_LABELS) as PrefillField[]).filter((f) => values[f] && !kept[f]).map((f) => PREFILL_LABELS[f]);
+  return { setup, omitted };
 }
 
 export async function completeWhatsAppSignupAction(input: {

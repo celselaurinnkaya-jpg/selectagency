@@ -20,6 +20,18 @@ export interface SignupPrefillSource {
   timezone?: string;
 }
 
+/** Informations proposées à l'agence à l'étape « Vos informations », avant d'ouvrir la fenêtre de Meta. */
+export interface SignupInfo {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  /** Pays et fuseau viennent du profil de l'agence : affichés, pas modifiables à cette étape. */
+  countryCode: string;
+  timezone: string;
+}
+
 export interface EmbeddedSignupSetup {
   business?: {
     name?: string;

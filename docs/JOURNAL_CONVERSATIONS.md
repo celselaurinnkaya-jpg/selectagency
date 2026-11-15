@@ -15,6 +15,38 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 59 — 15 Novembre 2026 (Claude Code) — « vas-y fais la même chose » : connexion WhatsApp en 3 étapes comme WizMessage
+* **Demande** : reproduire le parcours WizMessage analysé en session 58.
+* **Modifications (local, non publiées)** :
+  - `WhatsAppQrConnectModal.tsx` devient un parcours en 3 étapes :
+    1. « Vos informations » : nom, e-mail, téléphone, adresse et ville de l'agence, déjà remplis et modifiables. Pays et fuseau sont repris du profil de l'agence. Rien n'est enregistré dans les paramètres.
+    2. « À lire d'abord » : conseils (téléphone à portée de main, WhatsApp Business 2.24.17 ou plus récent, historique de 6 mois demandé une seule fois, nouvel onglet sur téléphone, « Terminer » et non « Ajouter un moyen de paiement », aucun mot de passe demandé), case obligatoire « WhatsApp Business est ouvert et à jour », puis « Continuer avec Facebook ».
+    3. « Fenêtre de Meta » : guide des écrans de Meta (code d'accès ou « Utilisez plutôt un code QR », discussion « Facebook Business » → Connect), état d'attente, résultat, bouton « Rouvrir la fenêtre de Meta ».
+  - La fenêtre se remonte à chaque ouverture : elle repart toujours de l'étape 1.
+  - `whatsapp-actions.ts` :
+    - `getWhatsAppSignupPrefillAction` renvoie les informations brutes (`SignupInfo`) ;
+    - nouvelle `prepareWhatsAppSignupAction` : met les informations au format de Meta (pays et fuseau relus côté serveur) et signale les champs au mauvais format ;
+    - **`pairWhatsAppDeviceAction` supprimée** (fausse association : faux numéro et conversations d'exemple).
+  - `WhatsAppWebQrCard.tsx` **supprimé** (faux QR code).
+  - `WhatsAppConnectionManager.tsx` (page Agent IA → Connexion) : section « Connecter WhatsApp Business » avec les 3 étapes et le bouton qui ouvre le parcours. Le formulaire manuel (Phone Number ID / WABA ID) de l'autre outil est conservé, replié sous « Configuration manuelle ».
+  - `signup-prefill.ts` : type `SignupInfo`.
+* **Inchangé** : l'échange du code, l'enregistrement du jeton chiffré, la synchronisation contacts et historique, Gemini, l'onglet « Connexion WhatsApp » du Studio (il ouvre le même parcours).
+* **Tests** : `tsc` 0 erreur. Lint propre sur les fichiers touchés. Tests WhatsApp 19 sur 19.
+* **Reste** : le paquet `qrcode` n'est plus utilisé (laissé dans `package.json`). Publication seulement sur demande (« publie sur Vercel »).
+
+### Session 58 — 15 Novembre 2026 (Claude Code) — Analyse du tutoriel WizMessage (18 étapes) : peut-on faire pareil ?
+* **Demande** : « analyse chaque étape et dis-moi si c'est possible de réaliser la même chose » (19 captures d'une vidéo WizMessage « API WhatsApp Business en moins de 5 min »). Analyse seulement, aucun code modifié.
+* **Conclusion** : oui. Les étapes 8 à 18 sont les écrans officiels de Meta (Embedded Signup + coexistence), les mêmes que la fenêtre déjà ouverte par SELECT (`WhatsAppQrConnectModal`). WizMessage ajoute seulement des écrans d'explication autour (connexion Facebook, formulaire d'informations, « À lire d'abord »).
+  - Étapes 1 à 4 (connexion Facebook pour créer un compte WizMessage) et étape 6 (ouvrir le navigateur depuis leur application mobile) : inutiles pour SELECT, qui est déjà un site web avec ses propres comptes.
+  - Étape 5 (nom, e-mail, fuseau, pays, numéro) : SELECT pré-remplit déjà la fenêtre de Meta automatiquement (c763904). Un écran de vérification modifiable est possible.
+  - Étape 7 (« À lire d'abord » + case à cocher) : facile à ajouter.
+  - Étape 12 : la fenêtre de Meta propose elle-même « Utilisez plutôt un code QR » : c'est le vrai QR code officiel, le faux QR n'est pas nécessaire.
+  - Étapes 17 et 18 : WizMessage demande aussi les catalogues et le commerce ; SELECT n'a besoin que de WhatsApp. Il faut appuyer sur « Terminer », pas sur « Ajouter un moyen de paiement ».
+* **Correction d'un diagnostic précédent** : l'écran « Associez votre compte à … en toute simplicité » est aussi le premier écran normal du parcours WhatsApp. Ce qui compte, c'est la suite (portefeuille, numéro, code d'accès).
+* **Constat sur le site en ligne** : les commits `adb8b6e` et `2f1bb6b` de l'autre outil (déjà sur GitHub et Vercel) ont retiré le vrai bouton Meta de Agent IA → Connexion. Cette page n'affiche plus que le formulaire manuel (Phone Number ID et WABA ID, sans jeton) et le faux QR code (`pairWhatsAppDeviceAction` : faux compte et conversations d'exemple). Le vrai parcours Meta reste accessible dans Agent IA → Agents → ouvrir un agent → onglet « Connexion WhatsApp » → « Scanner le Code QR ».
+* **Conditions côté Meta pour faire comme WizMessage avec toutes les agences** : configuration « WhatsApp Embedded Signup », statut Tech Provider, entreprise vérifiée, accès avancé (App Review), application en mode Live.
+* **Proposé, non fait (attente d'une demande)** : remettre le vrai bouton Meta sur Agent IA → Connexion à la place du faux QR, ajouter un écran « À lire d'abord » et un écran « Vérifiez vos informations ».
+
 ### Session 57 — 15 Novembre 2026 à 17:28
 * **Objet** : Finalisation et intégration directe de la section « Ligne WhatsApp Business (Cloud API Meta) » sur la page de connexion WhatsApp de l'agence (`/agent-ia/connexion`).
 * **Demande / Contexte** :
