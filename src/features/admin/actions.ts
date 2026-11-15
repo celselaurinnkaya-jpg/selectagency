@@ -211,3 +211,62 @@ export async function setTicketStatusAction(formData: FormData): Promise<void> {
   await user.supabase.rpc("platform_set_ticket_status", { p_ticket_id: parsed.data.ticketId, p_status: parsed.data.status });
   refresh();
 }
+
+const adminWhatsAppSchema = z.object({
+  organizationId: z.string().uuid("Identifiant d'organisation invalide."),
+  displayPhoneNumber: z.string().trim().min(6, "Le numéro de téléphone est requis.").max(60),
+  verifiedName: z.string().trim().max(200).optional().or(z.literal("")),
+  phoneNumberId: z.string().trim().min(5, "Le Phone Number ID de Meta est requis.").max(120),
+  wabaId: z.string().trim().min(5, "Le WABA ID de Meta est requis.").max(120),
+  coexistence: z.preprocess((val) => val === "true" || val === "on" || val === true, z.boolean()).default(false),
+});
+
+export async function configureAgencyWhatsAppAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const values = formValues(formData);
+  const parsed = adminWhatsAppSchema.safeParse(values);
+  if (!parsed.success) {
+    return {
+      message: "Certains champs sont à corriger.",
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
+      values,
+    };
+  }
+
+  const user = await platformAdminForAction();
+  if (!user) return { message: CONSOLE_FORBIDDEN, values };
+
+  const input = parsed.data;
+  const { error } = await user.supabase.rpc("platform_configure_agency_whatsapp", {
+    p_org: input.organizationId,
+    p_waba_id: input.wabaId,
+    p_phone_number_id: input.phoneNumberId,
+    p_display_phone_number: input.displayPhoneNumber,
+    p_verified_name: input.verifiedName || null,
+    p_coexistence: input.coexistence,
+  });
+
+  if (error) return { message: dbMessage(error), values };
+  refresh();
+  return { ok: true, message: "Ligne WhatsApp Cloud API configurée avec succès pour cette agence." };
+}
+
+export async function disconnectAgencyWhatsAppAction(formData: FormData): Promise<{ ok: boolean; message: string }> {
+  const org = String(formData.get("organizationId") || "").trim();
+  const accountId = String(formData.get("accountId") || "").trim();
+
+  if (!org || !accountId) {
+    return { ok: false, message: "Identifiants manquants." };
+  }
+
+  const user = await platformAdminForAction();
+  if (!user) return { ok: false, message: CONSOLE_FORBIDDEN };
+
+  const { error } = await user.supabase.rpc("platform_disconnect_agency_whatsapp", {
+    p_org: org,
+    p_account_id: accountId,
+  });
+
+  if (error) return { ok: false, message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: "Ligne WhatsApp déconnectée pour cette agence." };
+}

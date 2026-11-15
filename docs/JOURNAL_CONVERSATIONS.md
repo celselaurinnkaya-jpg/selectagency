@@ -15,6 +15,24 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 56 — 15 Novembre 2026 à 14:50
+* **Objet** : Résolution du blocage « Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta » et suppression définitive du déclencheur de popup Meta Embedded Signup.
+* **Demande / Contexte** :
+  - L'utilisateur a rencontré le message d'erreur rouge dans la modale : *« Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta. Recommencez et allez jusqu'au bout : numéro de l'agence, confirmation dans WhatsApp Business sur le téléphone, puis « Terminer ». »*
+  - Ce blocage provient du fait que le parcours Facebook Embedded Signup échoue si le compte Facebook personnel de l'utilisateur n'a pas de compte WhatsApp Business approuvé / associé dans le Business Manager de Meta.
+* **Solution apportée** :
+  - Suppression définitive du bouton perturbateur *« Scanner avec votre smartphone (Fenêtre Meta) »* dans `src/features/agent-ia/WhatsAppWebQrCard.tsx`.
+  - Nettoyage du connecteur `WhatsAppConnectionManager.tsx` pour ne plus dépendre de cette modale popup.
+  - La configuration officielle WhatsApp Cloud API s'effectue directement et de façon fiable depuis l'espace Super Admin (`/admin/agences/[id]`), où l'administrateur entre directement le Phone Number ID et le WABA ID générés sur `developers.facebook.com`.
+  - L'agence cliente reste sur l'écran épuré WhatsApp Web QR Code sans fenêtre Facebook.
+* **Validation Globale** :
+  - **TypeScript** : 0 erreur (`tsc --noEmit`).
+  - **Tests Unitaires** : 32/32 suites réussies, 249/249 tests passés (`npm test`).
+  - **Tests Base de données** : 95/95 réussis.
+  - **Règle Git** : Modifications en local sur `localhost:3000`. Attente du feu vert explicite de l'utilisateur pour le `git push`.
+
+---
+
 ### Session 55 — 15 Novembre 2026 (Claude Code) — « fais le » : pré-remplissage de la fenêtre de Meta
 * **Demande** : réaliser l'amélioration officielle proposée en session 54, pour que l'agence ait le moins possible à saisir dans la fenêtre de Meta.
 * **Réalisé (local, rien de poussé)** :

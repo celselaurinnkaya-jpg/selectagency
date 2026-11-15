@@ -320,17 +320,49 @@ export async function listAudit(organizationId?: string): Promise<AuditEntry[]> 
   }));
 }
 
+export interface AgencyWhatsAppDetail {
+  id: string;
+  organizationId: string;
+  wabaId: string;
+  phoneNumberId: string;
+  displayPhoneNumber: string;
+  verifiedName?: string;
+  status: "connected" | "disconnected" | "pending" | "error";
+  coexistence: boolean;
+  qualityRating?: string;
+  messagingTier?: string;
+  connectedAt: string;
+}
+
 /** Fiche d'une agence dans la console : abonnement, équipe, paiements, demandes, journal. */
 export async function getAgency(id: string) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return null;
   const [agencies, plans] = await Promise.all([listAgencies(), listPlans()]);
   const agency = agencies.find((a) => a.id === id);
   if (!agency) return null;
-  const [members, payments, tickets, audit] = await Promise.all([
+  const [members, payments, tickets, audit, whatsappAccounts] = await Promise.all([
     call("platform_members", { p_org: id }).then((rows) => rows.map(toPlatformMember)),
     listPayments(id),
     listTickets({ organizationId: id }),
     listAudit(id),
+    call("platform_agency_whatsapp", { p_org: id })
+      .then((rows) =>
+        rows.map((r) => ({
+          id: String(r.id),
+          organizationId: String(r.organization_id),
+          wabaId: String(r.waba_id),
+          phoneNumberId: String(r.phone_number_id),
+          displayPhoneNumber: String(r.display_phone_number),
+          verifiedName: text(r.verified_name),
+          status: (text(r.status) as "connected" | "disconnected" | "pending" | "error") || "connected",
+          coexistence: Boolean(r.coexistence),
+          qualityRating: text(r.quality_rating),
+          messagingTier: text(r.messaging_tier),
+          connectedAt: iso(r.connected_at)!,
+        }))
+      )
+      .catch(() => [] as AgencyWhatsAppDetail[]),
   ]);
-  return { agency, plans, members, payments, tickets, audit };
+  const whatsapp = whatsappAccounts[0] ?? null;
+  return { agency, plans, members, payments, tickets, audit, whatsapp };
 }

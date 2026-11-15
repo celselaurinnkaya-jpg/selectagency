@@ -8,7 +8,12 @@ import { Card, EmptyState, Field, Notice, PageHeader, Section, StatCard, StatusB
 import { countryName } from "@/lib/countries";
 import { BILLING_PERIOD, METHOD_KIND, ROLE, TICKET_STATUS } from "@/lib/domain/labels";
 import { dayKey, formatDate, formatMoney } from "@/lib/format";
-import { SubscriptionForm, SubscriptionPaymentForm, VoidSubscriptionPaymentForm } from "@/features/admin/AdminForms";
+import {
+  AdminAgencyWhatsAppForm,
+  SubscriptionForm,
+  SubscriptionPaymentForm,
+  VoidSubscriptionPaymentForm,
+} from "@/features/admin/AdminForms";
 import { agencyStatus, AUDIT_ACTIONS, CONSOLE_TIMEZONE, formatBytes } from "@/features/admin/display";
 import { getAgency } from "@/features/admin/queries";
 
@@ -28,7 +33,7 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
   const { id } = await params;
   const detail = await getAgency(id);
   if (!detail) notFound();
-  const { agency, plans, members, payments, tickets, audit } = detail;
+  const { agency, plans, members, payments, tickets, audit, whatsapp } = detail;
   const now = new Date();
   const { spec, attention } = agencyStatus(agency, now);
   const tz = CONSOLE_TIMEZONE;
@@ -113,6 +118,12 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
               ))}
             </ul>
           )}
+        </Section>
+
+        <Section title="Ligne WhatsApp Business (Cloud API Meta)">
+          <Card>
+            <AdminAgencyWhatsAppForm organizationId={agency.id} current={whatsapp} />
+          </Card>
         </Section>
 
         <div className="grid gap-6 xl:grid-cols-2">

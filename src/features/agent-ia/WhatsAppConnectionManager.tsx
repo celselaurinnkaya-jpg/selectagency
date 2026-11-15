@@ -9,14 +9,11 @@ import {
   ShieldCheck,
   Send,
   Trash2,
-  Copy,
-  Check,
+  CheckCircle2,
 } from "lucide-react";
 import { Card, Section } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ConnectWhatsAppModal } from "./ConnectWhatsAppModal";
-import { WhatsAppQrConnectModal } from "./WhatsAppQrConnectModal";
 import { WhatsAppWebQrCard } from "./WhatsAppWebQrCard";
 import {
   disconnectWhatsAppAccountAction,
@@ -39,12 +36,9 @@ export function WhatsAppConnectionManager({
   maxWaNumbers,
 }: WhatsAppConnectionManagerProps) {
   const router = useRouter();
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [isMetaModalOpen, setIsMetaModalOpen] = useState(false);
   const [testPhoneNumber, setTestPhoneNumber] = useState("");
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [isSendingTest, startSendingTest] = useTransition();
-  const [copiedUrl, setCopiedUrl] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<{ ok: boolean; message: string } | null>(null);
@@ -52,13 +46,6 @@ export function WhatsAppConnectionManager({
   // Un compte n'est actif que si son statut est explicitement 'connected'
   const activeAccount = accounts.find((a) => a.status === "connected");
   const disconnectedAccounts = accounts.filter((a) => a.status === "disconnected");
-
-  const handleCopyWebhookUrl = () => {
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    navigator.clipboard.writeText(`${origin}/api/webhooks/whatsapp`);
-    setCopiedUrl(true);
-    setTimeout(() => setCopiedUrl(false), 2000);
-  };
 
   const handleSendTestMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -135,11 +122,7 @@ export function WhatsAppConnectionManager({
       {/* Si aucun compte n'est actuellement connecté : AFFICHER DIRECTEMENT LE SCANNER WHATSAPP WEB */}
       {!activeAccount ? (
         <div className="space-y-6">
-          <WhatsAppWebQrCard
-            agencyName={agencyName}
-            onOpenCloudApiModal={() => setIsConnectModalOpen(true)}
-            onOpenMetaModal={() => setIsMetaModalOpen(true)}
-          />
+          <WhatsAppWebQrCard agencyName={agencyName} />
 
           {/* Ligne précédemment déconnectée si existante */}
           {disconnectedAccounts.length > 0 && (
@@ -277,64 +260,44 @@ export function WhatsAppConnectionManager({
                   </div>
                 </div>
 
-                {/* Identifiants techniques Meta */}
-                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5 space-y-1.5 text-xs text-slate-600">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-slate-400">Phone Number ID :</span>
-                    <span className="font-mono font-medium text-slate-800">{activeAccount.phoneNumberId}</span>
+                {/* Ligne active et coexistence mobile */}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-950 font-semibold text-xs">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span>Ligne WhatsApp Business officielle active</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-slate-400">WABA ID :</span>
-                    <span className="font-mono font-medium text-slate-800">{activeAccount.wabaId}</span>
-                  </div>
+                  <p className="text-xs text-emerald-900/90 leading-relaxed">
+                    Votre Agent IA écoute et répond 24h/24 aux questions de vos clients (visas, devis, procédures) conformément à vos guides de connaissances.
+                  </p>
+                  <p className="text-[11px] text-emerald-800/80">
+                    💡 <strong>Mode Coexistence activé :</strong> Votre équipe continue d&apos;utiliser normalement l&apos;application WhatsApp Business sur smartphone sans aucune interruption.
+                  </p>
                 </div>
               </Card>
 
-              {/* Panneau de configuration Webhook & Test */}
+              {/* Panneau latéral : Accès WhatsApp Web & Test */}
               <div className="space-y-4">
-                {/* Configuration du Webhook Meta */}
-                <Card className="p-4 space-y-3">
+                {/* Accès direct à l'inbox WhatsApp Web */}
+                <Card className="p-4 space-y-3 bg-linear-to-br from-navy-900 via-navy-800 to-navy-950 text-white border-0 shadow-xs">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-navy-800" />
-                    <h4 className="text-xs font-bold text-navy-900 uppercase tracking-wider">
-                      Paramètres Webhook Meta
+                    <Smartphone className="h-4 w-4 text-citron-400" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-citron-400">
+                      Messagerie WhatsApp Web
                     </h4>
                   </div>
-                  <p className="text-xs text-slate-600 leading-relaxed">
-                    À renseigner dans votre portail Meta Developers pour router les messages :
+                  <p className="text-xs text-slate-200 leading-relaxed">
+                    Retrouvez vos discussions clients en temps réel et prenez le relais sur l&apos;Agent IA quand vous le souhaitez.
                   </p>
-
-                  <div className="space-y-2">
-                    <div>
-                      <span className="text-[11px] font-medium text-slate-500">URL de rappel :</span>
-                      <div className="mt-1 flex items-center gap-1.5">
-                        <Input
-                          readOnly
-                          value="/api/webhooks/whatsapp"
-                          className="h-8 text-xs font-mono bg-slate-50"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={handleCopyWebhookUrl}
-                          className="h-8 w-8 p-0 shrink-0 cursor-pointer"
-                          title="Copier l'URL complète"
-                        >
-                          {copiedUrl ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-[11px] font-medium text-slate-500">Jeton de vérification (Verify Token) :</span>
-                      <Input
-                        readOnly
-                        value="select_agency_wa_token_2026"
-                        className="h-8 text-xs font-mono bg-slate-50 mt-1"
-                      />
-                    </div>
-                  </div>
+                  <Button
+                    asChild
+                    variant="accent"
+                    size="sm"
+                    className="w-full h-9 text-xs font-semibold cursor-pointer"
+                  >
+                    <Link href="/agent-ia">
+                      Ouvrir la boîte de réception
+                    </Link>
+                  </Button>
                 </Card>
 
                 {/* Test d'envoi sortant */}
@@ -382,17 +345,6 @@ export function WhatsAppConnectionManager({
           </Section>
         </div>
       )}
-
-      {/* Modale de connexion manuelle Cloud API (optionnelle) */}
-      {isConnectModalOpen && (
-        <ConnectWhatsAppModal onClose={() => setIsConnectModalOpen(false)} />
-      )}
-
-      {/* Modale officielle Meta pour afficher le QR code officiel scannable par le téléphone */}
-      <WhatsAppQrConnectModal
-        isOpen={isMetaModalOpen}
-        onClose={() => setIsMetaModalOpen(false)}
-      />
     </div>
   );
 }

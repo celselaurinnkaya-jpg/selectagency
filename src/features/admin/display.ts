@@ -55,6 +55,8 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "subscription_payment.voided": "Paiement d'abonnement annulé",
   "support.replied": "Réponse au support",
   "support.status_changed": "Statut d'une demande modifié",
+  "whatsapp.configured": "Ligne WhatsApp configurée",
+  "whatsapp.disconnected": "Ligne WhatsApp déconnectée",
 };
 
 /** Mois « 2026-10 » → « octobre 2026 ». */

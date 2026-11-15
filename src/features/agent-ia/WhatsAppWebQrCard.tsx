@@ -22,7 +22,6 @@ import { pairWhatsAppDeviceAction } from "./whatsapp-actions";
 interface WhatsAppWebQrCardProps {
   agencyName: string;
   onOpenCloudApiModal?: () => void;
-  onOpenMetaModal?: () => void;
 }
 
 // Icône officielle WhatsApp en SVG
@@ -34,7 +33,7 @@ function WhatsAppIcon({ className = "h-5 w-5" }: { className?: string }) {
   );
 }
 
-export function WhatsAppWebQrCard({ agencyName, onOpenCloudApiModal, onOpenMetaModal }: WhatsAppWebQrCardProps) {
+export function WhatsAppWebQrCard({ agencyName, onOpenCloudApiModal }: WhatsAppWebQrCardProps) {
   const router = useRouter();
   const [connectMode, setConnectMode] = useState<"qr" | "phone">("qr");
   const [keepLoggedIn, setKeepLoggedIn] = useState(true);
@@ -344,20 +343,6 @@ export function WhatsAppWebQrCard({ agencyName, onOpenCloudApiModal, onOpenMetaM
                       ? "Le code a expiré pour des raisons de sécurité."
                       : `Ce code se rafraîchit automatiquement (${secondsRemaining}s).`}
                   </p>
-
-                  {onOpenMetaModal && (
-                    <div className="pt-2 w-full border-t border-slate-100">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={onOpenMetaModal}
-                        className="w-full h-9 rounded-xl border-emerald-300 bg-emerald-50/60 hover:bg-emerald-100/70 text-emerald-900 font-semibold text-[11px] gap-1.5 cursor-pointer shadow-2xs"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 text-emerald-700" />
-                        <span>Scanner avec votre smartphone (Fenêtre Meta)</span>
-                      </Button>
-                    </div>
-                  )}
                 </div>
 
                 {errorMessage && (

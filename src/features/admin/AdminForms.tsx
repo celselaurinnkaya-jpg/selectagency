@@ -1,6 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useState, useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { Smartphone, Plug, ShieldCheck, Trash2, CheckCircle2, Copy, Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -9,7 +11,16 @@ import { BILLING_PERIOD, METHOD_KIND, SUBSCRIPTION_STATUS } from "@/lib/domain/l
 import type { BillingPeriod, PaymentMethodKind, SubscriptionStatus } from "@/lib/domain/types";
 import { CURRENCY_OPTIONS } from "@/lib/format";
 import { initialFormState } from "@/lib/form-state";
-import { recordSubscriptionPaymentAction, replyTicketAction, savePlanAction, updateSubscriptionAction, voidSubscriptionPaymentAction } from "./actions";
+import {
+  configureAgencyWhatsAppAction,
+  disconnectAgencyWhatsAppAction,
+  recordSubscriptionPaymentAction,
+  replyTicketAction,
+  savePlanAction,
+  updateSubscriptionAction,
+  voidSubscriptionPaymentAction,
+} from "./actions";
+import type { AgencyWhatsAppDetail } from "./queries";
 
 // Formulaires de la console SELECT. Toutes les actions passent par les fonctions platform_* de la
 // base, qui inscrivent chaque modification au journal.
@@ -272,5 +283,279 @@ export function AdminReplyForm({ ticketId }: { ticketId: string }) {
         </Button>
       </div>
     </form>
+  );
+}
+
+export function AdminAgencyWhatsAppForm({
+  organizationId,
+  current,
+}: {
+  organizationId: string;
+  current?: AgencyWhatsAppDetail | null;
+}) {
+  const [state, action, pending] = useActionState(configureAgencyWhatsAppAction, initialFormState);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [disconnectError, setDisconnectError] = useState<string | null>(null);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [copiedToken, setCopiedToken] = useState(false);
+  const router = useRouter();
+
+  const isConnected = current?.id && current?.status === "connected";
+  const e = state.fieldErrors ?? {};
+  const v = state.ok ? {} : (state.values ?? {});
+
+  const handleCopy = (text: string, isToken: boolean) => {
+    navigator.clipboard.writeText(text);
+    if (isToken) {
+      setCopiedToken(true);
+      setTimeout(() => setCopiedToken(false), 2000);
+    } else {
+      setCopiedWebhook(true);
+      setTimeout(() => setCopiedWebhook(false), 2000);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!current?.id) return;
+    if (!confirm("Voulez-vous vraiment déconnecter la ligne WhatsApp de cette agence ?")) return;
+    setIsDisconnecting(true);
+    setDisconnectError(null);
+    try {
+      const fd = new FormData();
+      fd.append("organizationId", organizationId);
+      fd.append("accountId", current.id);
+      const res = await disconnectAgencyWhatsAppAction(fd);
+      if (!res.ok) {
+        setDisconnectError(res.message);
+      } else {
+        router.refresh();
+      }
+    } catch (err: unknown) {
+      setDisconnectError(err instanceof Error ? err.message : "Erreur lors de la déconnexion.");
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://app.select-agency.com";
+  const webhookUrl = `${origin}/api/webhooks/whatsapp`;
+  const verifyToken = "select_agency_wa_token_2026";
+
+  return (
+    <div className="space-y-6">
+      {/* Statut actuel de la ligne */}
+      {isConnected ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-xs">
+                <Smartphone className="size-4" />
+              </span>
+              <div>
+                <h4 className="font-semibold text-emerald-950 flex items-center gap-2 text-sm">
+                  {current.displayPhoneNumber}
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                    <CheckCircle2 className="size-3" /> Connectée (Cloud API)
+                  </span>
+                </h4>
+                <p className="text-xs text-emerald-800/80">
+                  {current.verifiedName || "Nom non renseigné"} · Coexistence mobile :{" "}
+                  {current.coexistence ? "Activée" : "Désactivée"}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDisconnect}
+              disabled={isDisconnecting}
+              className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+            >
+              <Trash2 className="size-3.5 mr-1" />
+              {isDisconnecting ? "Déconnexion..." : "Déconnecter cette ligne"}
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-emerald-200/60 text-xs text-slate-700 font-mono">
+            <div>
+              <span className="font-sans text-slate-500 font-normal">Phone Number ID : </span>
+              {current.phoneNumberId}
+            </div>
+            <div>
+              <span className="font-sans text-slate-500 font-normal">WABA ID : </span>
+              {current.wabaId}
+            </div>
+          </div>
+
+          {disconnectError && (
+            <p className="text-xs text-red-600 font-medium">{disconnectError}</p>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+          <div className="flex items-center gap-2 text-slate-700 text-sm">
+            <Plug className="size-4 text-slate-500" />
+            <span>Aucune ligne WhatsApp Cloud API active pour cette agence.</span>
+          </div>
+        </div>
+      )}
+
+      {/* Formulaire de configuration */}
+      <form action={action} className="space-y-4 rounded-xl border border-border bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.06)]" noValidate>
+        <input type="hidden" name="organizationId" value={organizationId} />
+
+        <div className="flex items-center gap-2 pb-2 border-b border-border">
+          <ShieldCheck className="size-4 text-navy-800" />
+          <h4 className="text-sm font-semibold text-navy-900">
+            {isConnected ? "Modifier les identifiants Cloud API Meta" : "Associer une ligne WhatsApp Business"}
+          </h4>
+        </div>
+
+        <p className="text-xs text-slate-600">
+          Enregistrez les identifiants officiels WhatsApp Business Cloud API générés sur Meta for Developers. L&apos;agence n&apos;aura aucune manipulation technique à effectuer.
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <FormField
+            id="wa-display-phone"
+            label="Numéro de téléphone affiché"
+            required
+            error={e.displayPhoneNumber}
+          >
+            <Input
+              id="wa-display-phone"
+              name="displayPhoneNumber"
+              defaultValue={v.displayPhoneNumber ?? current?.displayPhoneNumber ?? ""}
+              placeholder="Ex. : +242 06 400 9999"
+              {...describedBy("wa-display-phone", e.displayPhoneNumber)}
+            />
+          </FormField>
+
+          <FormField
+            id="wa-verified-name"
+            label="Nom affiché vérifié (optionnel)"
+            error={e.verifiedName}
+          >
+            <Input
+              id="wa-verified-name"
+              name="verifiedName"
+              defaultValue={v.verifiedName ?? current?.verifiedName ?? ""}
+              placeholder="Ex. : SELECT Agency Brazzaville"
+              {...describedBy("wa-verified-name", e.verifiedName)}
+            />
+          </FormField>
+
+          <FormField
+            id="wa-phone-id"
+            label="Phone Number ID (Meta)"
+            required
+            error={e.phoneNumberId}
+          >
+            <Input
+              id="wa-phone-id"
+              name="phoneNumberId"
+              defaultValue={v.phoneNumberId ?? current?.phoneNumberId ?? ""}
+              placeholder="Ex. : 102938475610293"
+              className="font-mono text-xs"
+              {...describedBy("wa-phone-id", e.phoneNumberId)}
+            />
+          </FormField>
+
+          <FormField
+            id="wa-waba-id"
+            label="WABA ID (WhatsApp Business Account ID)"
+            required
+            error={e.wabaId}
+          >
+            <Input
+              id="wa-waba-id"
+              name="wabaId"
+              defaultValue={v.wabaId ?? current?.wabaId ?? ""}
+              placeholder="Ex. : 987654321098765"
+              className="font-mono text-xs"
+              {...describedBy("wa-waba-id", e.wabaId)}
+            />
+          </FormField>
+        </div>
+
+        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <label className="flex items-start gap-2.5 cursor-pointer text-xs text-slate-700">
+            <input
+              type="checkbox"
+              name="coexistence"
+              value="true"
+              defaultChecked={current ? current.coexistence : true}
+              className="mt-0.5 rounded border-slate-300 text-navy-800 focus:ring-navy-600"
+            />
+            <span>
+              <strong className="text-slate-900 block font-medium">Mode Coexistence Mobile</strong>
+              Permet à l&apos;équipe de l&apos;agence de continuer à utiliser l&apos;application mobile WhatsApp Business sur leur téléphone sans coupure, tout en bénéficiant de l&apos;Agent IA.
+            </span>
+          </label>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pt-2">
+          <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
+          <Button type="submit" variant="accent" disabled={pending} className="min-w-36">
+            {pending ? "Enregistrement..." : isConnected ? "Mettre à jour la ligne" : "Connecter la ligne"}
+          </Button>
+        </div>
+      </form>
+
+      {/* Rappel des paramètres Webhook pour Meta Developers */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Info className="size-4 text-navy-800" />
+          <h4 className="text-xs font-bold text-navy-900 uppercase tracking-wider">
+            Paramètres Webhook Meta Developers (Global Plateforme)
+          </h4>
+        </div>
+        <p className="text-xs text-slate-600">
+          À configurer une seule fois dans l&apos;application Meta Developers dans la section <strong>WhatsApp &gt; Configuration &gt; Webhooks</strong> :
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2 text-xs">
+          <div>
+            <span className="block font-medium text-slate-600 mb-1">URL de rappel (Callback URL) :</span>
+            <div className="flex items-center gap-1.5">
+              <Input readOnly value={webhookUrl} className="h-8 text-xs font-mono bg-white" />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleCopy(webhookUrl, false)}
+                className="h-8 w-8 p-0 shrink-0 cursor-pointer"
+                title="Copier l'URL"
+              >
+                {copiedWebhook ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <span className="block font-medium text-slate-600 mb-1">Jeton de vérification (Verify Token) :</span>
+            <div className="flex items-center gap-1.5">
+              <Input readOnly value={verifyToken} className="h-8 text-xs font-mono bg-white" />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => handleCopy(verifyToken, true)}
+                className="h-8 w-8 p-0 shrink-0 cursor-pointer"
+                title="Copier le token"
+              >
+                {copiedToken ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-500 pt-1">
+          Champs d&apos;abonnement webhook requis dans Meta : <code className="rounded bg-slate-200/70 px-1 py-0.5 text-slate-800 font-mono">messages</code>, <code className="rounded bg-slate-200/70 px-1 py-0.5 text-slate-800 font-mono">messaging_postbacks</code>.
+        </div>
+      </div>
+    </div>
   );
 }
