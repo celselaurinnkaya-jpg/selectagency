@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useActionState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -14,8 +14,11 @@ import {
 import { Card, Section } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { FormField, FormMessage } from "@/components/shared/form";
+import { initialFormState } from "@/lib/form-state";
 import { WhatsAppWebQrCard } from "./WhatsAppWebQrCard";
 import {
+  connectWhatsAppAccountAction,
   disconnectWhatsAppAccountAction,
   reconnectWhatsAppAccountAction,
   sendTestWhatsAppMessageAction,
@@ -27,6 +30,134 @@ interface WhatsAppConnectionManagerProps {
   canManage: boolean;
   agencyName: string;
   maxWaNumbers: number;
+}
+
+function AgencyCloudApiForm() {
+  const [state, formAction, isPending] = useActionState(
+    connectWhatsAppAccountAction,
+    initialFormState
+  );
+  const e = state.fieldErrors ?? {};
+  const v = state.values ?? {};
+
+  return (
+    <form action={formAction} className="space-y-4" noValidate>
+      {state.message && (
+        <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
+      )}
+
+      <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3 text-xs text-emerald-950 flex items-start gap-2.5">
+        <ShieldCheck className="h-4 w-4 text-emerald-700 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-semibold text-emerald-900">Connexion directe Meta Cloud API</p>
+          <p className="text-emerald-800/90 mt-0.5">
+            Renseignez votre Phone Number ID et WABA ID depuis votre portail Meta for Developers pour relier votre ligne officielle.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <FormField
+          id="agency-wa-display-phone"
+          label="Numéro WhatsApp de l'agence"
+          required
+          hint="Avec indicatif (ex : +242 06 400 9999)"
+          error={e.displayPhoneNumber}
+        >
+          <Input
+            id="agency-wa-display-phone"
+            name="displayPhoneNumber"
+            defaultValue={v.displayPhoneNumber}
+            placeholder="+242 06 400 9999"
+          />
+        </FormField>
+
+        <FormField
+          id="agency-wa-verified-name"
+          label="Nom vérifié de l'agence (optionnel)"
+          hint="Nom de l'entreprise sur Meta Business"
+          error={e.verifiedName}
+        >
+          <Input
+            id="agency-wa-verified-name"
+            name="verifiedName"
+            defaultValue={v.verifiedName}
+            placeholder="Ex. : SELECT Agency Brazzaville"
+          />
+        </FormField>
+
+        <FormField
+          id="agency-wa-phone-id"
+          label="Phone Number ID (Meta)"
+          required
+          hint="Identifiant numérique du numéro chez Meta"
+          error={e.phoneNumberId}
+        >
+          <Input
+            id="agency-wa-phone-id"
+            name="phoneNumberId"
+            defaultValue={v.phoneNumberId}
+            placeholder="Ex. : 105829471938501"
+            className="font-mono text-xs"
+          />
+        </FormField>
+
+        <FormField
+          id="agency-wa-waba-id"
+          label="WABA ID (WhatsApp Business Account)"
+          required
+          hint="Identifiant du compte Business chez Meta"
+          error={e.wabaId}
+        >
+          <Input
+            id="agency-wa-waba-id"
+            name="wabaId"
+            defaultValue={v.wabaId}
+            placeholder="Ex. : 194820485910482"
+            className="font-mono text-xs"
+          />
+        </FormField>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5 space-y-2">
+        <div className="flex items-center gap-2">
+          <Smartphone className="h-4 w-4 text-navy-800" />
+          <label htmlFor="wa-agency-coexistence" className="text-xs font-bold text-navy-900 cursor-pointer">
+            Activer le mode Coexistence
+          </label>
+        </div>
+        <p className="text-[11px] text-slate-600 leading-relaxed">
+          Permet de continuer à utiliser l&apos;application mobile WhatsApp Business sur le smartphone de votre agence
+          tout en laissant l&apos;Agent IA répondre automatiquement.
+        </p>
+        <div className="pt-1 flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="wa-agency-coexistence"
+            name="coexistence"
+            value="true"
+            defaultChecked={true}
+            className="h-4 w-4 rounded border-slate-300 text-navy-800 focus:ring-navy-500"
+          />
+          <label htmlFor="wa-agency-coexistence" className="text-xs text-slate-700 cursor-pointer">
+            Garder l&apos;application WhatsApp Business active sur mon smartphone
+          </label>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end pt-2">
+        <Button
+          type="submit"
+          disabled={isPending}
+          variant="accent"
+          className="font-semibold text-xs min-w-36 cursor-pointer"
+        >
+          <Plug className="h-4 w-4 mr-1.5" />
+          {isPending ? "Connexion en cours..." : "Enregistrer la ligne WhatsApp"}
+        </Button>
+      </div>
+    </form>
+  );
 }
 
 export function WhatsAppConnectionManager({
@@ -119,10 +250,20 @@ export function WhatsAppConnectionManager({
         </div>
       )}
 
-      {/* Si aucun compte n'est actuellement connecté : AFFICHER DIRECTEMENT LE SCANNER WHATSAPP WEB */}
+      {/* Si aucun compte n'est actuellement connecté */}
       {!activeAccount ? (
         <div className="space-y-6">
-          <WhatsAppWebQrCard agencyName={agencyName} />
+          {canManage && (
+            <Section title="Ligne WhatsApp Business (Cloud API Meta)">
+              <Card className="p-5">
+                <AgencyCloudApiForm />
+              </Card>
+            </Section>
+          )}
+
+          <Section title="Connexion WhatsApp Web (QR Code)">
+            <WhatsAppWebQrCard agencyName={agencyName} />
+          </Section>
 
           {/* Ligne précédemment déconnectée si existante */}
           {disconnectedAccounts.length > 0 && (

@@ -15,6 +15,23 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 57 — 15 Novembre 2026 à 17:28
+* **Objet** : Finalisation et intégration directe de la section « Ligne WhatsApp Business (Cloud API Meta) » sur la page de connexion WhatsApp de l'agence (`/agent-ia/connexion`).
+* **Demande / Contexte** :
+  - L'utilisateur a précisé : *« je ne vois pas: Vous avez la section « Ligne WhatsApp Business (Cloud API Meta) ». »* puis *« finalise »*.
+  - L'utilisateur cherchait cette section directement dans l'espace agence (`/agent-ia/connexion`).
+* **Solution apportée** :
+  - Intégration directe du formulaire `AgencyCloudApiForm` dans `src/features/agent-ia/WhatsAppConnectionManager.tsx` sous la section intitulée exactement : **« Ligne WhatsApp Business (Cloud API Meta) »**.
+  - Visible directement pour les propriétaires et administrateurs d'agence sur `/agent-ia/connexion`.
+  - Champs disponibles : Numéro WhatsApp, Nom vérifié, Phone Number ID (Meta), WABA ID (Meta) et case à cocher Mode Coexistence Mobile.
+  - La section est immédiatement visible en haut de la page, suivie par la section alternative *« Connexion WhatsApp Web (QR Code) »*.
+* **Validation Globale** :
+  - **TypeScript** : 0 erreur (`tsc --noEmit`).
+  - **Tests Unitaires** : 32/32 suites passées, 249/249 tests validés (`npm test`).
+  - **Publication** : Déploiement sur GitHub (`main`) pour mise en ligne automatique sur Vercel.
+
+---
+
 ### Session 56 — 15 Novembre 2026 à 14:50
 * **Objet** : Résolution du blocage « Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta » et suppression définitive du déclencheur de popup Meta Embedded Signup.
 * **Demande / Contexte** :
