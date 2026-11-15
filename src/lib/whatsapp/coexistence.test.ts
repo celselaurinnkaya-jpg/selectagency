@@ -106,11 +106,16 @@ describe("appels à Meta après le scan", () => {
         },
       });
     }) as typeof fetch;
-    expect(await findWabaId(fake, "APPID", "APPSECRET", "EAAG-jeton")).toBe("777000");
+    expect(await findWabaId(fake, "APPID", "APPSECRET", "EAAG-jeton")).toEqual({
+      wabaId: "777000",
+      scopes: ["business_management", "whatsapp_business_management"],
+    });
     expect(asked).toContain("/debug_token?");
     expect(asked).toContain("input_token=EAAG-jeton");
-    const none = (async () => ok({ data: { granular_scopes: [{ scope: "business_management", target_ids: ["111"] }] } })) as typeof fetch;
-    expect(await findWabaId(none, "APPID", "APPSECRET", "EAAG-jeton")).toBeUndefined();
+    // Configuration Meta sans WhatsApp : aucun compte, et les autorisations reçues expliquent pourquoi.
+    const none = (async () =>
+      ok({ data: { scopes: ["business_management", "public_profile"], granular_scopes: [{ scope: "business_management", target_ids: ["111"] }] } })) as typeof fetch;
+    expect(await findWabaId(none, "APPID", "APPSECRET", "EAAG-jeton")).toEqual({ wabaId: undefined, scopes: ["business_management", "public_profile"] });
   });
 
   it("transmet l'erreur de Meta (ex. historique refusé par l'agence)", async () => {

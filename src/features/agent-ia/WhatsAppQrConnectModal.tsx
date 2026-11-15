@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Loader2, QrCode, ShieldCheck, Smartphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { completeWhatsAppSignupAction } from "./whatsapp-actions";
+import type { EmbeddedSignupSetup } from "@/lib/whatsapp/signup-prefill";
+import { completeWhatsAppSignupAction, getWhatsAppSignupPrefillAction } from "./whatsapp-actions";
 
 // Connexion WhatsApp par le vrai QR code de Meta.
 // Le QR code n'est pas dessiné par SELECT : un QR code fabriqué ne peut relier aucun téléphone. Il est affiché par
@@ -82,6 +83,8 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
   const [phase, setPhase] = useState<Phase>("loading");
   const [message, setMessage] = useState<string | null>(null);
   const session = useRef<{ wabaId?: string; phoneNumberId?: string }>({});
+  // Informations de l'agence qui pré-remplissent la fenêtre de Meta (chargées à l'ouverture, avant le clic).
+  const prefill = useRef<EmbeddedSignupSetup>({});
   const configured = Boolean(APP_ID && CONFIG_ID);
 
   // Chargement du kit Facebook et écoute des messages de la fenêtre Meta (fin, abandon, erreur).
@@ -89,6 +92,13 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
     if (!isOpen || !configured) return;
     let active = true;
     session.current = {};
+    getWhatsAppSignupPrefillAction()
+      .then((setup) => {
+        if (active) prefill.current = setup;
+      })
+      .catch(() => {
+        // Sans pré-remplissage, l'agence saisit simplement ses informations dans la fenêtre de Meta.
+      });
     loadFacebookSdk()
       .then(() => active && setPhase("ready"))
       .catch((err: unknown) => {
@@ -167,7 +177,7 @@ export function WhatsAppQrConnectModal({ isOpen, onClose, onSuccess }: WhatsAppQ
         config_id: CONFIG_ID,
         response_type: "code",
         override_default_response_type: true,
-        extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+        extras: { setup: prefill.current, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
       },
     );
   };

@@ -51,11 +51,16 @@ export async function exchangeCode(f: Fetch, appId: string, appSecret: string, c
  * 1 bis. Compte WhatsApp Business relié, quand la fenêtre Meta ne l'a pas transmis à la page : Meta l'indique dans
  * les autorisations du jeton (debug_token, « granular_scopes » → whatsapp_business_management, le plus récent en premier).
  */
-export async function findWabaId(f: Fetch, appId: string, appSecret: string, token: string): Promise<string | undefined> {
+export async function findWabaId(f: Fetch, appId: string, appSecret: string, token: string): Promise<{ wabaId?: string; scopes: string[] }> {
   const query = new URLSearchParams({ input_token: token, access_token: `${appId}|${appSecret}` });
   type Scope = { scope?: string; target_ids?: string[] };
-  const body = await call<{ data?: { granular_scopes?: Scope[] } }>(f, `${GRAPH}/${GRAPH_VERSION}/debug_token?${query}`);
-  return body.data?.granular_scopes?.find((s) => s.scope === "whatsapp_business_management")?.target_ids?.[0];
+  const body = await call<{ data?: { scopes?: string[]; granular_scopes?: Scope[] } }>(f, `${GRAPH}/${GRAPH_VERSION}/debug_token?${query}`);
+  const granular = body.data?.granular_scopes ?? [];
+  return {
+    wabaId: granular.find((s) => s.scope === "whatsapp_business_management")?.target_ids?.[0],
+    // Autorisations accordées (noms seulement, sans aucun secret) : pour expliquer un parcours Meta incomplet.
+    scopes: body.data?.scopes ?? granular.map((s) => s.scope ?? "").filter(Boolean),
+  };
 }
 
 /** 2. Le numéro connecté : celui indiqué par Meta, sinon le premier numéro du compte WhatsApp Business. */

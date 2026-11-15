@@ -9,6 +9,7 @@ import { sendWhatsAppMessage } from "@/lib/whatsapp/client";
 import { cronSecret } from "@/lib/email/system-worker";
 import { createSystemClient } from "@/lib/supabase/system";
 import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "@/lib/whatsapp/meta-signup";
+import { buildSignupSetup, type EmbeddedSignupSetup } from "@/lib/whatsapp/signup-prefill";
 import { encryptToken } from "@/lib/whatsapp/token-crypto";
 
 const connectSchema = z.object({
@@ -285,6 +286,30 @@ export async function pairWhatsAppDeviceAction(
 
 const META_ID = /^\d{5,30}$/;
 
+/**
+ * Données de l'agence pour pré-remplir la fenêtre de Meta : nom, ville, pays et fuseau de l'agence, et coordonnées
+ * des factures (raison sociale, adresse, téléphone, e-mail ; à défaut, l'e-mail du responsable connecté).
+ * Rien de secret : ce sont les informations de l'agence elle-même.
+ */
+export async function getWhatsAppSignupPrefillAction(): Promise<EmbeddedSignupSetup> {
+  const ctx = await getAgencyContext();
+  const { data: invoice } = await ctx.supabase
+    .from("invoice_settings")
+    .select("legal_name, address, phone, email")
+    .eq("organization_id", ctx.organizationId)
+    .maybeSingle();
+  return buildSignupSetup({
+    agencyName: ctx.agency.name,
+    legalName: invoice?.legal_name ?? undefined,
+    email: invoice?.email || ctx.email,
+    address: invoice?.address ?? undefined,
+    city: ctx.agency.city,
+    countryCode: ctx.agency.countryCode,
+    phone: invoice?.phone ?? undefined,
+    timezone: ctx.agency.timezone,
+  });
+}
+
 export async function completeWhatsAppSignupAction(input: {
   code: string;
   wabaId?: string;
@@ -319,15 +344,20 @@ export async function completeWhatsAppSignupAction(input: {
 
   // La fenêtre Meta n'a pas transmis le compte à la page : on le demande à Meta avec le jeton obtenu.
   if (!wabaId) {
-    const found = await findWabaId(fetch, appId, appSecret, token).catch(() => undefined);
-    wabaId = found && META_ID.test(found) ? found : undefined;
-  }
-  if (!wabaId) {
-    return {
-      ok: false,
-      message:
-        "Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta. Recommencez et allez jusqu'au bout : numéro de l'agence, confirmation dans WhatsApp Business sur le téléphone, puis « Terminer ».",
-    };
+    const found = await findWabaId(fetch, appId, appSecret, token).catch(() => null);
+    if (!found) {
+      return { ok: false, message: "Meta n'a pas pu confirmer le compte WhatsApp relié. Recommencez dans quelques instants." };
+    }
+    wabaId = found.wabaId && META_ID.test(found.wabaId) ? found.wabaId : undefined;
+    if (!wabaId) {
+      const granted = found.scopes.length ? found.scopes.join(", ") : "aucune";
+      return {
+        ok: false,
+        message: found.scopes.includes("whatsapp_business_management")
+          ? "Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta. Recommencez et allez jusqu'au bout : numéro de l'agence, confirmation dans WhatsApp Business sur le téléphone, puis « Terminer »."
+          : `La fenêtre de Meta n'a pas demandé l'accès à WhatsApp (autorisations reçues : ${granted}). La configuration de connexion de SELECT dans l'application Meta doit utiliser le modèle « WhatsApp Embedded Signup ».`,
+      };
+    }
   }
 
   let phone;

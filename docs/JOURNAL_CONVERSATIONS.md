@@ -15,6 +15,77 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 55 — 15 Novembre 2026 (Claude Code) — « fais le » : pré-remplissage de la fenêtre de Meta
+* **Demande** : réaliser l'amélioration officielle proposée en session 54, pour que l'agence ait le moins possible à saisir dans la fenêtre de Meta.
+* **Réalisé (local, rien de poussé)** :
+  - **`src/lib/whatsapp/signup-prefill.ts`** (nouveau) : `buildSignupSetup` construit `extras.setup.business` au format de Meta :
+    - nom (raison sociale, sinon nom de l'agence, 75 caractères au plus) et e-mail vérifié ;
+    - adresse (100 caractères au plus), ville et pays (code ISO à 2 lettres) ;
+    - téléphone (indicatif et numéro national via `libphonenumber-js`) ;
+    - fuseau converti en « UTC+01:00 » (`utcOffset`).
+  - Un champ vide ou invalide est omis. Le profil public du numéro (`phone` : nom affiché, catégorie, description) n'est pas envoyé, pour ne pas écraser le profil de l'application WhatsApp Business (coexistence).
+  - **`getWhatsAppSignupPrefillAction`** (`whatsapp-actions.ts`) lit l'agence (`ctx.agency`) et `invoice_settings` (raison sociale, adresse, téléphone, e-mail). À défaut d'e-mail, elle prend celui du responsable connecté.
+  - **`WhatsAppQrConnectModal.tsx`** charge ces données à l'ouverture, puis les passe dans `extras.setup`. En cas d'échec, la fenêtre de Meta s'ouvre vide, comme avant.
+* **Limites de Meta** :
+  - L'écran du portefeuille reste affiché (pré-rempli, modifiable).
+  - Si l'agence a déjà un portefeuille, Meta le présélectionne et le pré-remplissage ne sert pas.
+  - Le site internet n'existe pas dans SELECT : l'agence le saisit chez Meta.
+  - La documentation ne dit pas explicitement que le pré-remplissage s'applique au parcours coexistence.
+* **Tests** : 4 nouveaux tests (`signup-prefill.test.ts`). Tests unitaires 154 sur 154. `tsc` 0 erreur. ESLint sans erreur sur les fichiers touchés.
+* **Suite** : publication seulement sur demande (« publie sur Vercel »). Elle enverrait aussi le diagnostic de la session 51.
+
+### Session 54 — 15 Novembre 2026 (Claude Code) — Avis sur l'idée « SELECT fournisseur unique, connexion en 1 clic sans écrans Meta »
+* **Idée soumise** : SELECT gère la connexion globale avec son application Meta. L'agence scanne un QR code ou relie son numéro en un clic dans SELECT, sans voir les écrans de Meta.
+* **Avis (aucun code modifié)** :
+  - « Fournisseur unique » : c'est déjà le modèle construit. Une seule application Meta et un seul webhook ; jetons gardés par SELECT ; l'agence ne crée ni application ni clé.
+  - « Sans voir les écrans de Meta » : impossible en officiel. Meta a abandonné le modèle On-Behalf-Of (dernier jour d'inscription le 29 septembre 2025). L'agence doit être propriétaire de son compte WhatsApp Business et passer par l'Embedded Signup. L'écran du portefeuille peut être pré-rempli, mais pas sauté.
+  - « QR code dans l'interface SELECT » : seul WhatsApp Web non officiel (Baileys, Evolution) le permet. Refusé par l'utilisateur, risque de bannissement, et pas faisable sur Vercel.
+  - Possible et officiel : pré-remplir la fenêtre de Meta (`extras.setup` : `business` avec nom, e-mail, site, pays, adresse, téléphone et fuseau ; `phone` avec nom affiché, catégorie et description) à partir du profil de l'agence. La fenêtre ne s'ouvre qu'une fois par agence. Amélioration à faire après le premier essai réussi.
+
+### Session 53 — 15 Novembre 2026 (Claude Code) — Avis sur le texte « MISSION : finaliser WhatsApp Cloud API + Embedded Signup + Coexistence »
+* **Demande** : « ne fais rien, ne code pas » ; vérifier l'idée du texte par rapport à ce qui est déjà fait, puis dire exactement quoi faire. Aucun code modifié.
+* **Avis** :
+  - Environ 80 % du texte est déjà en place : numéro par agence (`phone_number_id` unique), règles d'accès par agence, jeton chiffré côté serveur, fenêtre officielle de Meta, webhook signé, Gemini par agence sans boucle, tests d'isolation A/B en base.
+  - Inexact dans le texte :
+    - le QR code de Meta ne peut pas s'afficher dans SELECT, il reste dans la fenêtre de Meta ;
+    - l'erreur citée est déjà corrigée (`88663f5`) ;
+    - les essais avec Meta (A, B, G, H) ne peuvent être faits que par l'utilisateur.
+  - Vrais manques : enregistrement d'un nouveau numéro (PIN), expiration éventuelle du jeton (modèle « 60 Expiration Token »), `business_id` non enregistré, états détaillés (« non éligible »).
+  - Contradictions existantes : faux QR code de l'autre outil en ligne (`f7c5ed0`) ; migration locale `20261114160000_platform_whatsapp.sql` (numéro saisi à la main, qualité « green » et palier « TIER_1K » inventés), à ne pas appliquer sans relecture.
+  - Oublié par le texte : Tech Provider, vérification de l'entreprise, App Review (accès avancé `whatsapp_business_management` et `whatsapp_business_messaging`) et application en mode Live, nécessaires pour que d'autres agences se connectent.
+* **Plan donné à l'utilisateur** :
+  1. Vérifier ou créer la configuration « WhatsApp Embedded Signup » et mettre son identifiant sur Vercel.
+  2. Vérifier les champs du webhook.
+  3. Publier le diagnostic local (sur demande).
+  4. Essai réel et capture.
+  5. Lancer Tech Provider et App Review pour les autres agences.
+
+### Session 52 — 14 Novembre 2026 (Claude Code) — « vérifie encore » : contrôle complet de la connexion Meta
+* **Documentation de Meta revérifiée le 14 novembre 2026** :
+  - Lancement pour l'application WhatsApp Business : `featureType: "whatsapp_business_app_onboarding"`, `sessionInfoVersion: "3"`, `setup: {}`, `config_id`, `response_type: "code"`, `override_default_response_type: true`. C'est conforme au code.
+  - Sans `version` dans `extras`, Meta sert la version 4, toujours disponible. Les versions 2 et 3 sont abandonnées depuis le 15 octobre 2026. La version 5 active l'application WhatsApp Business par défaut, sans `featureType` ni `sessionInfoVersion`. Aucun changement nécessaire.
+  - Conditions : SELECT doit être Solution Partner ou Tech Provider ; session logging ; webhook `account_update`, `history`, `smb_app_state_sync`, `smb_message_echoes` ; application WhatsApp Business 2.24.17 ou plus récente.
+  - Écrans attendus : option « connecter votre compte WhatsApp Business existant », numéro, message de Meta dans WhatsApp (« Connect », « Connect to the Business Platform », « Confirm » pour l'historique), code de vérification à recopier, fin du parcours.
+* **Contrôles** : tests unitaires 150 sur 150 (hors base). `tsc` 0 erreur. ESLint sans erreur sur les fichiers modifiés.
+* **Conclusion** :
+  - Le message de l'essai vient après un échange de code réussi. Meta a donc donné un accès valide, mais sans compte WhatsApp.
+  - Causes possibles : configuration qui n'est pas « WhatsApp Embedded Signup » (la plus probable si les écrans WhatsApp ne sont pas apparus), application pas encore Tech Provider, ou échec de la vérification `debug_token`. La version en ligne ne distingue pas ces cas.
+  - Le diagnostic préparé en session 51, non publié, les distingue.
+
+### Session 51 — 14 Novembre 2026 (Claude Code) — Après publication de 88663f5 : « Aucun compte WhatsApp Business n'a été relié »
+* **Publication** : commit `88663f5` envoyé sur demande (« publie sur Vercel »). Déploiement Vercel réussi. Les changements de l'autre outil non commités (admin, `20261114160000_platform_whatsapp.sql`, `WhatsAppConnectionManager.tsx`) restent en local.
+* **Nouvel essai de l'utilisateur** : message « Aucun compte WhatsApp Business n'a été relié dans la fenêtre de Meta ».
+* **Analyse** :
+  - Le code de Meta a bien été échangé contre un jeton. Sinon, le message aurait été « Meta a refusé le code ».
+  - Ce jeton ne donne accès à aucun compte WhatsApp Business, ou la vérification `debug_token` a échoué : les deux cas donnaient le même message.
+  - Cause la plus probable : la configuration `NEXT_PUBLIC_WHATSAPP_CONFIG_ID` n'est pas une configuration « WhatsApp Embedded Signup ». Une configuration « Facebook Login for Business » générale affiche « Associez votre compte à Select Agency », puis se termine sans les écrans WhatsApp.
+  - Documentation de Meta du 14 novembre 2026 : créer la configuration à partir du modèle « WhatsApp Embedded Signup Configuration With 60 Expiration Token », ou choisir la variante « WhatsApp Embedded Signup ». L'application doit être Tech Provider ou Solution Partner et abonnée au webhook `account_update`.
+* **Correction de diagnostic (local, non publiée)** :
+  - `findWabaId` renvoie aussi les autorisations accordées (noms seulement, aucun secret).
+  - Le message distingue trois cas : Meta n'a pas répondu ; WhatsApp autorisé mais aucun compte relié ; pas d'accès WhatsApp demandé (avec la liste des autorisations reçues).
+* **Tests** : `tsc` 0 erreur. Tests WhatsApp 15 sur 15 (test `findWabaId` mis à jour).
+* **À faire par l'utilisateur** : dans l'application Meta, Facebook Login for Business → Configurations, vérifier la variante de la configuration utilisée. Au besoin, en créer une avec le modèle WhatsApp Embedded Signup, puis remplacer `NEXT_PUBLIC_WHATSAPP_CONFIG_ID` sur Vercel et redéployer.
+
 ### Session 50 — 14 Novembre 2026 (Claude Code) — Fenêtre Meta terminée mais « Meta n'a pas indiqué le compte WhatsApp Business »
 * **Demande** : l'utilisateur a suivi la fenêtre officielle de Meta jusqu'au bout. La fenêtre « Connexion WhatsApp par QR code » affiche ensuite « Meta n'a pas indiqué le compte WhatsApp Business. Recommencez le scan. » Il demande une analyse.
 * **Analyse** :
