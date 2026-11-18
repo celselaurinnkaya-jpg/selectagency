@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
-import { headers } from "next/headers";
 import { getAgencyContext } from "@/lib/auth/context";
+import { siteUrl } from "@/lib/env";
 import { allowed, can } from "@/lib/auth/permissions";
 import { fetchRows, readAgency } from "@/lib/data/agency";
 import { INVITATION_COLUMNS, toInvitation } from "@/features/team/invitations";
@@ -136,7 +136,7 @@ export async function getTeam() {
     ? (await fetchRows(ctx, "invitations", INVITATION_COLUMNS, (q) => q.is("accepted_at", null).is("revoked_at", null))).map(toInvitation)
     : [];
   const active = activeMembers(data.members);
-  const base = canManage ? await siteUrl() : "";
+  const base = canManage ? siteUrl() : "";
   const pending = invitations.map((invitation) => ({
     ...invitation,
     link: `${base}/invite/${invitation.token}`,
@@ -169,14 +169,6 @@ export async function getTeam() {
       };
     }),
   };
-}
-
-/** Adresse du site pour les liens d'invitation (même règle que l'action qui les crée). */
-async function siteUrl(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return configured.replace(/\/$/, "");
-  const h = await headers();
-  return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? "localhost:3000"}`;
 }
 
 export async function getAgencySettings() {

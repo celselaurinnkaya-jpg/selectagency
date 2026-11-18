@@ -15,6 +15,31 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 69 — 18 Novembre 2026 (Claude Code) — Lien d'invitation d'équipe avec « localhost » : corrigé
+* **Problème signalé** : Équipe → Ajouter un membre → invitation créée, mais le lien généré ne s'ouvre pas et commence par l'adresse locale (localhost).
+* **Diagnostic** :
+  - La page d'invitation en ligne fonctionne : /invite/<jeton factice> affiche « Invitation introuvable » (code 200), et /invite est bien public.
+  - Cause : le lien est construit avec `NEXT_PUBLIC_SITE_URL`, prioritaire sur tout le reste. Cette variable vaut localhost dans .env.local (normal en local) et elle a été ajoutée dans Vercel (session Brevo). Si sa valeur Vercel est localhost, tous les liens en ligne pointent vers l'ordinateur de la personne qui les ouvre.
+  - La même règle était recopiée à 6 endroits : invitations (création et liste « en attente »), e-mails de confirmation d'inscription et de mot de passe oublié, liens partenaires, e-mails Brevo.
+  - Défaut supplémentaire : `process.env.X?.replace() ?? …` ne retombait jamais sur l'adresse de la page, car une chaîne vide n'est pas `undefined`.
+* **Correction** :
+  - Une seule règle dans `src/lib/env.ts` : `siteUrl()` et `isLocalUrl()`. Dans la version en ligne (`NODE_ENV=production`), une adresse locale est ignorée au profit de https://www.myselectagency.com. En développement, localhost reste utilisé.
+  - Fichiers qui utilisent maintenant `siteUrl()` :
+    - `src/features/team/actions.ts` ;
+    - `src/features/operations/queries.ts` (liens des invitations en attente) ;
+    - `src/features/auth/actions.ts` (liens des e-mails d'inscription et de mot de passe oublié) ;
+    - `src/features/partners/actions.ts` ;
+    - `src/app/(app)/partners/[id]/page.tsx` ;
+    - `src/lib/email/templates.ts`.
+  - `src/features/team/TeamForms.tsx` : avertissement orange sous un lien qui commence par « localhost » (« il ne s'ouvre que sur cet ordinateur… »).
+  - Nouveau test `src/lib/env.test.ts`.
+* **Vérifications** :
+  - `tsc` : 0 erreur ; ESLint : 0 erreur ;
+  - tests liés aux fichiers modifiés : 34/34 réussis.
+* **Les invitations déjà créées restent valables** : leur lien est recalculé à l'affichage dans « Invitations en attente ».
+* **À faire par l'utilisateur** : dans Vercel, vérifier que `NEXT_PUBLIC_SITE_URL` vaut https://www.myselectagency.com (Production).
+* **Non envoyé sur GitHub** (en attente de demande explicite).
+
 ### Session 68 — 18 Novembre 2026 (Claude Code) — Œil pour afficher le mot de passe (connexion, création de compte, nouveau mot de passe)
 * **Demande de l'utilisateur** : sur les pages de connexion et de création de compte, on ne peut pas voir les caractères du mot de passe. Il manque l'œil. « vas-y ».
 * **Fait** :

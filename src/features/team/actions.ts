@@ -1,11 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage, READ_ONLY_MESSAGE } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
+import { siteUrl } from "@/lib/env";
 import { dbMessage } from "@/lib/data/errors";
 import { ROLE } from "@/lib/domain/labels";
 import { activeMembers } from "@/lib/domain/members";
@@ -72,8 +72,7 @@ export async function inviteMemberAction(_prev: FormState, formData: FormData): 
     .single();
   if (error) return { message: dbMessage(error), values };
 
-  const h = await headers();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? h.get("origin") ?? "";
+  const origin = siteUrl();
   refresh();
   return {
     ok: true,

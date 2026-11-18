@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
 import { ROLE } from "@/lib/domain/labels";
 import type { MemberRole } from "@/lib/domain/types";
+import { isLocalUrl } from "@/lib/env";
 import { initialFormState, type FormState } from "@/lib/form-state";
 import {
   inviteMemberAction,
@@ -99,8 +100,20 @@ export function InvitationLink({ link }: { link: string }) {
     <div className="space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900" role="status">
       <p>Invitation créée. Transmettez ce lien à la personne invitée (valable 7 jours) :</p>
       <p className="break-all font-mono text-xs text-slate-800">{link}</p>
+      <LocalLinkWarning link={link} />
       <ShareInvitation link={link} />
     </div>
+  );
+}
+
+/** Lien créé sur un ordinateur de développement (localhost) : il ne s'ouvre nulle part ailleurs. */
+function LocalLinkWarning({ link }: { link: string }) {
+  if (!isLocalUrl(link)) return null;
+  return (
+    <p className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900">
+      Ce lien commence par « localhost » : il ne s&apos;ouvre que sur cet ordinateur. Pour inviter quelqu&apos;un, créez l&apos;invitation depuis
+      www.myselectagency.com.
+    </p>
   );
 }
 
@@ -158,6 +171,7 @@ export function PendingInvitationActions({ id, link, expired, canRenew }: { id: 
           </Button>
         </form>
       </div>
+      {!expired && <LocalLinkWarning link={link} />}
       {state.message && <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />}
     </div>
   );

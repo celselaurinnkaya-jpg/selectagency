@@ -1,4 +1,5 @@
 import type { EmailOutboxKind } from "@/lib/domain/types";
+import { DEFAULT_SITE_URL, siteUrl } from "@/lib/env";
 import { formatDate, formatMoney } from "@/lib/format";
 import { missingDocumentNote, parseMissingDocuments } from "./missing-documents";
 
@@ -34,11 +35,11 @@ function num(payload: Record<string, unknown>, key: string, fallback = 0): numbe
   return Number.isFinite(val) ? val : fallback;
 }
 
-/** Adresse publique du site, utilisée dans les liens des e-mails. */
-export const DEFAULT_SITE_URL = "https://www.myselectagency.com";
+/** Adresse publique du site, utilisée dans les liens des e-mails (même règle que le reste du site). */
+export { DEFAULT_SITE_URL };
 
 function siteBaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_SITE_URL?.trim() || DEFAULT_SITE_URL).replace(/\/+$/, "");
+  return siteUrl();
 }
 
 interface LayoutOptions {

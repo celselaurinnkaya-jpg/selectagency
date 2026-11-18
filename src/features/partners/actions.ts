@@ -1,11 +1,11 @@
 "use server";
 
-import { headers } from "next/headers";
 import { refresh } from "next/cache";
 import { z } from "zod";
 import { getAgencyContext, requireSessionUser } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { dbMessage } from "@/lib/data/errors";
+import { siteUrl } from "@/lib/env";
 import { CURRENCY_OPTIONS } from "@/lib/format";
 import type { FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
@@ -113,10 +113,8 @@ export async function createPartnerAccessAction(partnerId: string, email: string
   if (!allowed(ctx, "partners.manage")) return { message: forbiddenMessage(ctx, "partners.manage") };
   const { data, error } = await ctx.supabase.rpc("create_partner_access", { p_partner_id: partnerId, p_email: address });
   if (error) return { message: dbMessage(error) };
-  const h = await headers();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? h.get("origin") ?? "";
   refresh();
-  return { ok: true, message: "Lien d'accès créé.", redirectTo: `${origin}/acces-partenaire/${data as string}` };
+  return { ok: true, message: "Lien d'accès créé.", redirectTo: `${siteUrl()}/acces-partenaire/${data as string}` };
 }
 
 export async function revokePartnerAccessAction(partnerId: string): Promise<FormState> {

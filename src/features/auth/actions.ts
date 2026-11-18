@@ -1,8 +1,8 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { siteUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 import { formValues, type FormState } from "@/lib/form-state";
 import { safeNext } from "./redirects";
@@ -11,13 +11,6 @@ import { safeNext } from "./redirects";
 // Les messages ne révèlent jamais si une adresse e-mail possède déjà un compte.
 
 const MIN_PASSWORD = 8;
-
-async function siteUrl(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL;
-  if (configured) return configured.replace(/\/$/, "");
-  const h = await headers();
-  return h.get("origin") ?? `http://${h.get("host") ?? "localhost:3000"}`;
-}
 
 function authMessage(code: string | undefined, message: string): string {
   if (code === "invalid_credentials") return "Adresse e-mail ou mot de passe incorrect.";
@@ -64,7 +57,7 @@ export async function signUpAction(_prev: FormState, formData: FormData): Promis
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${await siteUrl()}/auth/confirm?next=${encodeURIComponent(next)}`,
+      emailRedirectTo: `${siteUrl()}/auth/confirm?next=${encodeURIComponent(next)}`,
       data: { full_name: parsed.data.fullName },
     },
   });
@@ -85,7 +78,7 @@ export async function requestPasswordResetAction(_prev: FormState, formData: For
   if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${await siteUrl()}/auth/confirm?next=/reset-password`,
+    redirectTo: `${siteUrl()}/auth/confirm?next=/reset-password`,
   });
   if (error && error.code !== "user_not_found") return { message: authMessage(error.code, error.message), values };
   return { ok: true, message: "Si un compte existe avec cette adresse, un lien de réinitialisation vient d'être envoyé. Il est valable une heure." };

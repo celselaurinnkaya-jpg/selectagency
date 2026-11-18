@@ -2,12 +2,12 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { CheckCircle2, Hourglass, Pencil, Users, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, Notice, PageHeader, Section, StatCard, StatusBadge } from "@/components/shared/ui";
 import { COMMISSION_STATUS, PROSPECT_BADGE } from "@/lib/domain/labels";
+import { siteUrl } from "@/lib/env";
 import { dayKey, formatDate, formatMoney, initials } from "@/lib/format";
 import { getPartner } from "@/features/partners/queries";
 import { CommissionActions, PartnerAccess } from "@/features/partners/PartnerForms";
@@ -32,9 +32,7 @@ async function PartnerDetail({ params, searchParams }: PageProps<"/partners/[id]
   const tz = agency.timezone;
   const today = dayKey(now, tz);
   // Lien d'accès envoyé mais pas encore utilisé : on peut le retransmettre.
-  const h = await headers();
-  const origin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host") ?? ""}`;
-  const pendingLink = partner.accessToken && permissions.manage ? `${origin}/acces-partenaire/${partner.accessToken}` : undefined;
+  const pendingLink = partner.accessToken && permissions.manage ? `${siteUrl()}/acces-partenaire/${partner.accessToken}` : undefined;
 
   return (
     <>
