@@ -15,6 +15,160 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 68 — 18 Novembre 2026 (Claude Code) — Œil pour afficher le mot de passe (connexion, création de compte, nouveau mot de passe)
+* **Demande de l'utilisateur** : sur les pages de connexion et de création de compte, on ne peut pas voir les caractères du mot de passe. Il manque l'œil. « vas-y ».
+* **Fait** :
+  - Nouveau composant partagé `src/components/shared/PasswordInput.tsx` :
+    - champ mot de passe avec un bouton œil à droite ; un clic affiche le texte, l'icône passe en œil barré, un nouveau clic masque ;
+    - bouton de 40 × 44 px, `type="button"` (n'envoie jamais le formulaire) ;
+    - pour les lecteurs d'écran : `aria-label` « Afficher / Masquer le mot de passe », `aria-pressed` et `aria-controls` ;
+    - l'œil natif d'Edge (`::-ms-reveal`) est masqué pour éviter un double œil.
+  - `src/features/auth/AuthForms.tsx` : les 4 champs mot de passe utilisent `PasswordInput` :
+    - Connexion (/login) ;
+    - Création de compte (/signup) ;
+    - Nouveau mot de passe et Confirmation (/reset-password).
+  - Rien d'autre modifié : textes, erreurs, actions et `autoComplete` identiques.
+* **Vérifications** :
+  - `tsc` : 0 erreur ; ESLint : 0 erreur sur les 2 fichiers ;
+  - serveur de test temporaire sur le port 3100 (arrêté ensuite) : /login et /signup affichent le bouton œil (code 200) ;
+  - /reset-password redirige sans session (307), comme prévu.
+* **Non envoyé sur GitHub** (en attente de demande explicite).
+
+### Session 67 — 17 Novembre 2026 à 06:05
+* **Objet** : Exécution réussie des appels d'API tests obligatoires dans le Graph API Explorer de Meta pour l'App Review.
+* **Demande / Contexte** :
+  - L'utilisateur a testé les deux endpoints dans l'Explorateur Graph API :
+    1. `GET /v27.0/me/businesses` : succès avec retour des portefeuilles (`Select Agency` ID `866307169909072`, `Presta-educ`, `S-C E`).
+    2. `GET /v27.0/me?fields=id,name` : succès avec retour du profil développeur.
+  - Demande : *« est ce que c'est bon »*.
+* **Analyse & Validation** :
+  - L'appel `business_management` est 100 % valide.
+  - Pour `whatsapp_business_management`, si Meta demande un endpoint ciblant spécifiquement WhatsApp, conseil d'appeler `866307169909072/owned_whatsapp_business_accounts` ou de rafraîchir l'écran App Review.
+* **Aucun code modifié.**
+
+---
+
+### Session 66 — 17 Novembre 2026 à 02:22
+* **Objet** : Génération des icônes d'application calibrées aux spécifications exactes de Meta Developers (1024 x 1024 px).
+* **Demande / Contexte** :
+  - L'utilisateur a demandé : *« renvoi moi le logo que je vais maitre comme icone de l'application sur meta avec des messure respecter »*.
+* **Spécifications Meta respectées** :
+  - Dimensions : **1024 x 1024 pixels** (format carré 1:1 obligatoire).
+  - Fond plein opaque Bleu Marine (`#023764`) sans transparence (exigence Meta pour éviter le rejet ou les coins noirs lors du recadrage circulaire automatique).
+  - Zone de sécurité (Safe Zone) : marge de protection de 20 % autour du monogramme / logo pour éviter tout rognage lors des affichages mobiles.
+* **Fichiers générés** :
+  - `public/brand/meta-app-icon-1024x1024.png` : Monogramme officiel « S » jaune citron (`#F0FF0A`) sur fond bleu marine. Format recommandé pour l'icône de l'application.
+  - `public/brand/meta-app-logo-1024x1024.png` : Logo textuel complet « SELECT Agency » centré sur fond bleu marine.
+  - Fiche récapitulative créée dans l'artéfact `meta-app-icons.md`.
+* **Règle Git** : Strictement local (`localhost:3000`), aucun push vers GitHub sans demande explicite.
+
+---
+
+### Session 65 — 17 Novembre 2026 à 02:00
+* **Objet** : Choix stratégique de l'utilisateur : validation de l'**Option A** (API Officielle Meta Cloud API avec démarche Tech Provider).
+* **Demande / Contexte** :
+  - L'utilisateur a rencontré l'erreur Meta `#3441107` (*« This partner's app isn't set up yet to connect WhatsApp Business app numbers »*) en saisissant son numéro WhatsApp existant `+33 7 51 11 18 04`.
+  - Deux approches ont été présentées :
+    - Option A : Conserver l'API officielle Meta, réaliser la vérification Tech Provider pour débloquer l'intégration des numéros existants (coexistence mobile).
+    - Option B : Déployer une passerelle non officielle (WAHA / Evolution API) sur serveur tiers.
+  - L'utilisateur a validé explicitement : **« Option A »**.
+* **Feuille de route pour l'Option A** :
+  1. **Côté Plateforme SELECT (Déjà 100 % prêt et testé)** :
+     - Les webhooks coexistence (`account_update`, `history`, `smb_app_state_sync`, `smb_message_echoes`) sont gérés dans `src/app/api/webhooks/whatsapp/route.ts` et `src/lib/whatsapp/coexistence.ts`.
+     - L'appel Embedded Signup transmet déjà `featureType: "whatsapp_business_app_onboarding"` et `sessionInfoVersion: "3"`.
+     - Pré-remplissage des coordonnées de l'agence (`signup-prefill.ts`).
+  2. **Côté Meta for Developers (À réaliser par l'administrateur)** :
+     - Étape 1 : Vérification d'entreprise dans le Meta Business Manager (KBIS / statut officiel + pièce d'identité).
+     - Étape 2 : App Review pour l'accès avancé à `whatsapp_business_messaging` et `whatsapp_business_management`.
+     - Étape 3 (Test immédiat sans attendre l'App Review) : possibilité de tester instantanément l'Agent IA avec un numéro neuf non actif sur l'application mobile WhatsApp.
+* **Aucun code modifié.**
+
+---
+
+### Session 64 — 17 Novembre 2026 (Claude Code) — Devenir partenaire officiel de Meta : durée et pièces à fournir
+* **Question de l'utilisateur** : combien de temps pour devenir partenaire officiel de Meta, et quoi fournir ?
+* **Vérification (documentation officielle de Meta, téléchargée le 17 novembre 2026)** :
+  - « Partenaire officiel » = badge **Meta Business Partner**. Pour WhatsApp, deux statuts l'ont :
+    - Tech Partner ;
+    - Solution Partner, que Meta renomme « Technology Partner with the Reseller add-on ».
+  - **Tech Partner** (« Upgrade to a Technology Partner ») — conditions :
+    - être déjà Tech Provider ;
+    - au moins 2 500 messages par jour en moyenne (sur 7 jours) envoyés par les entreprises clientes (Messenger, Instagram, WhatsApp) ;
+    - au moins 10 comptes de messagerie actifs (au moins 1 message dans les 28 derniers jours) ;
+    - au plus 10 jours de faible qualité WhatsApp par mois ;
+    - taux de blocage Messenger de 3,5 % au plus ;
+    - formation Meta Blueprint.
+  - **Démarches Tech Partner** : tableau de bord → WhatsApp → Quickstart → « Become a Partner », puis Partnership Home. Un administrateur du portefeuille fait la mise en place en 5 à 10 minutes : conditions, auto-certification de conformité, « Claim badge ».
+  - **Durée Tech Partner** : selon 360dialog, quelques semaines pour toutes les validations.
+  - **Solution Partner** : ligne de crédit et facturation directe des clients. Meta parle d'un « processus long » ; les conditions ne sont pas publiées dans la documentation des développeurs.
+  - **Tech Provider** (suffit pour la coexistence) : délai moyen de l'App Review « about 24 hours » selon Meta. Pour chaque permission : une explication écrite et une vidéo séparée.
+* **Conclusion** : ça ne se compte pas en heures. Le badge officiel suppose d'avoir déjà des clients actifs (10 comptes, 2 500 messages par jour). Ordre conseillé : Tech Provider maintenant, Tech Partner quand SELECT aura assez d'agences actives.
+* **Aucun code modifié.**
+
+### Session 63 — 17 Novembre 2026 (Claude Code) — Vérification : faut-il être « partenaire de Meta » pour les numéros WhatsApp Business ?
+* **Question de l'utilisateur** : pour connecter des numéros qui ont déjà un compte WhatsApp Business, faut-il être partenaire de Meta ?
+* **Vérification (documentation officielle de Meta, téléchargée le 17 novembre 2026)** :
+  - « Onboard WhatsApp Business app users » : « You must already be a Solution Partner or Tech Provider ». Confirmé.
+  - « Solution providers overview » :
+    - **Solution Partner** = Meta Business Partner officiel, avec ligne de crédit et facturation directe des clients. Processus long ; Meta conseille d'être Tech Provider si on n'a pas besoin de ligne de crédit.
+    - **Tech Provider** = pas besoin d'être Meta Business Partner. Il suffit de la vérification de l'entreprise et d'un App Review (accès avancé à `whatsapp_business_messaging` et `whatsapp_business_management`). Les agences ajoutent elles-mêmes leur moyen de paiement chez Meta, qui leur facture l'API.
+  - Conclusion : l'information est vraie, mais pas besoin du statut « Meta Business Partner ». Le statut **Tech Provider** suffit et correspond à SELECT.
+* **Autres points relevés (sources non officielles)** :
+  - Wati : le numéro doit avoir au moins 7 jours d'activité réelle dans WhatsApp Business ; un ancien compte Cloud API sur le numéro doit être retiré ; un compte réglé pour Marketing Messages (MM Lite) bloque la coexistence (erreur 3441047, différente de 3441107).
+  - Forum Meta : question ouverte, sans réponse officielle, sur l'inscription par coexistence d'une entreprise du même portefeuille que l'application. Ici, c'est le portefeuille Presta-educ qui a été choisi, pas Select Agency.
+  - Le code 3441107 n'est documenté nulle part publiquement. Son texte (« partner's app isn't set up ») désigne l'application, pas le numéro.
+* **Aucun code modifié.**
+
+### Session 62 — 16 Novembre 2026 (Claude Code) — « This partner's app isn't set up yet to connect WhatsApp Business app numbers »
+* **Essai de l'utilisateur** : avec la nouvelle configuration, Meta affiche bien l'écran « Ajoutez votre numéro de téléphone WhatsApp » (progrès par rapport à la session 60). En saisissant le numéro de WhatsApp Business, Meta refuse avec « This partner's app isn't set up yet to connect WhatsApp Business app numbers. Contact the partner, or use a number that isn't on the WhatsApp Business app. » (#3441107).
+* **Analyse (documentation officielle de Meta « Onboard WhatsApp Business app users », téléchargée le 16 novembre 2026)** :
+  - Quand la coexistence est active, l'écran de sélection du compte est remplacé par un écran qui propose de connecter le compte WhatsApp Business existant. Ici, c'est l'écran classique : la coexistence n'est pas active pour l'application Select Agency Platform.
+  - Exigences de Meta :
+    - application WhatsApp Business 2.24.17 ou plus récente ;
+    - **être Solution Partner ou Tech Provider** ;
+    - abonnement au webhook pour `account_update`, `history`, `smb_app_state_sync` et `smb_message_echoes` ;
+    - `featureType: "whatsapp_business_app_onboarding"` ;
+    - session logging.
+  - Devenir Tech Provider (documentation « Get started for Tech Providers ») : tableau de bord → Cas d'utilisation → WhatsApp → Personnaliser → « Tech Provider onboarding ». Étape 1 : vérification de l'entreprise. Étape 2 : App Review, avec réglages de l'application (icône, politique de confidentialité, catégorie), 2 vidéos (message envoyé et reçu dans WhatsApp, création d'un modèle) et demande d'accès avancé à `whatsapp_business_messaging` et `whatsapp_business_management`.
+  - Côté SELECT, rien à changer : le code envoie déjà `featureType` et `sessionInfoVersion: "3"`, écoute les messages de session et traite les 4 webhooks (`src/app/api/webhooks/whatsapp/route.ts`, `src/lib/whatsapp/coexistence.ts`).
+* **À faire par l'utilisateur** : vérifier l'état de « Tech Provider onboarding » et les champs du webhook, terminer l'App Review, puis refaire l'essai après l'accord de Meta.
+* **Aucun code modifié.**
+
+### Session 61 — 15 Novembre 2026 (Claude Code) — Nouvelle configuration Meta créée (« c'est fait »)
+* **Captures de l'utilisateur** : nouvelle configuration Facebook Login for Business :
+  - variante « Inscription intégrée WhatsApp » ;
+  - produits « WhatsApp Cloud API » et « API Marketing Messages pour WhatsApp » ;
+  - token utilisateur système, sans date d'expiration ;
+  - élément « Comptes WhatsApp », avec les tâches develop, manage_templates, view_phone_assets, manage_phone_assets, view_templates, messaging et manage ;
+  - autorisations `whatsapp_business_management` et `whatsapp_business_messaging`.
+* **Vérification** : la configuration est conforme. Meta rappelle qu'en accès standard, seules les personnes ayant un rôle dans l'application peuvent la terminer ; les autres agences devront attendre l'accès avancé (App Review).
+* **Constat** : `.env.local` n'a pas été modifié depuis le 14 novembre. Vérification faite sur les noms seulement, aucune valeur lue ni affichée. De toute façon, le site en ligne lit la variable sur Vercel.
+* **À faire par l'utilisateur** :
+  - mettre l'identifiant de la nouvelle configuration dans `NEXT_PUBLIC_WHATSAPP_CONFIG_ID` sur Vercel, puis Redeploy ;
+  - refaire l'essai depuis Agent IA → Connexion ;
+  - optionnel : mettre le même identifiant dans `.env.local`.
+* **Aucun code modifié.**
+
+### Session 60 — 15 Novembre 2026 (Claude Code) — Premier essai du parcours en ligne (61b730b) : l'écran du numéro n'apparaît pas
+* **Publication précédente** : commit `61b730b` (parcours en 3 étapes, faux QR code supprimé) envoyé sur demande (« publie sur Vercel »). Déploiement Vercel réussi.
+* **Essai de l'utilisateur (5 captures)** : la fenêtre de Meta enchaîne :
+  1. « Associez votre compte à Select Agency en toute simplicité » ;
+  2. choix du portefeuille Business (Select Agency, Presta-educ, S-C E) ;
+  3. « Examinez ce que vous partagerez avec Select Agency Platform » : accès à « Entreprise » seulement, autorisations « Gérer vos comptes WhatsApp » et « Gérer et accéder aux conversations dans WhatsApp » ;
+  4. « Votre compte est associé à Select Agency » avec « Ajouter un moyen de paiement » et « Terminer ».
+  Aucun écran pour le compte WhatsApp Business, le numéro, ni le code ou le QR code de l'application WhatsApp Business.
+* **Analyse** :
+  - Le code SELECT n'est pas en cause : SELECT ouvre la fenêtre, puis Meta décide seul des écrans affichés.
+  - Chez WizMessage, l'écran « Examinez… » liste « Entreprise » et « WhatsApp account », et l'écran final « Assets successfully created : Compte de messagerie ». Ici, aucun compte WhatsApp n'est proposé ni créé.
+  - Cause la plus probable : la configuration utilisée (`NEXT_PUBLIC_WHATSAPP_CONFIG_ID`) ne contient pas l'élément « Comptes WhatsApp », ou n'est pas de type « WhatsApp Embedded Signup ». Les autorisations WhatsApp sont présentes, mais aucun compte n'est demandé.
+  - Un fil du forum développeurs de Meta signale que l'écran de modification d'une configuration peut afficher « Général » par erreur : mieux vaut en créer une nouvelle que la modifier.
+  - Sources : guides de partenaires (Chatwoot, BotPenguin) et recherche web. La documentation de Meta n'était pas accessible depuis l'outil.
+* **À faire par l'utilisateur** :
+  - créer une nouvelle configuration Facebook Login for Business : variante « WhatsApp Embedded Signup » (ou modèle WhatsApp Embedded Signup), élément « Comptes WhatsApp » (gestion), autorisations `whatsapp_business_management` et `whatsapp_business_messaging` (et `business_management`), jeton sans expiration si proposé ;
+  - mettre son identifiant dans `NEXT_PUBLIC_WHATSAPP_CONFIG_ID` sur Vercel, puis Redeploy (obligatoire pour une variable NEXT_PUBLIC) ;
+  - refaire l'essai.
+* **Aucun code modifié.**
+
 ### Session 59 — 15 Novembre 2026 (Claude Code) — « vas-y fais la même chose » : connexion WhatsApp en 3 étapes comme WizMessage
 * **Demande** : reproduire le parcours WizMessage analysé en session 58.
 * **Modifications (local, non publiées)** :

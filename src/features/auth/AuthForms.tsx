@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage } from "@/components/shared/form";
+import { PasswordInput } from "@/components/shared/PasswordInput";
 import { initialFormState } from "@/lib/form-state";
 import { requestPasswordResetAction, signInAction, signUpAction, updatePasswordAction } from "./actions";
 
@@ -19,7 +20,7 @@ export function LoginForm({ next }: { next?: string }) {
         <Input id="email" name="email" type="email" autoComplete="email" defaultValue={state.values?.email} {...describedBy("email", e.email)} />
       </FormField>
       <FormField id="password" label="Mot de passe" required error={e.password}>
-        <Input id="password" name="password" type="password" autoComplete="current-password" {...describedBy("password", e.password)} />
+        <PasswordInput id="password" name="password" autoComplete="current-password" {...describedBy("password", e.password)} />
       </FormField>
       <div className="flex justify-end">
         <Link href="/forgot-password" className="text-sm font-medium text-navy-700 hover:underline">
@@ -48,7 +49,7 @@ export function SignupForm({ next, email }: { next?: string; email?: string }) {
         <Input id="email" name="email" type="email" autoComplete="email" defaultValue={state.values?.email ?? email} {...describedBy("email", e.email)} />
       </FormField>
       <FormField id="password" label="Mot de passe" required error={e.password} hint="Au moins 8 caractères, en mélangeant lettres et chiffres.">
-        <Input id="password" name="password" type="password" autoComplete="new-password" {...describedBy("password", e.password, "hint")} />
+        <PasswordInput id="password" name="password" autoComplete="new-password" {...describedBy("password", e.password, "hint")} />
       </FormField>
       <Button type="submit" variant="accent" size="lg" className="w-full" disabled={pending}>
         {pending ? "Création du compte…" : "Créer mon compte"}
@@ -81,10 +82,10 @@ export function ResetPasswordForm() {
     <form action={action} className="space-y-4" noValidate>
       <FormMessage message={state.message} />
       <FormField id="password" label="Nouveau mot de passe" required error={e.password} hint="Au moins 8 caractères.">
-        <Input id="password" name="password" type="password" autoComplete="new-password" {...describedBy("password", e.password, "hint")} />
+        <PasswordInput id="password" name="password" autoComplete="new-password" {...describedBy("password", e.password, "hint")} />
       </FormField>
       <FormField id="confirm" label="Confirmez le mot de passe" required error={e.confirm}>
-        <Input id="confirm" name="confirm" type="password" autoComplete="new-password" {...describedBy("confirm", e.confirm)} />
+        <PasswordInput id="confirm" name="confirm" autoComplete="new-password" {...describedBy("confirm", e.confirm)} />
       </FormField>
       <Button type="submit" variant="accent" size="lg" className="w-full" disabled={pending}>
         {pending ? "Enregistrement…" : "Enregistrer le mot de passe"}
