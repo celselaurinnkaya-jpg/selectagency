@@ -1,6 +1,7 @@
 import "server-only";
 import { getAnthropicClient } from "./client";
 import { buildSystemPrompt } from "./prompts";
+import { toWhatsAppText } from "./whatsapp-format";
 import type { AiAgentRecord } from "@/lib/domain/ai";
 
 // Une passe de dialogue avec l'agent IA, par l'API officielle d'Anthropic.
@@ -29,7 +30,9 @@ export interface AiRunExecutionResult {
 /** L'IA ne peut pas répondre (clé absente ou service indisponible) : message prêt à afficher. */
 export class AiUnavailableError extends Error {}
 
-export const AI_NOT_CONFIGURED = "L'IA n'est pas encore configurée : la clé Anthropic de SELECT doit être ajoutée (ANTHROPIC_API_KEY).";
+export const AI_NOT_CONFIGURED_GEMINI = "L'IA n'est pas encore configurée : la clé Gemini de SELECT doit être ajoutée (GEMINI_API_KEY).";
+
+export const AI_NOT_CONFIGURED ="L'IA n'est pas encore configurée : la clé Anthropic de SELECT doit être ajoutée (ANTHROPIC_API_KEY).";
 
 /** Modèles retenus (docs/ARCHITECTURE_AGENT_IA.md, § 5.2). */
 const MODELS = {
@@ -78,7 +81,7 @@ export async function runAgentConversation(
   const usd = costUsd(model, tokensPrompt, tokensCompletion);
 
   return {
-    replyText: rawText.replace(/\[DEMANDE_TRANSFERT\]/g, "").trim(),
+    replyText: toWhatsAppText(rawText.replace(/\[DEMANDE_TRANSFERT\]/g, "")),
     model: model.id,
     tokensPrompt,
     tokensCompletion,

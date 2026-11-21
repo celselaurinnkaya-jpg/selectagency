@@ -81,7 +81,6 @@ async function Queue({ searchParams }: Pick<PageProps<"/documents">, "searchPara
       <div className="mt-6">
         <Notice>
           « Vérifié par l&apos;agence » est un contrôle interne, jamais une validation par une ambassade, un consulat ou une administration.
-          Le téléversement des fichiers sera disponible avec le stockage sécurisé (Phase 5).
         </Notice>
       </div>
     </>

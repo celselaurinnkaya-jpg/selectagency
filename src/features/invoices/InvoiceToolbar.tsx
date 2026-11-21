@@ -55,7 +55,7 @@ export function InvoiceToolbar({
   const [sharing, setSharing] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const pdfUrl = `/finance/invoices/${invoiceId}/pdf`;
-  const editable = canWrite && (status === "draft" || status === "issued");
+  const editable = canWrite && status === "draft";
 
   async function sendWhatsApp() {
     setSharing(true);
@@ -125,7 +125,7 @@ export function InvoiceToolbar({
             </Link>
           </Button>
         )}
-        {canDelete && status !== "paid" && !confirmDelete && (
+        {canDelete && status === "draft" && !confirmDelete && (
           <Button type="button" variant="destructive" onClick={() => setConfirmDelete(true)}>
             <Trash2 aria-hidden />
             Supprimer

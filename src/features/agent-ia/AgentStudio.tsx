@@ -76,7 +76,7 @@ const TEMPLATE_PRESETS = [
     key: "support_client",
     title: "Support Client Polyvalent (Recommandé)",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le service client d'élite pour l'agence SELECT Agency.
+Tu es le service client d'élite pour notre agence.
 Tu aides les clients de façon amicale, chaleureuse et naturelle, exactement comme un membre d'expérience de notre équipe.
 Tu réponds aux questions, clarifies les démarches, orientes les prospects et assures une expérience client irréprochable.
 
@@ -92,7 +92,7 @@ Tu réponds aux questions, clarifies les démarches, orientes les prospects et a
     key: "visas",
     title: "Spécialiste Procédures Visas",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le spécialiste consulaire de l'agence SELECT Agency.
+Tu es le spécialiste consulaire de notre agence.
 Ton rôle est d'orienter les voyageurs sur les pièces à fournir et le montage des dossiers pour les visas Schengen, Canada, USA, Turquie et Dubaï.
 
 # RÈGLES DE SÉCURITÉ
@@ -104,7 +104,7 @@ Ton rôle est d'orienter les voyageurs sur les pièces à fournir et le montage 
     key: "studies",
     title: "Conseiller Campus France & Études",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le conseiller mobilité internationale de SELECT Agency.
+Tu es le conseiller mobilité internationale de notre agence.
 Tu accompagnes les bacheliers et étudiants dans leurs projets d'études à l'étranger (Campus France, universités canadiennes et européennes).
 
 # MISSIONS
@@ -378,7 +378,14 @@ export function AgentStudio({
     }
   };
 
-  const connectedWaAccount = accounts.find((a) => a.status === "connected") || accounts[0];
+  // Seule une ligne réellement connectée compte : une ligne déconnectée ne doit jamais s'afficher « en ligne ».
+  const connectedWaAccount = accounts.find((a) => a.status === "connected");
+  // L'agent ne répond aux clients que s'il est actif ET qu'une ligne WhatsApp est connectée.
+  const agentStatus = !isActive
+    ? { label: "Brouillon", box: "border-orange-200 bg-orange-50 text-orange-800", dot: "bg-orange-500" }
+    : connectedWaAccount
+      ? { label: "Actif sur WhatsApp", box: "border-emerald-200 bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" }
+      : { label: "Actif, mais WhatsApp déconnecté : aucune réponse n'est envoyée", box: "border-red-200 bg-red-50 text-red-800", dot: "bg-red-500" };
   const fileSources = sources.filter((s) => s.kind === "file" || s.kind === "text");
   const linkSources = sources.filter((s) => s.kind === "url" || Boolean(s.sourceUrl));
 
@@ -415,23 +422,9 @@ export function AgentStudio({
           </div>
 
           {/* Badge de statut */}
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border ${
-              isActive
-                ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                : "border-orange-200 bg-orange-50 text-orange-800"
-            }`}
-          >
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${isActive ? "bg-emerald-500" : "bg-orange-500"}`}
-            />
-            {isActive ? "Actif sur WhatsApp" : "Brouillon"}
-          </span>
-
-          {/* Score de qualité */}
-          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-            <Sparkles className="h-3.5 w-3.5 text-citron-500" />
-            <span>Score : 9.9 / 10</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium border ${agentStatus.box}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${agentStatus.dot}`} />
+            {agentStatus.label}
           </span>
         </div>
 
@@ -707,8 +700,8 @@ export function AgentStudio({
                       onChange={(e) => setModelTier(e.target.value as "haiku" | "sonnet")}
                       className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-navy-900"
                     >
-                      <option value="haiku">GPT-5 mini (Best for most tasks ✦ 1)</option>
-                      <option value="sonnet">Claude 3.5 Sonnet (Haute Précision)</option>
+                      <option value="haiku">Rapide (recommandé)</option>
+                      <option value="sonnet">Haute précision</option>
                     </select>
                   </div>
                 </div>
@@ -1251,11 +1244,11 @@ export function AgentStudio({
                       </div>
                       <div>
                         <h5 className="font-bold text-navy-900 text-sm">
-                          {connectedWaAccount ? "WhatsApp Web Connecté" : "WhatsApp non connecté"}
+                          {connectedWaAccount ? "WhatsApp Business connecté" : "WhatsApp non connecté"}
                         </h5>
                         <p className="text-xs text-slate-500">
                           {connectedWaAccount
-                            ? `Numéro lié : ${connectedWaAccount.displayPhoneNumber} (${connectedWaAccount.verifiedName || "SELECT Agency"})`
+                            ? `Numéro lié : ${connectedWaAccount.displayPhoneNumber}${connectedWaAccount.verifiedName ? ` (${connectedWaAccount.verifiedName})` : ""}`
                             : "Scannez le code QR pour synchroniser les messages de vos clients."}
                         </p>
                       </div>

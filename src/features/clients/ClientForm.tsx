@@ -66,7 +66,8 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
   const initialNat = v.nationality ?? client?.nationality ?? "";
   const isInitialNatInList = countries.some((c) => c.label === initialNat || c.value === initialNat);
   const [natSelect, setNatSelect] = useState<string>(() => {
-    if (!initialNat) return countries[0]?.label ?? defaultCountry;
+    // Rien de choisi à la place de l'agence : une valeur par défaut finirait dans les dossiers de visa.
+    if (!initialNat) return "";
     return isInitialNatInList ? initialNat : "__OTHER__";
   });
   const [customNat] = useState<string>(() => {
@@ -146,7 +147,8 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           </FormField>
 
           <FormField id="gender" label="Sexe" error={e.gender}>
-            <select id="gender" name="gender" defaultValue={v.gender ?? client?.gender ?? "M"} className={selectClass}>
+            <select id="gender" name="gender" defaultValue={v.gender ?? client?.gender ?? ""} className={selectClass}>
+              <option value="">— Non précisé —</option>
               {Object.entries(GENDER_OPTIONS).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -172,6 +174,7 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
               onChange={(e) => setNatSelect(e.target.value)}
               className={selectClass}
             >
+              <option value="">— Non précisé —</option>
               {countries.map((c) => (
                 <option key={c.value} value={c.label}>
                   {c.label}
@@ -192,7 +195,8 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           </FormField>
 
           <FormField id="maritalStatus" label="Statut / État civil" error={e.maritalStatus}>
-            <select id="maritalStatus" name="maritalStatus" defaultValue={v.maritalStatus ?? client?.maritalStatus ?? "single"} className={selectClass}>
+            <select id="maritalStatus" name="maritalStatus" defaultValue={v.maritalStatus ?? client?.maritalStatus ?? ""} className={selectClass}>
+              <option value="">— Non précisé —</option>
               {Object.entries(MARITAL_STATUS).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -202,7 +206,8 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           </FormField>
 
           <FormField id="idDocType" label="Type de pièce d'identité" error={e.idDocType}>
-            <select id="idDocType" name="idDocType" defaultValue={v.idDocType ?? client?.idDocType ?? "passport"} className={selectClass}>
+            <select id="idDocType" name="idDocType" defaultValue={v.idDocType ?? client?.idDocType ?? ""} className={selectClass}>
+              <option value="">— Non précisé —</option>
               {Object.entries(ID_DOC_TYPES).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}

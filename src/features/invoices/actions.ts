@@ -74,6 +74,18 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
   const ctx = await getAgencyContext();
   if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
   const isNew = !v.invoiceId;
+  if (!isNew) {
+    const { data: existing } = await ctx.supabase
+      .from("invoices")
+      .select("status")
+      .eq("id", v.invoiceId)
+      .eq("organization_id", ctx.organizationId)
+      .maybeSingle();
+    if (!existing) return { message: "Facture introuvable." };
+    if (existing.status !== "draft") {
+      return { message: "Une facture déjà émise ne peut plus être modifiée. Seule son annulation reste possible." };
+    }
+  }
   const amount = formatMoney(totals.totalMinor, v.currency);
   const event = isNew
     ? v.intent === "issue"
@@ -132,11 +144,14 @@ export async function deleteInvoiceAction(id: string): Promise<FormState> {
   if (!allowed(ctx, "invoice.delete")) return { message: forbiddenMessage(ctx, "invoice.delete") };
   const { data: invoice } = await ctx.supabase
     .from("invoices")
-    .select("total_minor, currency")
+    .select("status, total_minor, currency")
     .eq("id", invoiceId.data)
     .eq("organization_id", ctx.organizationId)
     .maybeSingle();
   if (!invoice) return { message: "Facture introuvable." };
+  if (invoice.status !== "draft") {
+    return { message: "Seule une facture en brouillon peut être supprimée. Une facture émise doit être annulée." };
+  }
   const { error } = await ctx.supabase.rpc("delete_invoice", {
     p_invoice_id: invoiceId.data,
     p_event: `Facture {facture} supprimée (${formatMoney(Number(invoice.total_minor), String(invoice.currency))}).`,

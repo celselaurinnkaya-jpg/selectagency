@@ -153,7 +153,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                     </td>
                     <td className="px-4 py-3 text-slate-700">{CLIENT_TYPE[client.clientType]}</td>
                     <td className="px-4 py-3 text-slate-700">
-                      {client.city}, {countryName(client.residenceCountry)}
+                      {[client.city, countryName(client.residenceCountry)].filter(Boolean).join(", ") || "—"}
                     </td>
                     <td className="px-4 py-3 text-slate-700">
                       {casesCount} <span className="text-slate-500">({activeCases} actif{activeCases > 1 ? "s" : ""})</span>
@@ -194,7 +194,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                     <span className="font-mono text-xs text-slate-500">{client.reference}</span>
                   </span>
                   <span className="mt-1 block text-sm text-slate-600">
-                    {CLIENT_TYPE[client.clientType]} · {client.city} · {activeCases} dossier{activeCases > 1 ? "s" : ""} actif{activeCases > 1 ? "s" : ""}
+                    {[CLIENT_TYPE[client.clientType], client.city, `${activeCases} dossier${activeCases > 1 ? "s" : ""} actif${activeCases > 1 ? "s" : ""}`].filter(Boolean).join(" · ")}
                   </span>
                   {balanceMinor > 0 && <span className="mt-1 block text-sm text-orange-800">Solde dû : {formatMoney(balanceMinor, agency.currency)}</span>}
                 </Link>

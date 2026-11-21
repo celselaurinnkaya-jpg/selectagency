@@ -5,7 +5,9 @@ import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { dbMessage } from "@/lib/data/errors";
 import { formValues, type FormState } from "@/lib/form-state";
-import { AiUnavailableError, runAgentConversation, type ChatMessageInput, type AiRunExecutionResult } from "@/lib/ai/runner";
+import { AI_NOT_CONFIGURED_GEMINI, AiUnavailableError, runAgentConversation, type ChatMessageInput, type AiRunExecutionResult } from "@/lib/ai/runner";
+import { buildSystemPrompt } from "@/lib/ai/prompts";
+import { toWhatsAppText } from "@/lib/ai/whatsapp-format";
 import { readPublicPage } from "@/lib/ai/fetch-page";
 import { formatKnowledgeForPrompt, chunkText, type KnowledgeSnippet } from "@/lib/ai/knowledge";
 import { toAiAgent, type AiAgentRecord } from "@/lib/domain/ai";
@@ -124,7 +126,7 @@ export async function ensureAgencyAgentId(ctx: { supabase: any; organizationId: 
 
   // 2. Initialisation automatique de l'agent Support client officiel
   const defaultInstructions = `# DESCRIPTION DU RÔLE
-Tu es le service client d'élite pour l'agence SELECT Agency.
+Tu es le service client d'élite pour notre agence.
 Tu aides les clients de façon amicale, chaleureuse et naturelle, exactement comme un membre d'expérience de notre équipe.
 Tu réponds aux questions, clarifies les démarches, orientes les prospects et assures une expérience client irréprochable.
 
@@ -288,7 +290,7 @@ export async function testAiAgentMessageAction(
         personality: "Chaleureux, rapide et professionnel",
         systemInstructions:
           previewConfig?.systemInstructions ||
-          "Tu es le service client d'élite pour l'agence SELECT Agency. Tu aides les clients de façon amicale et naturelle.",
+          "Tu es le service client d'élite pour notre agence. Tu aides les clients de façon amicale et naturelle.",
         servicesScope: previewConfig?.servicesScope,
         responseDelaySeconds: 15,
         facebookUrl: previewConfig?.facebookUrl,
@@ -335,91 +337,54 @@ export async function testAiAgentMessageAction(
     }
   }
 
-  // 1. Moteur officiel Gemini (pris en charge par la plateforme SaaS SELECT Agency)
+  // 1. Moteur Gemini, avec les mêmes consignes que les vraies réponses WhatsApp : nom de l'agence,
+  //    règles de sécurité et mise en forme WhatsApp.
   const geminiKey = (process.env.GEMINI_API_KEY || process.env["Gemini API Key"] || "").trim();
   if (geminiKey) {
     const lastUser = messages.filter((m) => m.role === "user").slice(-1)[0]?.content || "";
     const history = messages.slice(0, -1);
+    const startedAt = Date.now();
     try {
       const geminiResult = await genererReponseAgent({
-        promptAgence: agent.systemInstructions,
+        promptAgence: buildSystemPrompt(agent, ctx.agency.name),
         contenuPdfAgence: knowledgeContext || "",
         questionClient: lastUser,
         historiqueMessages: history,
       });
 
-      const geminiReply = typeof geminiResult === "string" ? geminiResult : geminiResult.text;
-      const modelUsed = typeof geminiResult === "string" ? "gemini-3.5-flash-lite" : geminiResult.model;
-
+      const geminiReply = geminiResult.text;
       const hasTransfer =
         geminiReply.includes("[DEMANDE_TRANSFERT]") ||
-        /\b(transf[eè]re votre demande|transmets votre dossier|conseiller va prendre le relais|passe la main [aà] un conseiller|un conseiller humain va vous recontacter)\b/i.test(
+        /(transf[eè]re votre demande|transmets votre dossier|conseiller va prendre le relais|passe la main [aà] un conseiller|un conseiller humain va vous recontacter)/i.test(
           geminiReply
         );
 
       return {
-        replyText: geminiReply.replace(/\[DEMANDE_TRANSFERT\]/g, "").trim(),
-        model: modelUsed,
+        replyText: toWhatsAppText(geminiReply.replace(/[DEMANDE_TRANSFERT]/g, "")),
+        model: geminiResult.model,
         tokensPrompt: Math.round((agent.systemInstructions.length + (knowledgeContext?.length || 0)) / 4),
         tokensCompletion: Math.round(geminiReply.length / 4),
-        durationMs: 850,
+        durationMs: Date.now() - startedAt,
         estimatedCostFcfa: 0,
         estimatedCostUsd: 0,
         transferSuggested: hasTransfer,
         transferReason: hasTransfer ? "Transfert vers un conseiller humain notifié" : undefined,
       };
     } catch (gemErr) {
-      console.warn("Appel Gemini échoué, repli vers moteur secondaire :", gemErr);
+      console.warn("Appel Gemini échoué, repli vers moteur secondaire :", gemErr instanceof Error ? gemErr.message : gemErr);
     }
   }
 
-  let result: AiRunExecutionResult;
+  // 2. Moteur secondaire. Pas de réponse inventée : sans moteur disponible, le testeur affiche l'erreur.
   try {
-    result = await runAgentConversation(agent, ctx.agency.name, messages, knowledgeContext);
+    // Les essais du testeur ne sont pas comptés dans la consommation de l'agence.
+    return await runAgentConversation(agent, ctx.agency.name, messages, knowledgeContext);
   } catch (err) {
     if (err instanceof AiUnavailableError) {
-      // Si la clé API Anthropic n'est pas encore renseignée dans le fichier d'environnement local,
-      // le Playground fournit une réponse intelligente d'aperçu pour permettre de tester immédiatement
-      const lastUser = messages.filter((m) => m.role === "user").slice(-1)[0]?.content || "";
-      const lower = lastUser.toLowerCase();
-
-      let simReply = "";
-      let transfer = false;
-
-      if (/salut|bonjour|bonsoir|coucou|hello/i.test(lower)) {
-        simReply = `Bonjour ! Bienvenue chez ${ctx.agency.name}. Je suis votre assistant Support Client. Comment puis-je vous aider aujourd'hui ? Avez-vous un projet de voyage, de visa ou d'études à l'étranger ?`;
-      } else if (/visa|schengen|canada|france|turquie|duba[iï]/i.test(lower)) {
-        simReply = `Nous accompagnons nos clients pour la constitution de leurs dossiers consulaires (Schengen, Canada, USA, Turquie, Dubaï). Conformément à nos règles de sécurité, nous vous aidons à rassembler des pièces irréprochables, mais seule l'ambassade ou le consulat est souverain pour la délivrance. Avez-vous déjà une date ou une destination en tête ?`;
-      } else if (/tarif|prix|combien|co[uû]te|honoraires/i.test(lower)) {
-        simReply = `Nos honoraires dépendent de la démarche (assistance visa, Campus France ou réservation de voyage). Vous pouvez consulter nos documents officiels ou nous préciser votre demande pour obtenir un devis personnalisé.`;
-      } else if (/campus|france|etude|études|université|bac/i.test(lower)) {
-        simReply = `Pour les démarches Campus France et universités partenaires, nous vous guidons sur le calendrier des candidatures, les tests de langue et l'Attestation de Virement Irrévocable (AVI). Souhaitez-vous planifier une rentrée prochaine ?`;
-      } else if (/humain|conseiller|parler|responsable|directeur|t[eé]l[eé]phone|appel/i.test(lower)) {
-        simReply = `Bien sûr ! Je transmets immédiatement votre demande à un conseiller humain de l'équipe ${ctx.agency.name} qui va prendre le relais sur cette discussion.`;
-        transfer = true;
-      } else if (knowledgeContext) {
-        simReply = `D'après nos documents officiels : nos services couvrent l'accompagnement personnalisé pour votre projet. Que souhaitez-vous approfondir en priorité ?`;
-      } else {
-        simReply = `Bien reçu ! Je suis à votre écoute pour vous renseigner et vous accompagner dans vos démarches auprès de l'agence ${ctx.agency.name}. Souhaitez-vous des détails sur les pièces requises ou prendre un rendez-vous ?`;
-      }
-
-      return {
-        replyText: simReply,
-        model: "simulation-preview (GPT-5 mini)",
-        tokensPrompt: 120,
-        tokensCompletion: 85,
-        durationMs: 950,
-        estimatedCostFcfa: 0.12,
-        estimatedCostUsd: 0.0002,
-        transferSuggested: transfer,
-        transferReason: transfer ? "Demande de contact humain détectée" : undefined,
-      };
+      return { error: geminiKey ? "Le service d'IA n'a pas répondu. Réessayez dans un instant." : AI_NOT_CONFIGURED_GEMINI };
     }
     throw err;
   }
-
-  // Les essais du testeur ne sont pas comptés dans la consommation de l'agence.
-  return result;
 }
 
 export async function analyzeAndIndexExternalLinkAction(

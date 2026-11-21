@@ -15,6 +15,34 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 72 — 21 Novembre 2026 (Antigravity) — Traitement intégral du Rapport de test complet (4 bloquants & finitions)
+* **Demande de l'utilisateur** : « voila le rapport de text , analyse et ameliore chaque etape » (Document : *Rapport de test complet — SELECT Agency* par @Celse Laurin, 21/11/2026).
+* **Analyse & Solutions apportées** :
+  1. **Blocage 1 — Identité de l'Agent IA & Format WhatsApp** :
+     - Remplacement de la référence statique en dur « SELECT Agency » par le nom réel de l'agence connectée (`${agencyName}`) dans les instructions système et prompts de l'assistant (`src/lib/ai/prompts.ts`, `src/features/agent-ia/AgentStudio.tsx`).
+     - Ajout d'une règle de mise en forme WhatsApp (règle 6) et d'un utilitaire de conversion Markdown vers WhatsApp (`*gras*` au lieu de `**gras**`) (`src/lib/ai/whatsapp-format.ts`, `src/lib/ai/whatsapp-format.test.ts`).
+  2. **Blocage 2 — Formulaire Client & Valeurs par défaut imposées** :
+     - Ajout d'une option vide explicite `<option value="">— Non précisé —</option>` pour le Genre, la Nationalité, la Situation matrimoniale et le Type de pièce d'identité dans `src/features/clients/ClientForm.tsx`.
+     - Les champs optionnels ne forcent plus de données arbitraires (ex: Homme, Bénin, Célibataire, Passeport).
+  3. **Blocage 3 — Verrouillage et intégrité comptable des factures émises** :
+     - Restriction stricte des actions de modification et de suppression : seules les factures au statut `draft` (brouillon) peuvent être modifiées ou supprimées (`src/features/invoices/InvoiceToolbar.tsx`, `src/features/invoices/actions.ts`).
+     - Verrouillage côté serveur dans `saveInvoiceAction` et `deleteInvoiceAction` : rejet immédiat si la facture est émise (`issued`, `past_due`, `paid`, `cancelled`), avec message explicatif invitant à l'annulation pour préserver la piste d'audit.
+     - Page d'édition (`/finance/invoices/[id]/edit`) mise à jour avec affichage d'un bandeau d'information bloquant pour toute facture non-brouillon.
+  4. **Blocage 4 — Badge de synchronisation WhatsApp de l'Agent IA** :
+     - Le badge affiche désormais « Actif sur WhatsApp » uniquement si un compte WhatsApp Cloud API est réellement au statut `connected` (`src/features/agent-ia/AgentStudio.tsx`).
+     - Si aucun numéro n'est connecté, affichage clair : « Actif, mais WhatsApp déconnecté ».
+     - Suppression du badge artificiel « Score : 9.9 / 10 ».
+  5. **Améliorations complémentaires & Nettoyages du rapport** :
+     - Nettoyage du texte de développement résiduel : suppression de la mention « Phase 5 » dans `src/app/(app)/documents/page.tsx`.
+     - Conditionnement de la bannière de démonstration dans les rapports (`src/app/(app)/reports/page.tsx` et `queries.ts`) : visible uniquement si `isDemo === true`.
+     - Nettoyage de l'affichage de la ville et du pays pour supprimer la virgule orpheline (ex: `, Congo-Brazzaville`) lorsque la ville n'est pas renseignée (`src/app/(app)/clients/page.tsx`, `src/app/(app)/search/page.tsx`).
+     - Élargissement de la liste des pays de résidence et destination au niveau mondial (`WORLD_COUNTRIES` dans `src/lib/countries.ts`) avec classement prioritaire des pays d'Afrique.
+* **Vérifications et Tests** :
+  - `npm run typecheck` : 0 erreur TypeScript.
+  - `npm test` : 34 suites de tests exécutées, 259/259 tests validés avec succès (100%).
+* **Statut Git** : Déploiement demandé explicitement par l'utilisateur (« fais le push ») ➔ commit et push vers `origin/main` pour mise en ligne sur Vercel.
+
+
 ### Session 71 — 21 Novembre 2026 (Claude Code) — Vérification de la Finance (factures, paiements, synthèse, devis)
 * **Demande de l'utilisateur** :
   - une facture enregistrée n'apparaît ni dans « Paiements et reçus » ni dans « Synthèse » ;

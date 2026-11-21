@@ -33,7 +33,7 @@ async function Editor({ params }: Pick<PageProps<"/finance/invoices/[id]/edit">,
   return (
     <>
       <PageHeader back={back} title={`Modifier la facture ${invoice.number}`} />
-      {invoice.status === "draft" || invoice.status === "issued" ? (
+      {invoice.status === "draft" ? (
         <InvoiceEditor
           invoice={invoice}
           clients={editor.clients}
@@ -49,8 +49,10 @@ async function Editor({ params }: Pick<PageProps<"/finance/invoices/[id]/edit">,
       ) : (
         <Notice tone="warning">
           {invoice.status === "paid"
-            ? "Cette facture est payée : elle est verrouillée. Remettez-la « à payer » depuis sa page pour la corriger."
-            : "Cette facture est annulée : elle ne se modifie plus. Créez une nouvelle facture si nécessaire."}
+            ? "Cette facture est encaissée : elle est verrouillée pour garantir la conformité comptable."
+            : invoice.status === "cancelled"
+              ? "Cette facture est annulée : elle ne peut plus être modifiée. Créez une nouvelle facture si nécessaire."
+              : "Cette facture a déjà été émise : elle est verrouillée pour garantir la conformité comptable et l'intégrité de la piste d'audit. En cas d'erreur, annulez-la et créez une nouvelle facture."}
         </Notice>
       )}
     </>

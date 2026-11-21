@@ -190,7 +190,9 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
         </p>
       </Section>
 
-      <Notice>Les rapports sont calculés à partir des données de démonstration de cette session.</Notice>
+      {r.isDemo && (
+        <Notice>Les rapports sont calculés à partir des données de démonstration de cette session.</Notice>
+      )}
     </div>
   );
 }

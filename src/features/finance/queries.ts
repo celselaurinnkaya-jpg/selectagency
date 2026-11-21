@@ -19,6 +19,7 @@ export async function getFinanceOverview(periodKey?: string) {
   const balances = summaries.filter((s) => s.finance.balanceMinor > 0).sort((a, b) => b.finance.balanceMinor - a.finance.balanceMinor);
   return {
     agency: data.agency,
+    isDemo: ctx.isDemo,
     now,
     period,
     canSeeFinance: allowed(ctx, "finance.read"),
@@ -72,6 +73,7 @@ export async function listExpenses() {
   const { data, ctx, now } = await readAgency({ expenses: true, cases: true });
   return {
     agency: data.agency,
+    isDemo: ctx.isDemo,
     now,
     canSeeFinance: allowed(ctx, "finance.read"),
     canWrite: allowed(ctx, "finance.write"),
@@ -162,6 +164,7 @@ export async function getReports(periodKey?: string) {
   const active = summaries.filter((s) => s.travelCase.status === "active");
   return {
     agency: data.agency,
+    isDemo: ctx.isDemo,
     now,
     period,
     canSeeFinance: allowed(ctx, "finance.read"),

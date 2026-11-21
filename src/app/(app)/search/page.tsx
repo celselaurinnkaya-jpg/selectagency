@@ -57,7 +57,7 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
                           {c.firstName} {c.lastName}
                         </span>
                         <span className="block text-sm text-slate-600">
-                          {c.reference} · {c.status === "prospect" ? "Prospect" : CLIENT_TYPE[c.clientType]} · {c.city}
+                          {[c.reference, c.status === "prospect" ? "Prospect" : CLIENT_TYPE[c.clientType], c.city].filter(Boolean).join(" · ")}
                         </span>
                       </Card>
                     </Link>

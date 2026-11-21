@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { AI_NOT_CONFIGURED_GEMINI, AiUnavailableError } from "./runner";
 
 // Initialisation du client Google Gemini avec la clé secrète SELECT Agency
 let aiClient: GoogleGenAI | null = null;
@@ -50,13 +51,8 @@ export async function genererReponseAgent({
 }: GenererReponseAgentParams): Promise<GenererReponseAgentResult> {
   const client = getGeminiClient();
 
-  // Si la clé n'est pas encore configurée
-  if (!client) {
-    return {
-      text: "Bonjour ! Je suis l'assistant en ligne de l'agence. Comment puis-je vous aider aujourd'hui ?",
-      model: "simulation-preview",
-    };
-  }
+  // Pas de réponse inventée : sans clé, l'appelant reçoit une erreur claire.
+  if (!client) throw new AiUnavailableError(AI_NOT_CONFIGURED_GEMINI);
 
   const promptComplet = `
 [INSTRUCTIONS ET RÔLE DE L'AGENT]
@@ -105,9 +101,6 @@ ${questionClient}
 
   console.error("[Gemini] Échec de tous les modèles candidats :", lastError);
 
-  // Réponse de secours gracieuse en cas d'indisponibilité momentanée du réseau Google
-  return {
-    text: "Bonjour ! Je rencontre un léger ralentissement réseau pour traiter votre demande. N'hésitez pas à reformuler votre question ou nous laisser votre numéro.",
-    model: "gemini-fallback",
-  };
+  // Pas de réponse de secours inventée : l'appelant affiche que le service n'a pas répondu.
+  throw new AiUnavailableError("Le service d'IA n'a pas répondu. Réessayez dans un instant.");
 }
