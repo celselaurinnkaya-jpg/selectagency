@@ -25,7 +25,7 @@ export interface NavItem {
   match: string[];
 }
 
-// Le quotidien d'abord, l'administration de l'agence ensuite, puis l'aide de l'équipe SELECT.
+// Le quotidien d'abord, l'Agent IA à part, l'administration de l'agence ensuite, puis l'aide de l'équipe SELECT.
 export const NAV_MAIN: NavItem[] = [
   { label: "Tableau de bord", href: "/dashboard", icon: LayoutDashboard, match: ["/dashboard"] },
   { label: "Prospects", href: "/prospects", icon: Target, match: ["/prospects"] },
@@ -34,11 +34,15 @@ export const NAV_MAIN: NavItem[] = [
   { label: "Documents", href: "/documents", icon: FileText, match: ["/documents"] },
   { label: "Services", href: "/services", icon: BriefcaseBusiness, match: ["/services"] },
   { label: "Rendez-vous", href: "/appointments", icon: CalendarDays, match: ["/appointments"] },
-  { label: "Agent IA", href: "/agent-ia/agents", icon: Bot, match: ["/agent-ia"] },
   { label: "Tâches", href: "/tasks", icon: ListChecks, match: ["/tasks"] },
   { label: "Finance", href: "/finance", icon: Wallet, match: ["/finance"] },
   { label: "Partenaires", href: "/partners", icon: Handshake, match: ["/partners"] },
   { label: "Rapports", href: "/reports", icon: BarChart3, match: ["/reports"] },
+];
+
+/** Option à part, affichée seule entre « Rapports » et « Équipe », séparée par un espace. */
+export const NAV_SPECIAL: NavItem[] = [
+  { label: "Agent IA", href: "/agent-ia/agents", icon: Bot, match: ["/agent-ia"] },
 ];
 
 export const NAV_ADMIN: NavItem[] = [

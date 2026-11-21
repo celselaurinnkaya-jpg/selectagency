@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "cn";
 import { ProBadge } from "@/components/shared/FeatureLocked";
-import { NAV_ADMIN, NAV_MAIN, isActive, type NavItem } from "./nav-items";
+import { NAV_ADMIN, NAV_MAIN, NAV_SPECIAL, isActive, type NavItem } from "./nav-items";
 
 // Menu inspiré de la référence UNIP : cartes blanches sur fond clair, entrée active en bleu marine.
 // L'icône est posée sur une pastille bleu marine avec un pictogramme jaune (couleurs du logo).
@@ -51,11 +51,20 @@ export function SidebarNavFallback() {
 }
 
 function NavList({ current, onNavigate, locked, hidden }: { current: string | null; onNavigate?: () => void; locked: string[]; hidden: string[] }) {
+  const special = NAV_SPECIAL.filter((item) => !hidden.includes(item.href));
   return (
     <nav aria-label="Menu principal" className="flex flex-col gap-2">
       {NAV_MAIN.filter((item) => !hidden.includes(item.href)).map((item) => (
         <NavLink key={item.href} item={item} active={isActive(item, current)} locked={locked.includes(item.href)} onNavigate={onNavigate} />
       ))}
+      {/* Agent IA : option à part, détachée de « Rapports » par un espace. */}
+      {special.length > 0 && (
+        <div className="mt-4 flex flex-col gap-2">
+          {special.map((item) => (
+            <NavLink key={item.href} item={item} active={isActive(item, current)} locked={locked.includes(item.href)} onNavigate={onNavigate} />
+          ))}
+        </div>
+      )}
       <div className="my-2 border-t border-slate-200" />
       {NAV_ADMIN.map((item) => (
         <NavLink key={item.href} item={item} active={isActive(item, current)} locked={false} onNavigate={onNavigate} />

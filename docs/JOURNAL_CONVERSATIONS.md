@@ -15,6 +15,35 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 71 — 21 Novembre 2026 (Claude Code) — Vérification de la Finance (factures, paiements, synthèse, devis)
+* **Demande de l'utilisateur** :
+  - une facture enregistrée n'apparaît ni dans « Paiements et reçus » ni dans « Synthèse » ;
+  - impossible de saisir un devis ;
+  - tout vérifier dans la Finance et l'expliquer clairement.
+* **Essais** :
+  - Tests de la base (PGlite, en mémoire) : 95/95 réussis, dont factures, paiements, reçus, devis acceptés devenus prestations et paiements à vérifier.
+  - **Aucun essai dans l'application** : .env.local pointe vers la base en ligne, et il ne faut jamais modifier les données de production pour des tests.
+* **Constats (lecture du code)** :
+  1. **Factures** : document remis au client, voulu ainsi (migration `20261031120000_factures.sql` : « elle ne crée ni prestation ni paiement »). « Marquer comme payée » change seulement l'état de la facture ; aucun encaissement n'est enregistré. Elle n'apparaît donc jamais dans Paiements ni dans Synthèse.
+  2. **Paiements** : ils s'enregistrent uniquement dans le dossier, onglet Finance, et le formulaire n'apparaît que si le dossier a des prestations convenues avec un reste à payer. Un paiement « à vérifier » (virement, Mobile Money) ne compte pas dans la Synthèse avant sa confirmation.
+  3. **Synthèse** : elle compte les paiements confirmés et les dépenses de la période choisie (par défaut « ce mois »). **Défaut réel** : les devises affichées viennent seulement des paiements et des dépenses (`agencyFinance`, `calculations.ts`). Sans paiement ni dépense, la page dit « Aucun mouvement enregistré » et cache le « Reste à recevoir » des dossiers, pourtant calculé.
+  4. **Devis** : ils se préparent uniquement dans le dossier, onglet Finance (section « Devis »). La page Finance → Devis n'a aucun bouton, seulement une phrase. Un devis accepté crée les prestations du dossier.
+* **Propositions faites à l'utilisateur (aucune appliquée)** :
+  - A : Synthèse, afficher le reste à recevoir même sans paiement ;
+  - B : bouton « Nouveau devis » sur la page Devis ;
+  - C : relier la facture aux paiements (bouton « Enregistrer l'encaissement » ou paiement créé au passage à « payée ») ;
+  - D : factures émises non payées dans la Synthèse.
+* **Aucun code modifié.**
+
+### Session 70 — 21 Novembre 2026 (Claude Code) — Menu : « Agent IA » déplacé entre « Rapports » et « Équipe »
+* **Demande de l'utilisateur** : déplacer « Agent IA » entre « Rapports » et « Équipe », avec un peu d'espace pour montrer que c'est une option à part. Rien d'autre.
+* **Fait** :
+  - `src/components/layout/nav-items.ts` : « Agent IA » sorti de la liste principale (il était entre « Rendez-vous » et « Tâches ») et placé dans une nouvelle liste `NAV_SPECIAL`. Même adresse, même icône.
+  - `src/components/layout/SidebarNav.tsx` : `NAV_SPECIAL` est affiché après « Rapports », avec un espace au-dessus (`mt-4`), puis la ligne de séparation et « Équipe ».
+  - Règles inchangées : masqué pour les rôles qui ne le voient pas (`hidden`) et badge « PRO » si l'option n'est pas dans la formule (`locked`).
+* **Vérifications** : `tsc` : 0 erreur ; ESLint : 0 erreur.
+* **Non envoyé sur GitHub** (en attente de demande explicite).
+
 ### Session 69 — 18 Novembre 2026 (Claude Code) — Lien d'invitation d'équipe avec « localhost » : corrigé
 * **Problème signalé** : Équipe → Ajouter un membre → invitation créée, mais le lien généré ne s'ouvre pas et commence par l'adresse locale (localhost).
 * **Diagnostic** :
