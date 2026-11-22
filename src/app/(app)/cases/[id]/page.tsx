@@ -287,6 +287,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   jump={transitions.jump}
                   outcomeKeys={transitions.outcomeKeys}
                   closureKeys={transitions.closureKeys}
+                  missingRequired={missing.length}
                 />
               ) : (
                 <p className="text-sm text-slate-600">

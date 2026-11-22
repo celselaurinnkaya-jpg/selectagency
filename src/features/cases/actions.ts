@@ -17,6 +17,7 @@ import { validateTransition, type TransitionInput } from "@/features/workflows/r
 import { effectiveTemplate } from "@/features/workflows/custom";
 import { resolveTemplate } from "@/features/workflows/templates";
 import { activeMembers } from "@/lib/domain/members";
+import { isMissingRequired } from "@/lib/domain/requirements";
 
 const categories = ["study_abroad", "tourist_visa", "business_travel", "administrative_support", "other_mobility", "custom_trip"] as const;
 const tags = ["student", "employee", "self_employed", "minor", "sponsored"] as const;
@@ -121,19 +122,21 @@ const transitionSchema = z.object({
   sourceNote: z.string().max(300).optional(),
   reason: z.string().max(500).optional(),
   acknowledgeBalance: z.literal("1").optional(),
+  acknowledgeMissing: z.literal("1").optional(),
 });
 
 export async function transitionCaseAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
   const parsed = transitionSchema.safeParse(values);
   if (!parsed.success) return { message: "Demande incomplète.", values };
-  const { caseId, version, acknowledgeBalance, ...rest } = parsed.data;
+  const { caseId, version, acknowledgeBalance, acknowledgeMissing, ...rest } = parsed.data;
 
   const { data, ctx } = await readAgency({
     cases: (q) => q.eq("id", caseId),
     steps: (q) => q.eq("case_id", caseId),
     charges: (q) => q.eq("case_id", caseId),
     payments: (q) => q.eq("case_id", caseId),
+    requirements: (q) => q.eq("case_id", caseId),
   });
   if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write"), values };
   const travelCase = data.cases[0];
@@ -149,6 +152,12 @@ export async function transitionCaseAction(_prev: FormState, formData: FormData)
   const validation = validateTransition(data.steps, input, { balanceDueMinor: finance.balanceMinor });
   if (!validation.ok) {
     return { message: validation.error, fieldErrors: validation.field ? { [validation.field]: [validation.error] } : undefined, values };
+  }
+  // Passage direct alors que des pièces obligatoires manquent : jamais sans le confirmer (rapport de test v3).
+  const missingRequired = data.requirements.filter(isMissingRequired).length;
+  if (input.mode === "jump" && missingRequired > 0 && acknowledgeMissing !== "1") {
+    const error = `${missingRequired === 1 ? "1 pièce obligatoire manque" : `${missingRequired} pièces obligatoires manquent`} encore : confirmez le passage direct malgré tout.`;
+    return { message: error, fieldErrors: { acknowledgeMissing: [error] }, values };
   }
 
   // La base reçoit l'action demandée et calcule elle-même les étapes, l'issue, la clôture et l'historique.

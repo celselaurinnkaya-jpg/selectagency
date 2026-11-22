@@ -15,6 +15,55 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 81 — 22 Novembre 2026 (Claude Code) — Rapport de test v3 : corrections restantes
+* **Demande de l'utilisateur** : « ne modifiez pas ce qui a été fait, concentrez-vous sur les erreurs du troisième rapport ».
+* **26. Calculatrice** :
+  - CDF, NGN, GHS (et MAD, TND, DZD, EGP, KES, RWF, GNF, MGA) ajoutés depuis ExchangeRate-API (open.er-api.com) ;
+  - seulement pour les devises que la BCE ne publie pas : la BCE reste la source principale ;
+  - source et date affichées, avec le lien d'attribution demandé par le service.
+* **28. Recherche** :
+  - factures (numéro FAC-…, nom du client) et reçus (numéro), pour les rôles qui voient la finance ;
+  - les prospects mènent à leur fiche prospect.
+* **29. Menu « Nouveau »** :
+  - ajout de « Nouveau rendez-vous » et « Nouveau paiement » ;
+  - nouvelle page `/finance/payments/new` : choix du dossier, puis formulaire de paiement du dossier ;
+  - bouton « Nouveau paiement » sur la page des paiements.
+* **27. Relances après conversion** (migration `20261122210000_relances_apres_conversion.sql`) :
+  - un déclencheur termine les relances ouvertes (tâches de la fiche sans dossier) quand un prospect devient client ;
+  - fonctionne quel que soit le chemin : bouton, premier dossier, ajout à un service ;
+  - aucune donnée existante modifiée ;
+  - test de la base ajouté.
+* **24. « Qui pointe ? »** : liens vers ce réglage depuis « Ma présence aujourd'hui » et « L'équipe aujourd'hui » (ancre `#qui-pointe`).
+* **Remarque 1, passage direct** :
+  - s'il manque des pièces obligatoires, une case « je confirme malgré tout » est demandée ;
+  - le serveur refait la vérification.
+* **Remarque 2, téléphone** :
+  - l'exemple suit le pays choisi (libphonenumber), dans les fiches client et prospect et dans les messages d'erreur ;
+  - le « +237 » n'est plus imposé.
+* **Remarque 4, motif de correction** : le formulaire prévient que le client lit ce texte tel quel (WhatsApp, e-mail de relance, espace client).
+* **21. Facture → reste à payer** :
+  - ajout automatique, comme frais de l'agence, si le dossier n'a encore aucune prestation (à l'enregistrement et à l'émission d'un brouillon) ;
+  - sinon le bouton manuel reste.
+* **30. Aide et support** :
+  - questions fréquentes ;
+  - contact direct WhatsApp et e-mail ;
+  - coordonnées centralisées dans `src/lib/select-contact.ts` (le site public les reprend, sans changement visible).
+  - Pièces jointes aux demandes : non faites (stockage et console à prévoir) ; en attendant, capture par WhatsApp en citant SUP-….
+* **Non codé, expliqué à l'utilisateur** :
+  - 22, validation des dépenses ;
+  - 23, échéance de l'abonnement ;
+  - 25, domaine myselectagence.com ;
+  - adresse contact@ (boîte à créer) ;
+  - essais à faire avant l'ouverture ;
+  - réponse à SUP-2026-00002.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 3 erreurs, toutes dans `src/features/agent-ia/actions.ts` (commit bff0f15 de l'autre outil), non modifié ;
+  - tests : 285/285, dont la base 109/109 ;
+  - `next build` : 90 pages.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migration 20261122210000).
+* **Non envoyé sur GitHub.**
+
 ### Session 80 — 22 Novembre 2026 (Claude Code) — Points 1 à 4 : publication, coordonnées, région, alertes au propriétaire et espace client
 * **Demande de l'utilisateur** : « fais le 1, 2, 3 et 4 » ; e-mail notifications@myselectagency.com, téléphone et WhatsApp +33 7 51 11 18 04.
 * **1. Publication** :

@@ -123,6 +123,27 @@ export async function listPayments(filter: PaymentFilter = "tous") {
   };
 }
 
+const normalizeText = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+
+/** « Nouveau paiement » : choix du dossier (un paiement s'enregistre toujours dans un dossier). Dossiers non annulés
+ *  qui ont un reste à payer, puis les autres dossiers en cours (prestations encore à saisir). */
+export async function listCasesToCollect(q?: string) {
+  const { data, ctx, now } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true });
+  const query = q ? normalizeText(q.trim()) : "";
+  const rows = data.cases
+    .filter((c) => c.status !== "cancelled")
+    .map((c) => summarizeCase(data, c, now))
+    .filter((s) => s.travelCase.status === "active" || s.finance.balanceMinor > 0)
+    .filter((s) => !query || normalizeText(`${s.travelCase.reference} ${s.travelCase.title} ${s.client.firstName} ${s.client.lastName}`).includes(query))
+    .sort((a, b) => Number(b.finance.balanceMinor > 0) - Number(a.finance.balanceMinor > 0) || b.travelCase.openedAt.localeCompare(a.travelCase.openedAt));
+  return {
+    canSeeFinance: allowed(ctx, "finance.read"),
+    canWrite: allowed(ctx, "finance.write"),
+    total: rows.length,
+    rows: rows.slice(0, 60),
+  };
+}
+
 export async function listExpenses() {
   const { data, ctx, now } = await readAgency({ expenses: true, cases: true });
   // Seuil du justificatif obligatoire (vide = jamais obligatoire), réglé par le propriétaire ou un administrateur.

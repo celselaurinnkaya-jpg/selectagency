@@ -2,7 +2,7 @@
 
 import { startTransition, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, FileText, FolderPlus, ListPlus, LogOut, Menu, Plus, Receipt, Settings, ShieldCheck, Target, UserPlus, UserRound } from "lucide-react";
+import { CalendarPlus, ChevronDown, FileText, FolderPlus, ListPlus, LogOut, Menu, Plus, Receipt, Settings, ShieldCheck, Target, UserPlus, UserRound, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -45,6 +45,8 @@ const NEW_ITEMS = [
   { href: "/clients/new", label: "Nouveau client", icon: UserPlus },
   { href: "/cases/new", label: "Nouveau dossier", icon: FolderPlus },
   { href: "/tasks#nouvelle-tache", label: "Nouvelle tâche", icon: ListPlus },
+  { href: "/appointments#nouveau-rendez-vous", label: "Nouveau rendez-vous", icon: CalendarPlus },
+  { href: "/finance/payments/new", label: "Nouveau paiement", icon: Wallet },
   { href: "/finance/invoices/new", label: "Nouvelle facture", icon: FileText },
   { href: "/finance/expenses#nouvelle-depense", label: "Nouvelle dépense", icon: Receipt },
 ];

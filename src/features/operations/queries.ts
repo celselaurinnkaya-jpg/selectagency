@@ -5,6 +5,7 @@ import { siteUrl } from "@/lib/env";
 import { allowed, can } from "@/lib/auth/permissions";
 import { fetchRows, readAgency } from "@/lib/data/agency";
 import { INVITATION_COLUMNS, toInvitation } from "@/features/team/invitations";
+import { loadInvoices } from "@/features/invoices/queries";
 import { dayKey } from "@/lib/format";
 import { monthParts, shiftMonth } from "@/lib/period";
 import { activeMembers } from "@/lib/domain/members";
@@ -211,12 +212,36 @@ export const getShell = cache(async () => {
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 
 export async function search(q: string) {
-  const { data } = await readAgency({ clients: true, cases: true });
+  const { data, ctx } = await readAgency({ clients: true, cases: true });
   const query = normalize(q.trim());
   const digits = q.replace(/\D/g, "");
-  if (query.length < 2) return { query: q, clients: [], cases: [] };
+  if (query.length < 2) return { query: q, clients: [], cases: [], invoices: [], receipts: [] };
+  // Factures (numéro, client) et reçus (numéro) : seulement pour les rôles qui voient la finance.
+  const financeRead = allowed(ctx, "finance.read");
+  const [invoiceRows, paymentRows] = financeRead
+    ? await Promise.all([loadInvoices(ctx), fetchRows(ctx, "payments", "id, receipt_number, amount_minor, currency, client_id, case_id, status, paid_at" as "*", (q2) => q2.not("receipt_number", "is", null))])
+    : [[], []];
+  const clientName = (id: string) => {
+    const c = data.clients.find((x) => x.id === id);
+    return c ? `${c.firstName} ${c.lastName}` : "";
+  };
   return {
     query: q,
+    invoices: invoiceRows
+      .filter((i) => normalize(`${i.number} ${clientName(i.clientId)}`).includes(query))
+      .slice(0, 30)
+      .map((invoice) => ({ invoice, clientName: clientName(invoice.clientId) })),
+    receipts: (paymentRows as Record<string, unknown>[])
+      .filter((p) => normalize(String(p.receipt_number ?? "")).includes(query))
+      .slice(0, 30)
+      .map((p) => ({
+        id: String(p.id),
+        receiptNumber: String(p.receipt_number),
+        amountMinor: Number(p.amount_minor),
+        currency: String(p.currency),
+        voided: p.status === "voided",
+        clientName: clientName(String(p.client_id)),
+      })),
     clients: data.clients.filter(
       (c) =>
         normalize(`${c.firstName} ${c.lastName} ${c.reference} ${c.email ?? ""}`).includes(query) ||

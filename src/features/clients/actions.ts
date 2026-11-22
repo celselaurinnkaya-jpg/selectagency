@@ -13,7 +13,7 @@ import { formValues, type FormState } from "@/lib/form-state";
 import type { Client } from "@/lib/domain/types";
 import { CLIENT_SOURCE } from "@/lib/domain/labels";
 import { duplicateLabel, findDuplicates } from "./duplicates";
-import { toE164 } from "./phone";
+import { invalidPhoneMessage, toE164 } from "./phone";
 import { applyClientPartner, resolvePartnerCode } from "@/features/partners/link";
 import { activeMembers } from "@/lib/domain/members";
 
@@ -36,7 +36,7 @@ const clientSchema = z.object({
   residenceCountry: z.string().trim().min(1, "Choisissez ou indiquez le pays de résidence.").max(80),
   city: z.string().trim().min(1, "Indiquez la ville.").max(80),
   address: z.string().trim().max(250).optional(),
-  phone: z.string().trim().min(1, "Indiquez le numéro de téléphone.").min(6, "Numéro invalide : il est trop court. Exemple : +237 6 99 00 00 00."),
+  phone: z.string().trim().min(1, "Indiquez le numéro de téléphone.").min(6, "Numéro invalide : il est trop court."),
   whatsapp: z.string().trim().optional(),
   email: z.union([z.literal(""), z.string().trim().email("Adresse e-mail invalide.")]).optional(),
   preferredLanguage: z.string().min(1, "Choisissez la langue de communication.").max(10),
@@ -92,7 +92,7 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     return {
       message: "Certains champs sont à corriger.",
       fieldErrors: {
-        phone: ["Numéro invalide pour le pays choisi. Exemple : +237 6 99 00 00 00."],
+        phone: [invalidPhoneMessage(input.residenceCountry)],
       },
       values,
     };

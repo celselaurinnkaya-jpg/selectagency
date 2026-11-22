@@ -12,6 +12,7 @@ import { CLIENT_SOURCE, SERVICE_MOTIVES } from "@/lib/domain/labels";
 import type { ClientSource } from "@/lib/domain/types";
 import { initialFormState, type FormState } from "@/lib/form-state";
 import { convertProspectAction, saveProspectAction, scheduleFollowUpAction } from "./actions";
+import { phoneExample } from "@/features/clients/phone";
 
 // Formulaires des prospects. Champs contrôlés envoyés par onSubmit (React 19 vide un formulaire
 // « action » après chaque réponse, même refusée : rien ne doit se perdre).
@@ -132,7 +133,7 @@ export function ProspectForm({
           <FormField id="p-last" label="Nom" required error={e.lastName}>
             <Input id="p-last" autoComplete="off" value={lastName} onChange={(ev) => setLastName(ev.target.value)} {...describedBy("p-last", e.lastName)} />
           </FormField>
-          <FormField id="p-phone" label="Téléphone" required error={e.phone} hint="L'indicatif suit le pays choisi.">
+          <FormField id="p-phone" label="Téléphone" required error={e.phone} hint={phoneExample(country) ? `Exemple : ${phoneExample(country)}. L'indicatif suit le pays choisi.` : "L'indicatif suit le pays choisi."}>
             <Input id="p-phone" type="tel" inputMode="tel" autoComplete="off" value={phone} onChange={(ev) => setPhone(ev.target.value)} {...describedBy("p-phone", e.phone, "hint")} />
           </FormField>
           <FormField id="p-whatsapp" label="WhatsApp" error={e.whatsapp} hint="Vide s'il s'agit du même numéro.">

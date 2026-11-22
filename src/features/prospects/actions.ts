@@ -12,7 +12,7 @@ import type { ClientSource } from "@/lib/domain/types";
 import type { FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import { duplicateLabel, findDuplicates } from "@/features/clients/duplicates";
-import { toE164 } from "@/features/clients/phone";
+import { invalidPhoneMessage, toE164 } from "@/features/clients/phone";
 import { applyClientPartner, resolvePartnerCode } from "@/features/partners/link";
 
 // Prospects : fiche légère d'un premier contact (table clients, statut « prospect »). La même fiche
@@ -25,7 +25,7 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const prospectSchema = z.object({
   firstName: z.string().trim().min(1, "Indiquez le prénom.").max(80),
   lastName: z.string().trim().min(1, "Indiquez le nom.").max(80),
-  phone: z.string().trim().min(1, "Indiquez le numéro de téléphone.").min(6, "Numéro invalide : il est trop court. Exemple : +237 6 99 00 00 00."),
+  phone: z.string().trim().min(1, "Indiquez le numéro de téléphone.").min(6, "Numéro invalide : il est trop court."),
   whatsapp: z.string().trim().max(40).optional(),
   email: z.union([z.literal(""), z.email("Adresse e-mail invalide.")]).optional(),
   residenceCountry: z.string().trim().min(1, "Choisissez le pays.").max(80),
@@ -48,7 +48,7 @@ export async function saveProspectAction(raw: ProspectInput): Promise<FormState>
   if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors };
   const input = parsed.data;
   const phoneE164 = toE164(input.phone, input.residenceCountry);
-  if (!phoneE164) return { message: "Certains champs sont à corriger.", fieldErrors: { phone: ["Numéro invalide pour le pays choisi. Exemple : +237 6 99 00 00 00."] } };
+  if (!phoneE164) return { message: "Certains champs sont à corriger.", fieldErrors: { phone: [invalidPhoneMessage(input.residenceCountry)] } };
   const whatsappE164 = input.whatsapp ? toE164(input.whatsapp, input.residenceCountry) : undefined;
   if (input.whatsapp && !whatsappE164) return { message: "Certains champs sont à corriger.", fieldErrors: { whatsapp: ["Numéro WhatsApp invalide."] } };
 

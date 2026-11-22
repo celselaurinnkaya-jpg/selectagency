@@ -76,6 +76,15 @@ async function Presences({ searchParams }: Pick<PageProps<"/tasks/presences">, "
           ) : (
             <ClockPanel clock={p.clock} />
           )}
+          {!p.clock.exempt && p.canEdit && p.pointingTeam.length > 0 && (
+            <p className="mt-3 text-sm text-slate-600">
+              Vous ne pointez pas (propriétaire, gérant) ?{" "}
+              <a href="#qui-pointe" className="font-medium text-navy-800 underline">
+                Dispensez-vous dans « Qui pointe ? »
+              </a>{" "}
+              : vous ne serez plus compté absent.
+            </p>
+          )}
         </Card>
       </Section>
 
@@ -112,6 +121,15 @@ async function Presences({ searchParams }: Pick<PageProps<"/tasks/presences">, "
                 </li>
               ))}
             </ul>
+          )}
+          {p.canEdit && p.pointingTeam.length > 0 && (
+            <p className="mt-2 text-sm text-slate-600">
+              Un membre compté absent alors qu&apos;il ne pointe pas, le propriétaire par exemple ?{" "}
+              <a href="#qui-pointe" className="font-medium text-navy-800 underline">
+                Dispensez-le de pointage
+              </a>
+              .
+            </p>
           )}
         </Section>
       )}
@@ -249,7 +267,7 @@ async function Presences({ searchParams }: Pick<PageProps<"/tasks/presences">, "
       )}
 
       {p.canEdit && p.pointingTeam.length > 0 && (
-        <Section title="Qui pointe ?">
+        <Section title="Qui pointe ?" id="qui-pointe">
           <Card>
             <AttendanceExemptionsForm members={p.pointingTeam} />
           </Card>

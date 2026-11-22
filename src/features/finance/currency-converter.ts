@@ -4,13 +4,15 @@
 export interface EuroRates {
   date: string;
   rates: Record<string, number>;
+  /** Devises absentes de la BCE, complétées par ExchangeRate-API (date de leurs cours). */
+  complement?: { date: string; codes: string[] };
 }
 
 /** Devises à parité fixe avec l'euro (toujours disponibles, même sans les cours du jour). */
 export const FIXED_PER_EURO: Record<string, number> = { EUR: 1, XAF: 655.957, XOF: 655.957 };
 
 /** Devises proposées en premier (zone franc, puis destinations d'études et de voyage fréquentes). */
-const FIRST = ["XAF", "XOF", "EUR", "USD", "CAD", "GBP", "CHF", "CNY", "TRY", "ZAR"];
+const FIRST = ["XAF", "XOF", "CDF", "NGN", "GHS", "EUR", "USD", "CAD", "GBP", "CHF", "CNY", "TRY", "ZAR"];
 
 /** Les deux devises ont-elles une parité fixe entre elles (euro et franc CFA) ? */
 export const isFixedPair = (from: string, to: string) => from in FIXED_PER_EURO && to in FIXED_PER_EURO;

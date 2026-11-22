@@ -33,5 +33,5 @@ export default function CalculatorPage() {
 
 async function CalculatorWithRates() {
   const [euroRates, { agency }] = await Promise.all([getEuroRates(), getShell()]);
-  return <Calculator rates={euroRates?.rates ?? FIXED_PER_EURO} ratesDate={euroRates?.date} defaultCurrency={agency.currency} />;
+  return <Calculator rates={euroRates?.rates ?? FIXED_PER_EURO} ratesDate={euroRates?.date} complement={euroRates?.complement} defaultCurrency={agency.currency} />;
 }

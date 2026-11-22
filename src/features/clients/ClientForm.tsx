@@ -20,6 +20,7 @@ import {
 } from "@/lib/domain/labels";
 import type { Client } from "@/lib/domain/types";
 import { saveClientAction } from "./actions";
+import { phoneExample } from "./phone";
 
 interface Option {
   frequent?: boolean;
@@ -85,6 +86,10 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
   const [customResidence] = useState<string>(() => {
     return !isInitialResidenceInList && initialResidence && initialResidence !== "__OTHER__" ? initialResidence : "";
   });
+
+  // Exemple de numéro qui suit le pays de résidence choisi (rapport de test v3 : « +237… » affiché pour tous les pays).
+  const example = phoneExample(residenceSelect);
+  const examplePlaceholder = example ? `Ex : ${example}` : "Avec l'indicatif (+…)";
 
   return (
     <form action={action} className="space-y-6" noValidate>
@@ -280,7 +285,7 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
             />
           </FormField>
 
-          <FormField id="phone" label="Téléphone" required error={e.phone} hint="L'indicatif du pays est automatiquement associé au pays de résidence.">
+          <FormField id="phone" label="Téléphone" required error={e.phone} hint={example ? `Exemple : ${example}. L'indicatif suit le pays de résidence.` : "L'indicatif du pays est automatiquement associé au pays de résidence."}>
             <Input id="phone" name="phone" type="tel" inputMode="tel" autoComplete="off" defaultValue={v.phone ?? client?.phoneE164} {...describedBy("phone", e.phone, "hint")} />
           </FormField>
 
@@ -337,10 +342,10 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
                     <Input id="guardian1Name" name="guardian1Name" placeholder="Ex : M. Jean Dupont" defaultValue={v.guardian1Name ?? client?.guardian1?.name} />
                   </FormField>
                   <FormField id="guardian1Phone" label="Téléphone" error={e.guardian1Phone}>
-                    <Input id="guardian1Phone" name="guardian1Phone" type="tel" inputMode="tel" placeholder="Ex : +237 6..." defaultValue={v.guardian1Phone ?? client?.guardian1?.phone} />
+                    <Input id="guardian1Phone" name="guardian1Phone" type="tel" inputMode="tel" placeholder={examplePlaceholder} defaultValue={v.guardian1Phone ?? client?.guardian1?.phone} />
                   </FormField>
                   <FormField id="guardian1Whatsapp" label="WhatsApp" error={e.guardian1Whatsapp}>
-                    <Input id="guardian1Whatsapp" name="guardian1Whatsapp" type="tel" inputMode="tel" placeholder="Ex : +237 6..." defaultValue={v.guardian1Whatsapp ?? client?.guardian1?.whatsapp} />
+                    <Input id="guardian1Whatsapp" name="guardian1Whatsapp" type="tel" inputMode="tel" placeholder={examplePlaceholder} defaultValue={v.guardian1Whatsapp ?? client?.guardian1?.whatsapp} />
                   </FormField>
                 </div>
               </div>
@@ -356,10 +361,10 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
                     <Input id="guardian2Name" name="guardian2Name" placeholder="Ex : Mme Marie Dupont" defaultValue={v.guardian2Name ?? client?.guardian2?.name} />
                   </FormField>
                   <FormField id="guardian2Phone" label="Téléphone" error={e.guardian2Phone}>
-                    <Input id="guardian2Phone" name="guardian2Phone" type="tel" inputMode="tel" placeholder="Ex : +237 6..." defaultValue={v.guardian2Phone ?? client?.guardian2?.phone} />
+                    <Input id="guardian2Phone" name="guardian2Phone" type="tel" inputMode="tel" placeholder={examplePlaceholder} defaultValue={v.guardian2Phone ?? client?.guardian2?.phone} />
                   </FormField>
                   <FormField id="guardian2Whatsapp" label="WhatsApp" error={e.guardian2Whatsapp}>
-                    <Input id="guardian2Whatsapp" name="guardian2Whatsapp" type="tel" inputMode="tel" placeholder="Ex : +237 6..." defaultValue={v.guardian2Whatsapp ?? client?.guardian2?.whatsapp} />
+                    <Input id="guardian2Whatsapp" name="guardian2Whatsapp" type="tel" inputMode="tel" placeholder={examplePlaceholder} defaultValue={v.guardian2Whatsapp ?? client?.guardian2?.whatsapp} />
                   </FormField>
                 </div>
               </div>

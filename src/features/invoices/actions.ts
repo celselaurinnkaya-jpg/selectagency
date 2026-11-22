@@ -17,6 +17,30 @@ import { invoiceTotals, parseTaxRate } from "./totals";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * Rapport de test v3, point 21 : une facture émise pour un dossier qui n'a encore aucune prestation entre d'elle-même
+ * dans son reste à payer (frais de l'agence, le choix par défaut du bouton). Si le dossier a déjà des prestations, la
+ * personne décide sur la page de la facture : la facture peut les reprendre, et le client paierait deux fois.
+ * Devises différentes ou facture déjà ajoutée : la base refuse l'ajout, et la page de la facture l'explique.
+ */
+async function addIssuedInvoiceToEmptyCase(ctx: Awaited<ReturnType<typeof getAgencyContext>>, invoiceId: string): Promise<boolean> {
+  const { data: invoice } = await ctx.supabase
+    .from("invoices")
+    .select("case_id, status")
+    .eq("id", invoiceId)
+    .eq("organization_id", ctx.organizationId)
+    .maybeSingle();
+  if (!invoice?.case_id || invoice.status !== "issued") return false;
+  const { count, error } = await ctx.supabase
+    .from("charges")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", ctx.organizationId)
+    .eq("case_id", String(invoice.case_id));
+  if (error || count !== 0) return false;
+  const { error: chargeError } = await ctx.supabase.rpc("add_invoice_to_charges", { p_invoice_id: invoiceId, p_charge_type: "agency_fee" });
+  return !chargeError;
+}
+
 const invoiceSchema = z.object({
   invoiceId: z.union([z.literal(""), z.uuid()]),
   clientId: z.uuid({ error: "Choisissez le client facturé." }),
@@ -126,7 +150,11 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
   // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
   sendQueuedEmailsAfterResponse(ctx);
   const saved = data as { id: string };
-  return { ok: true, redirectTo: `/finance/invoices/${saved.id}?ok=${isNew ? "facture-creee" : "facture-modifiee"}` };
+  const addedToCase = v.intent === "issue" && Boolean(v.caseId) && (await addIssuedInvoiceToEmptyCase(ctx, saved.id));
+  return {
+    ok: true,
+    redirectTo: `/finance/invoices/${saved.id}?ok=${isNew ? "facture-creee" : "facture-modifiee"}${addedToCase ? "&solde=ajoute" : ""}`,
+  };
 }
 
 /**
@@ -194,8 +222,14 @@ export async function setInvoiceStatusAction(_prev: FormState, formData: FormDat
   if (error) return { message: dbMessage(error) };
   // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
   sendQueuedEmailsAfterResponse(ctx);
+  const addedToCase = parsed.data.status === "issued" && (await addIssuedInvoiceToEmptyCase(ctx, parsed.data.invoiceId));
   refresh();
-  return { ok: true, message: `Facture ${label}.` };
+  return {
+    ok: true,
+    message: addedToCase
+      ? `Facture ${label}. Le dossier n'avait encore aucune prestation : son montant a été ajouté à son reste à payer, comme frais de l'agence.`
+      : `Facture ${label}.`,
+  };
 }
 
 /** Comme l'enregistrement : renvoie l'adresse de la liste, que la page charge entièrement. */

@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Wallet } from "lucide-react";
+import { Plus, Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, Notice, PageHeader, StatusBadge } from "@/components/shared/ui";
@@ -27,6 +28,14 @@ export default function PaymentsPage({ searchParams }: PageProps<"/finance/payme
       <PageHeader
         title="Paiements et reçus"
         description="Un paiement confirmé reçoit un numéro de reçu unique et chronologique, attribué par la base de données. Un paiement annoncé (virement, Mobile Money) reste « à vérifier », sans reçu, jusqu'à ce que sa réception soit confirmée. Pour enregistrer un paiement, ouvrez le dossier concerné, onglet Finance."
+        actions={
+          <Button asChild variant="accent">
+            <Link href="/finance/payments/new">
+              <Plus aria-hidden />
+              Nouveau paiement
+            </Link>
+          </Button>
+        }
       />
       <Suspense fallback={<PageSkeleton />}>
         <Payments searchParams={searchParams} />

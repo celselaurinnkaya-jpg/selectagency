@@ -19,12 +19,15 @@ const parse = (value: string) => {
 export function CurrencyConverter({
   rates,
   ratesDate,
+  complement,
   defaultTo,
 }: {
   /** Unités de chaque devise pour 1 euro. */
   rates: EuroRates["rates"];
   /** Date de publication des cours de la BCE ; absente si seuls l'euro et le franc CFA sont disponibles. */
   ratesDate?: string;
+  /** Devises complétées par ExchangeRate-API (absentes de la BCE). */
+  complement?: EuroRates["complement"];
   /** Devise de l'agence, proposée par défaut à l'arrivée. */
   defaultTo: string;
 }) {
@@ -124,9 +127,19 @@ export function CurrencyConverter({
         {fixed
           ? "Parité fixe entre l'euro et le franc CFA : 1 € = 655,957 FCFA (XAF et XOF)."
           : ratesDate
-            ? `Taux de référence de la Banque centrale européenne du ${formatDate(`${ratesDate}T12:00:00Z`, "UTC")}, à titre indicatif : votre banque ou votre bureau de change applique son propre taux et ses frais.`
+            ? complement && (complement.codes.includes(from) || complement.codes.includes(to))
+              ? `Cours d'ExchangeRate-API du ${formatDate(`${complement.date}T12:00:00Z`, "UTC")} pour ${complement.codes.filter((c) => c === from || c === to).join(" et ")} (devise non publiée par la BCE), à titre indicatif : votre banque ou votre bureau de change applique son propre taux et ses frais.`
+              : `Taux de référence de la Banque centrale européenne du ${formatDate(`${ratesDate}T12:00:00Z`, "UTC")}, à titre indicatif : votre banque ou votre bureau de change applique son propre taux et ses frais.`
             : ""}
       </p>
+      {complement && (
+        <p className="mt-1 text-xs text-slate-500">
+          <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener noreferrer" className="underline">
+            Rates By Exchange Rate API
+          </a>{" "}
+          : {complement.codes.join(", ")}.
+        </p>
+      )}
       {!ratesDate && (
         <p className="mt-2 text-xs text-orange-800">
           Les cours des autres devises sont indisponibles pour le moment : seuls l&apos;euro et le franc CFA (parité fixe) sont proposés.

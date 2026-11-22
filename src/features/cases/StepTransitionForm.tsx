@@ -33,6 +33,7 @@ export function StepTransitionForm({
   jump = [],
   outcomeKeys = [],
   closureKeys = ["closed"],
+  missingRequired = 0,
 }: {
   caseId: string;
   /** Version du dossier lue à l'affichage (verrou optimiste). */
@@ -51,6 +52,8 @@ export function StepTransitionForm({
   /** Étapes de décision (preuve obligatoire) et de clôture (contrôle du solde). */
   outcomeKeys?: string[];
   closureKeys?: string[];
+  /** Pièces obligatoires encore manquantes : un passage direct demande de le confirmer. */
+  missingRequired?: number;
 }) {
   const [state, action, pending] = useActionState(transitionCaseAction, initialFormState);
   const [mode, setMode] = useState<Mode>("advance");
@@ -185,6 +188,17 @@ export function StepTransitionForm({
             <Textarea id="reason" name="reason" rows={2} {...describedBy("reason", e.reason)} />
           </FormField>
         )}
+
+        {mode === "jump" && missingRequired > 0 && (
+          <label className="flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+            <input type="checkbox" name="acknowledgeMissing" value="1" required className="mt-0.5 size-4 accent-navy-800" />
+            <span>
+              {missingRequired === 1 ? "1 pièce obligatoire manque" : `${missingRequired} pièces obligatoires manquent`} encore au dossier (onglet Documents). Je
+              confirme le passage direct malgré tout.
+            </span>
+          </label>
+        )}
+        {e.acknowledgeMissing && <p className="text-sm text-red-700">{e.acknowledgeMissing[0]}</p>}
 
         {closing && balanceDue && (
           <label className="flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">

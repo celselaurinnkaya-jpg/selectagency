@@ -23,7 +23,16 @@ export function ReviewDocumentForm({ requirementId, label }: { requirementId: st
           <label htmlFor={`comment-${requirementId}`} className="mb-1 block text-sm font-medium text-slate-800">
             Ce qu&apos;il faut corriger
           </label>
-          <Textarea id={`comment-${requirementId}`} name="comment" rows={2} aria-invalid={!!state.fieldErrors?.comment} />
+          <p id={`comment-hint-${requirementId}`} className="mb-1 text-xs text-slate-600">
+            Le client lira ce texte tel quel (message WhatsApp ou e-mail de relance, espace client) : écrivez-le pour lui, sans remarque interne.
+          </p>
+          <Textarea
+            id={`comment-${requirementId}`}
+            name="comment"
+            rows={2}
+            aria-invalid={!!state.fieldErrors?.comment}
+            aria-describedby={`comment-hint-${requirementId}`}
+          />
           {state.fieldErrors?.comment && <p className="mt-1 text-sm text-red-700">{state.fieldErrors.comment[0]}</p>}
         </div>
       )}

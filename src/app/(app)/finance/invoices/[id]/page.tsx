@@ -70,6 +70,8 @@ async function Invoice({ params, searchParams }: PageProps<"/finance/invoices/[i
           <div className="mb-4">
             <Notice tone="success" title={query.ok === "facture-creee" ? "Facture enregistrée" : "Facture modifiée"}>
               Elle est prête à imprimer, à télécharger en PDF ou à envoyer par WhatsApp.
+              {query.solde === "ajoute" &&
+                " Le dossier n'avait encore aucune prestation : son montant a été ajouté à son reste à payer, comme frais de l'agence."}
             </Notice>
           </div>
         )}

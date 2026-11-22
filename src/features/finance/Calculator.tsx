@@ -41,7 +41,7 @@ interface Line {
   result: number;
 }
 
-export function Calculator({ rates, ratesDate, defaultCurrency }: { rates: EuroRates["rates"]; ratesDate?: string; defaultCurrency: string }) {
+export function Calculator({ rates, ratesDate, complement, defaultCurrency }: { rates: EuroRates["rates"]; ratesDate?: string; complement?: EuroRates["complement"]; defaultCurrency: string }) {
   const [expression, setExpression] = useState("");
   const [history, setHistory] = useState<Line[]>([]);
   const [error, setError] = useState<string>();
@@ -218,7 +218,7 @@ export function Calculator({ rates, ratesDate, defaultCurrency }: { rates: EuroR
           )}
         </section>
 
-        <CurrencyConverter rates={rates} ratesDate={ratesDate} defaultTo={defaultCurrency} />
+        <CurrencyConverter rates={rates} ratesDate={ratesDate} complement={complement} defaultTo={defaultCurrency} />
       </div>
     </div>
   );

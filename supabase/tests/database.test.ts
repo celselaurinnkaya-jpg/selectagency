@@ -1178,6 +1178,34 @@ describe("prospects", () => {
     await createCase(KARL, org, withService.id, karl);
     expect((await one<{ n: number }>(KARL, "select count(*)::int as n from public.activity_events where client_id = $1 and text like 'Prospect devenu client%'", [withService.id])).n).toBe(1);
   });
+
+  it("termine les relances de prospection dès que le prospect devient client, quel que soit le chemin", async () => {
+    const followUp = (clientId: string) =>
+      one<{ id: string }>(
+        LINA,
+        "insert into public.tasks (organization_id, title, assigned_to, due_at, client_id) values ($1, 'Relancer Inès', $2, now() + interval '1 day', $3) returning id",
+        [org, karl, clientId],
+      );
+    const taskState = (id: string) => one<{ status: string; done: boolean }>(KARL, "select status, completed_at is not null as done from public.tasks where id = $1", [id]);
+
+    // Bouton « Transformer en client ».
+    const manual = await newProspect("Ngono");
+    const t1 = await followUp(manual.id);
+    expect(await taskState(t1.id)).toEqual({ status: "todo", done: false });
+    await one(LINA, "select public.convert_prospect($1, 'Prospect devenu client.')", [manual.id]);
+    expect(await taskState(t1.id)).toEqual({ status: "done", done: true });
+
+    // Conversion automatique au premier dossier.
+    const auto = await newProspect("Atangana");
+    const t2 = await followUp(auto.id);
+    await createCase(KARL, org, auto.id, karl);
+    expect(await taskState(t2.id)).toEqual({ status: "done", done: true });
+
+    // Une fois client, ses nouvelles tâches restent ouvertes quand sa fiche change.
+    const t3 = await followUp(auto.id);
+    await as(KARL, (tx) => tx.query("update public.clients set city = 'Douala' where id = $1", [auto.id]));
+    expect(await taskState(t3.id)).toEqual({ status: "todo", done: false });
+  });
 });
 
 describe("modèles d'étapes personnalisés", () => {

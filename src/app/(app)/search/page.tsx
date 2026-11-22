@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, PageHeader, Section } from "@/components/shared/ui";
-import { CATEGORY_SHORT_LABELS, CLIENT_TYPE } from "@/lib/domain/labels";
+import { CATEGORY_SHORT_LABELS, CLIENT_TYPE, INVOICE_STATUS } from "@/lib/domain/labels";
+import { formatMoney } from "@/lib/format";
 import { caseKindLabel } from "@/features/workflows/templates";
 import { search } from "@/features/operations/queries";
 
@@ -16,7 +17,7 @@ export const metadata: Metadata = { title: "Recherche" };
 export default function SearchPage({ searchParams }: PageProps<"/search">) {
   return (
     <>
-      <PageHeader title="Recherche" description="Retrouvez un client par son nom, son téléphone ou sa référence, et un dossier par sa référence ou son intitulé." />
+      <PageHeader title="Recherche" description="Retrouvez un client ou un prospect par son nom, son téléphone ou sa référence ; un dossier par sa référence ou son intitulé ; une facture (FAC-…) ou un reçu par son numéro." />
       <Suspense fallback={<PageSkeleton />}>
         <Results searchParams={searchParams} />
       </Suspense>
@@ -36,7 +37,7 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
         <label htmlFor="q-page" className="sr-only">
           Rechercher
         </label>
-        <Input id="q-page" name="q" type="search" defaultValue={query} placeholder="Nom, téléphone, CLI-…, DOS-…" className="flex-1" />
+        <Input id="q-page" name="q" type="search" defaultValue={query} placeholder="Nom, téléphone, CLI-…, DOS-…, FAC-…" className="flex-1" />
         <Button type="submit">
           <Search aria-hidden />
           Rechercher
@@ -44,14 +45,14 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
       </Form>
       {searched && (
         <>
-          <Section title={`Clients (${results.clients.length})`}>
+          <Section title={`Clients et prospects (${results.clients.length})`}>
             {results.clients.length === 0 ? (
               <p className="text-sm text-slate-600">Aucun client trouvé.</p>
             ) : (
               <ul className="space-y-2">
                 {results.clients.map((c) => (
                   <li key={c.id}>
-                    <Link href={`/clients/${c.id}`}>
+                    <Link href={c.status === "prospect" ? `/prospects/${c.id}` : `/clients/${c.id}`}>
                       <Card className="hover:ring-2 hover:ring-navy-200">
                         <span className="font-medium text-navy-800">
                           {c.firstName} {c.lastName}
@@ -86,6 +87,43 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
               </ul>
             )}
           </Section>
+          {(results.invoices.length > 0 || results.receipts.length > 0) && (
+            <Section title={`Factures et reçus (${results.invoices.length + results.receipts.length})`}>
+              <ul className="space-y-2">
+                {results.invoices.map(({ invoice: inv, clientName }) => (
+                  <li key={inv.id}>
+                    <Link href={`/finance/invoices/${inv.id}`}>
+                      <Card className="flex flex-col gap-1 hover:ring-2 hover:ring-navy-200 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="font-medium text-navy-800">Facture {inv.number}</span>
+                          <span className="block text-sm text-slate-600">
+                            {clientName} · {INVOICE_STATUS[inv.status].label}
+                          </span>
+                        </span>
+                        <span className="font-semibold tabular-nums text-slate-900">{formatMoney(inv.totalMinor, inv.currency)}</span>
+                      </Card>
+                    </Link>
+                  </li>
+                ))}
+                {results.receipts.map((r) => (
+                  <li key={r.id}>
+                    <Link href={`/finance/receipts/${r.id}`}>
+                      <Card className="flex flex-col gap-1 hover:ring-2 hover:ring-navy-200 sm:flex-row sm:items-center sm:justify-between">
+                        <span>
+                          <span className="font-medium text-navy-800">Reçu {r.receiptNumber}</span>
+                          <span className="block text-sm text-slate-600">
+                            {r.clientName}
+                            {r.voided && " · annulé"}
+                          </span>
+                        </span>
+                        <span className="font-semibold tabular-nums text-slate-900">{formatMoney(r.amountMinor, r.currency)}</span>
+                      </Card>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
         </>
       )}
       {!searched && query && <p className="text-sm text-slate-600">Saisissez au moins deux caractères.</p>}
