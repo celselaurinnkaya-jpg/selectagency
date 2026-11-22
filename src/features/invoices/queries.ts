@@ -104,8 +104,36 @@ export async function getInvoice(id: string) {
   ]);
   const client = clients[0]!;
   const travelCase = cases[0];
+
+  // Paiements du client : ceux qui ont réglé cette facture, et ceux (confirmés, même dossier, même devise, libres)
+  // que la propriétaire peut désigner pour la marquer payée. Avant la migration 20261122120000, la table des liens
+  // n'existe pas encore : la page reste lisible, sans liste.
+  const { payments: clientPayments = [] } = await loadTables(ctx, { payments: (q) => q.eq("client_id", invoice.clientId) });
+  const { data: links, error: linksError } = await ctx.supabase.from("invoice_payments").select("invoice_id, payment_id").eq("organization_id", ctx.organizationId);
+  const usedPaymentIds = new Set(linksError ? [] : (links ?? []).map((l) => String(l.payment_id)));
+  const settledBy = clientPayments.filter((p) => (links ?? []).some((l) => String(l.invoice_id) === invoice.id && String(l.payment_id) === p.id));
+  const payableWith = clientPayments
+    .filter((p) => p.status === "recorded" && p.receiptNumber && p.currency === invoice.currency && (!invoice.caseId || p.caseId === invoice.caseId) && !usedPaymentIds.has(p.id))
+    .sort((a, b) => b.paidAt.localeCompare(a.paidAt));
+
+  // Reste à payer du dossier : la prestation créée pour cette facture, et les autres prestations convenues.
+  // Avant la migration 20261122130000, la colonne invoice_id n'existe pas : l'encadré ne s'affiche pas.
+  const { data: caseCharges, error: chargesError } = caseId
+    ? await ctx.supabase.from("charges").select("id, invoice_id, amount_minor, currency").eq("organization_id", ctx.organizationId).eq("case_id", caseId)
+    : { data: [], error: null };
+  const balance = chargesError
+    ? undefined
+    : {
+        linked: (caseCharges ?? []).some((c) => String(c.invoice_id) === invoice.id),
+        otherChargesMinor: (caseCharges ?? []).filter((c) => String(c.invoice_id) !== invoice.id).reduce((sum, c) => sum + Number(c.amount_minor), 0),
+      };
+
   return {
     invoice,
+    balance,
+    settledBy,
+    payableWith,
+    isOwner: ctx.member.role === "owner",
     client,
     travelCase,
     settings,

@@ -91,7 +91,7 @@ async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "search
                       {initials(`${c.firstName} ${c.lastName}`)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <Link href={`/clients/${c.id}`} className="block truncate font-semibold text-navy-800 hover:underline">
+                      <Link href={c.status === "client" ? `/clients/${c.id}` : `/prospects/${c.id}`} className="block truncate font-semibold text-navy-800 hover:underline">
                         {c.firstName} {c.lastName}
                       </Link>
                       <span className="block truncate text-sm text-slate-600">

@@ -119,3 +119,15 @@ export async function saveAttendanceSettingsAction(raw: z.input<typeof settingsS
   refresh();
   return { ok: true, message: "Horaires enregistrés." };
 }
+
+/** Membres dispensés de pointage (propriétaire et administrateurs ; la base revérifie). */
+export async function saveAttendanceExemptionsAction(memberIds: string[]): Promise<FormState> {
+  const ids = z.array(z.uuid()).max(500).safeParse(memberIds);
+  if (!ids.success) return { message: "Membre introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "attendance.manage")) return { message: forbiddenMessage(ctx, "attendance.manage") };
+  const { error } = await ctx.supabase.rpc("save_attendance_exemptions", { p_organization_id: ctx.organizationId, p_member_ids: ids.data });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: "Choix enregistré : les membres dispensés ne sont plus comptés absents." };
+}

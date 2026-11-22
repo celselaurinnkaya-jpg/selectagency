@@ -2,6 +2,7 @@ import type { AgencyData } from "@/lib/domain/types";
 import type { CaseStep, Client, Member, StepKind, TravelCase } from "@/lib/domain/types";
 import { caseFinance, type CaseFinance } from "@/features/finance/calculations";
 import { currentStep } from "@/features/workflows/rules";
+import { isMissingRequired } from "@/lib/domain/requirements";
 
 // Vue consolidée d'un dossier, calculée à partir des données : rien n'est stocké en double.
 
@@ -36,7 +37,7 @@ export function summarizeCase(data: Pick<AgencyData, "clients" | "steps" | "requ
       data.charges.filter((c) => c.caseId === travelCase.id),
       data.payments.filter((p) => p.caseId === travelCase.id),
     ),
-    missingRequired: requirements.filter((r) => r.isRequired && (r.status === "not_received" || r.status === "to_correct" || r.status === "expired")).length,
+    missingRequired: requirements.filter(isMissingRequired).length,
     toReview: requirements.filter((r) => r.status === "received" || r.status === "to_verify").length,
     toCorrect: requirements.filter((r) => r.status === "to_correct").length,
     isOverdue:

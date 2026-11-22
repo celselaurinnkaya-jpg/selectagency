@@ -10,6 +10,7 @@ import { monthParts, shiftMonth } from "@/lib/period";
 import { activeMembers } from "@/lib/domain/members";
 import type { DocumentRequirement } from "@/lib/domain/types";
 import { tracksExpiry } from "@/features/documents/checklists";
+import { isMissingRequired } from "@/lib/domain/requirements";
 import { imageUrls } from "@/features/invoices/document";
 import { loadInvoiceSettings } from "@/features/invoices/queries";
 
@@ -28,7 +29,7 @@ export async function listDocumentQueue(view: DocumentView) {
     !!r.expiresAt && tracksExpiry(r.documentTypeCode) && new Date(r.expiresAt).getTime() <= limit;
   const matches: Record<DocumentView, (r: DocumentRequirement) => boolean> = {
     "a-examiner": (r) => r.status === "received" || r.status === "to_verify",
-    manquants: (r) => r.isRequired && r.status === "not_received",
+    manquants: isMissingRequired,
     "a-corriger": (r) => r.status === "to_correct",
     expiration: expiresSoon,
     tous: () => true,

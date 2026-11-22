@@ -207,7 +207,16 @@ function InvoiceEditorFields({ invoice, clients, cases, defaults, issuer, images
               ))}
             </select>
           </FormField>
-          <FormField id="f-case" label="Dossier lié" hint={clientId && clientCases.length === 0 ? "Ce client n'a aucun dossier." : undefined}>
+          <FormField
+            id="f-case"
+            label="Dossier lié"
+            error={e.caseId}
+            hint={
+              clientId && clientCases.length === 0
+                ? "Ce client n'a aucun dossier : un brouillon est possible, mais pour émettre la facture, ouvrez d'abord son dossier."
+                : "Obligatoire pour émettre la facture : c'est le dossier qui encaisse et délivre les reçus."
+            }
+          >
             <select
               id="f-case"
               value={caseId}
@@ -218,9 +227,9 @@ function InvoiceEditorFields({ invoice, clients, cases, defaults, issuer, images
                 if (picked) setCurrency(picked.currency);
               }}
               className={selectClass}
-              {...describedBy("f-case", undefined, clientId && clientCases.length === 0 ? "hint" : undefined)}
+              {...describedBy("f-case", e.caseId, "hint")}
             >
-              <option value="">Aucun</option>
+              <option value="">— Choisir le dossier —</option>
               {clientCases.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}

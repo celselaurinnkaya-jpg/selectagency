@@ -544,7 +544,18 @@ export interface Expense {
   currency: string;
   paidAt: string;
   recordedBy: string;
+  /** Photo ou PDF du reçu (bucket privé « expense-receipts »). */
+  receiptPath?: string;
+  /** Validation par le propriétaire ; absent = validée (dépenses d'avant la validation, démonstration). */
+  approvalStatus?: ExpenseApprovalStatus;
+  reviewedAt?: string;
+  reviewNote?: string;
 }
+
+export type ExpenseApprovalStatus = "pending" | "approved" | "rejected";
+
+/** Seules les dépenses validées comptent dans les chiffres de l'agence. */
+export const isApprovedExpense = (e: Pick<Expense, "approvalStatus">) => (e.approvalStatus ?? "approved") === "approved";
 
 export interface ActivityEvent {
   id: string;

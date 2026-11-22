@@ -8,6 +8,7 @@ import { formatDuration, type DaySummary } from "@/lib/domain/attendance";
 import { ATTENDANCE_SOURCE, type LabelSpec } from "@/lib/domain/labels";
 import { timeKey } from "@/lib/format";
 import {
+  AttendanceExemptionsForm,
   AttendanceSettingsForm,
   ClockPanel,
   CorrectAttendanceForm,
@@ -70,7 +71,11 @@ async function Presences({ searchParams }: Pick<PageProps<"/tasks/presences">, "
 
       <Section title="Ma présence aujourd'hui">
         <Card>
-          <ClockPanel clock={p.clock} />
+          {p.clock.exempt ? (
+            <p className="text-sm text-slate-700">Vous êtes dispensé de pointage : vous n&apos;êtes pas compté absent.</p>
+          ) : (
+            <ClockPanel clock={p.clock} />
+          )}
         </Card>
       </Section>
 
@@ -240,6 +245,14 @@ async function Presences({ searchParams }: Pick<PageProps<"/tasks/presences">, "
           ) : (
             <Notice tone="warning">L&apos;agence est en lecture seule : les horaires seront modifiables dès l&apos;activation de l&apos;abonnement.</Notice>
           )}
+        </Section>
+      )}
+
+      {p.canEdit && p.pointingTeam.length > 0 && (
+        <Section title="Qui pointe ?">
+          <Card>
+            <AttendanceExemptionsForm members={p.pointingTeam} />
+          </Card>
         </Section>
       )}
     </div>

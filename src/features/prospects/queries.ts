@@ -100,7 +100,7 @@ export async function getProspectForm() {
     members: activeMembers(data.members)
       .filter((m) => m.role !== "viewer")
       .map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` })),
-    countries: countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name })),
+    countries: countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name, frequent: c.frequent })),
     today: dayKey(now, data.agency.timezone),
   };
 }

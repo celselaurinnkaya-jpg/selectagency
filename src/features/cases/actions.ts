@@ -114,7 +114,7 @@ export async function createCaseAction(_prev: FormState, formData: FormData): Pr
 const transitionSchema = z.object({
   caseId: z.string().min(1),
   version: z.coerce.number().int().positive(),
-  mode: z.enum(["advance", "skip", "back"]),
+  mode: z.enum(["advance", "skip", "back", "jump"]),
   to: z.string().optional(),
   confirmation: z.enum(["declared", "confirmed"]).optional(),
   evidenceRef: z.string().max(300).optional(),

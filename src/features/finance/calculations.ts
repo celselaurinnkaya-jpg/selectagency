@@ -1,4 +1,4 @@
-import type { Charge, Expense, Payment } from "@/lib/domain/types";
+import { isApprovedExpense, type Charge, type Expense, type Payment } from "@/lib/domain/types";
 
 // Calculs financiers (plan §9.5). Règles :
 // - montants en unités mineures (entiers), jamais de nombres flottants ;
@@ -95,7 +95,9 @@ const inPeriod = (iso: string, period: Period) => {
 };
 
 /** Synthèse par devise. Une agence qui facture en plusieurs devises obtient une ligne par devise. */
-export function agencyFinance(charges: Charge[], payments: Payment[], expenses: Expense[], period: Period): AgencyFinance[] {
+export function agencyFinance(charges: Charge[], payments: Payment[], allExpensesRecorded: Expense[], period: Period): AgencyFinance[] {
+  // Une dépense à valider ou refusée par le propriétaire ne compte pas (rapport de re-test du 22/11).
+  const expenses = allExpensesRecorded.filter(isApprovedExpense);
   const chargeType = new Map(charges.map((c) => [c.id, c.chargeType]));
   const paid = recorded(payments);
   const currencies = [...new Set([...paid.map((p) => p.currency), ...expenses.map((e) => e.currency)])].sort();

@@ -1,8 +1,12 @@
 import { CircleCheck, FileText, GraduationCap, Hourglass, MessageCircle, Plane, Receipt } from "lucide-react";
 import { cn } from "cn";
+import { WORKFLOW_TEMPLATES } from "@/features/workflows/templates";
 
 // Illustrations de la page d'accueil, dessinées avec les vrais écrans et libellés de l'application
 // (étapes, statuts, reçus). Les noms et montants sont fictifs et signalés comme tels.
+
+/** Nombre réel d'étapes du modèle Campus France, pour que l'illustration corresponde à un vrai dossier. */
+const CAMPUS_STEPS = WORKFLOW_TEMPLATES.find((t) => t.key === "campus_france")?.steps.length ?? 0;
 
 const CARD = "rounded-xl bg-white shadow-[0_1px_3px_rgba(2,55,100,0.1)]";
 
@@ -88,7 +92,7 @@ export function HeroPreview() {
                 </div>
               </div>
               <span className="shrink-0 rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-                Étape 5 sur 15
+                Étape 5 sur {CAMPUS_STEPS}
               </span>
             </div>
 

@@ -153,7 +153,7 @@ export async function getService(id: string) {
       ? data.clients
           .filter((c) => !c.archivedAt && !enrolled.has(c.id))
           .sort((a, b) => a.lastName.localeCompare(b.lastName, "fr") || a.firstName.localeCompare(b.firstName, "fr"))
-          .map((c) => ({ id: c.id, label: `${c.lastName.toUpperCase()} ${c.firstName} (${c.reference})` }))
+          .map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName} (${c.reference})` }))
       : [];
 
   return {

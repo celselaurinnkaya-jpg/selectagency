@@ -48,6 +48,13 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
   }
   const v = parsed.data;
   if (v.dueDate < v.issueDate) return { message: "La date d'échéance ne peut pas précéder la date d'émission.", fieldErrors: { dueDate: ["Après la date d'émission."] } };
+  // Une facture émise appartient à un dossier : c'est lui qui encaisse, délivre les reçus et tient le reste à payer.
+  if (v.intent === "issue" && !v.caseId) {
+    return {
+      message: "Pour émettre une facture, choisissez le dossier du client : c'est le dossier qui encaisse et délivre les reçus.",
+      fieldErrors: { caseId: ["Choisissez le dossier."] },
+    };
+  }
 
   const items = [];
   for (const [index, item] of v.items.entries()) {
@@ -119,9 +126,45 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
   return { ok: true, redirectTo: `/finance/invoices/${saved.id}?ok=${isNew ? "facture-creee" : "facture-modifiee"}` };
 }
 
+/**
+ * Ajoute le montant d'une facture émise au reste à payer de son dossier (une prestation liée à la facture).
+ * À ne pas faire quand la facture reprend des prestations déjà convenues : la personne décide.
+ */
+export async function addInvoiceToChargesAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = z
+    .object({ invoiceId: z.uuid(), chargeType: z.enum(["agency_fee", "third_party"], { error: "Précisez la nature du montant." }) })
+    .safeParse({ invoiceId: formData.get("invoiceId"), chargeType: formData.get("chargeType") });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Facture introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
+  const { error } = await ctx.supabase.rpc("add_invoice_to_charges", { p_invoice_id: parsed.data.invoiceId, p_charge_type: parsed.data.chargeType });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: "Montant ajouté au reste à payer du dossier : les paiements du dossier peuvent maintenant le régler." };
+}
+
+/** Facture payée : la propriétaire désigne le ou les paiements confirmés (avec reçu) qui la règlent. */
+export async function markInvoicePaidAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const invoiceId = z.uuid().safeParse(formData.get("invoiceId"));
+  if (!invoiceId.success) return { message: "Facture introuvable." };
+  const paymentIds = formData.getAll("paymentId").map(String).filter((id) => z.uuid().safeParse(id).success);
+  if (paymentIds.length === 0) return { message: "Choisissez le ou les paiements confirmés qui règlent cette facture." };
+  const ctx = await getAgencyContext();
+  if (ctx.member.role !== "owner") return { message: "Seul le propriétaire de l'agence marque une facture payée." };
+  const { error } = await ctx.supabase.rpc("mark_invoice_paid", {
+    p_invoice_id: invoiceId.data,
+    p_payment_ids: paymentIds,
+    p_event: "Facture {facture} payée (reçus {recus}).",
+  });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: "Facture marquée payée, avec les reçus qui la règlent." };
+}
+
 const statusSchema = z.object({
   invoiceId: z.uuid(),
-  status: z.enum(["issued", "paid", "cancelled"]),
+  // « Payée » passe par markInvoicePaidAction, avec les paiements qui règlent la facture.
+  status: z.enum(["issued", "cancelled"]),
   reason: z.string().trim().max(300, "Motif trop long (300 caractères au plus).").optional(),
 });
 

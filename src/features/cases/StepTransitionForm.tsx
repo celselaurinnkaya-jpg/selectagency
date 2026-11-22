@@ -10,7 +10,7 @@ import { initialFormState } from "@/lib/form-state";
 import type { StepTransitionOption } from "@/lib/domain/types";
 import { transitionCaseAction } from "./actions";
 
-type Mode = "advance" | "skip" | "back";
+type Mode = "advance" | "skip" | "back" | "jump";
 
 // Changement d'étape. Pour une étape qui dépend d'un organisme extérieur, l'agent doit dire
 // si l'information est seulement déclarée (avec sa source) ou confirmée par un justificatif.
@@ -30,6 +30,9 @@ export function StepTransitionForm({
   needsConfirmation,
   balanceDue,
   notifiedKeys = [],
+  jump = [],
+  outcomeKeys = [],
+  closureKeys = ["closed"],
 }: {
   caseId: string;
   /** Version du dossier lue à l'affichage (verrou optimiste). */
@@ -43,6 +46,11 @@ export function StepTransitionForm({
   balanceDue?: string;
   /** Étapes dont l'arrivée prévient le client par e-mail (réglage de l'agence activé, client joignable). */
   notifiedKeys?: string[];
+  /** Passage direct : étapes plus loin, pas encore terminées (ex. « Visa refusé »). */
+  jump?: StepTransitionOption[];
+  /** Étapes de décision (preuve obligatoire) et de clôture (contrôle du solde). */
+  outcomeKeys?: string[];
+  closureKeys?: string[];
 }) {
   const [state, action, pending] = useActionState(transitionCaseAction, initialFormState);
   const [mode, setMode] = useState<Mode>("advance");
@@ -57,8 +65,10 @@ export function StepTransitionForm({
     setConfirmation("");
   }
   const e = state.fieldErrors ?? {};
-  const closing = mode === "advance" && to === "closed";
-  const options = mode === "back" ? back : forward;
+  const closing = (mode === "advance" || mode === "jump") && closureKeys.includes(to);
+  const options = mode === "back" ? back : mode === "jump" ? jump : forward;
+  // Preuve demandée : étape d'un organisme extérieur que l'on termine, ou décision atteinte directement.
+  const askProof = (mode === "advance" && needsConfirmation) || (mode === "jump" && outcomeKeys.includes(to));
   const target = mode === "skip" ? forward[0]?.to : to;
   const notifiesClient = Boolean(target && notifiedKeys.includes(target));
 
@@ -66,6 +76,7 @@ export function StepTransitionForm({
     { key: "advance", label: "Terminer l'étape", available: forward.length > 0 },
     { key: "skip", label: "Passer (étape facultative)", available: canSkip },
     { key: "back", label: "Revenir en arrière", available: back.length > 0 },
+    { key: "jump", label: "Aller directement à une étape", available: jump.length > 0 },
   ];
 
   return (
@@ -81,7 +92,7 @@ export function StepTransitionForm({
       <input type="hidden" name="version" value={version} />
       <input type="hidden" name="mode" value={mode} />
       {mode !== "skip" && <input type="hidden" name="to" value={to} />}
-      {mode === "advance" && needsConfirmation && confirmation && <input type="hidden" name="confirmation" value={confirmation} />}
+      {askProof && confirmation && <input type="hidden" name="confirmation" value={confirmation} />}
 
       <p className="text-sm text-slate-700">
         Étape en cours : <strong className="text-navy-800">{currentLabel}</strong>
@@ -98,7 +109,7 @@ export function StepTransitionForm({
               aria-checked={mode === m.key}
               onClick={() => {
                 setMode(m.key);
-                setTo(m.key === "back" ? (back.at(-1)?.to ?? "") : (forward[0]?.to ?? ""));
+                setTo(m.key === "back" ? (back.at(-1)?.to ?? "") : m.key === "jump" ? (jump[0]?.to ?? "") : (forward[0]?.to ?? ""));
               }}
               className={`min-h-10 rounded-full border px-4 text-sm font-medium ${mode === m.key ? "border-navy-800 bg-navy-800 text-white" : "border-slate-300 bg-white text-slate-700 hover:border-navy-300"}`}
             >
@@ -110,7 +121,13 @@ export function StepTransitionForm({
       {/* Les champs libres sont recréés à chaque nouvelle étape. */}
       <div key={currentLabel} className="space-y-4">
         {mode !== "skip" && (
-          <FormField id="to" label={mode === "back" ? "Étape à reprendre" : "Suite du dossier"} required error={e.to}>
+          <FormField
+            id="to"
+            label={mode === "back" ? "Étape à reprendre" : mode === "jump" ? "Étape à atteindre" : "Suite du dossier"}
+            required
+            error={e.to}
+            hint={mode === "jump" ? "Les étapes entre les deux seront marquées « Non concerné »." : undefined}
+          >
             <select id="to" value={to} onChange={(event) => setTo(event.target.value)} className={selectClass}>
               {options.map((o) => (
                 <option key={o.to} value={o.to}>
@@ -121,9 +138,11 @@ export function StepTransitionForm({
           </FormField>
         )}
 
-        {mode === "advance" && needsConfirmation && (
+        {askProof && (
           <fieldset className="space-y-3 rounded-xl border border-violet-200 bg-violet-50 p-3">
-            <legend className="px-1 text-sm font-semibold text-violet-900">Cette étape dépend d&apos;un organisme extérieur</legend>
+            <legend className="px-1 text-sm font-semibold text-violet-900">
+              {mode === "jump" ? "Cette décision vient d'un organisme extérieur" : "Cette étape dépend d'un organisme extérieur"}
+            </legend>
             <div role="radiogroup" aria-label="Niveau de preuve" className="space-y-2">
               {[
                 { value: "declared" as const, label: "Déclaré", text: "Information reçue (client, appel…) mais non prouvée." },
@@ -161,7 +180,7 @@ export function StepTransitionForm({
           </fieldset>
         )}
 
-        {(mode === "skip" || mode === "back") && (
+        {(mode === "skip" || mode === "back" || mode === "jump") && (
           <FormField id="reason" label="Motif" required error={e.reason}>
             <Textarea id="reason" name="reason" rows={2} {...describedBy("reason", e.reason)} />
           </FormField>

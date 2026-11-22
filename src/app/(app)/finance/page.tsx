@@ -1,15 +1,16 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { AlertTriangle, FileText, Hourglass, Wallet } from "lucide-react";
+import { Wallet } from "lucide-react";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, Notice, PageHeader, Section, StatCard } from "@/components/shared/ui";
-import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
+import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getFinanceOverview } from "@/features/finance/queries";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
+import { FinanceWatchCards, hasFinanceWatch } from "@/features/finance/FinanceWatch";
 
 export const metadata: Metadata = { title: "Finance" };
 
@@ -36,59 +37,9 @@ async function Overview({ searchParams }: Pick<PageProps<"/finance">, "searchPar
       {!d.canSeeFinance && <FinanceRestricted />}
       <Pills label="Période" active={d.period.key} items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: p.key === "mois" ? "/finance" : `/finance?periode=${p.key}` }))} />
 
-      {d.canSeeFinance && (d.pendingPayments.count > 0 || d.unpaidInvoices.count > 0) && (
+      {d.canSeeFinance && hasFinanceWatch(d) && (
         <Section title="À surveiller">
-          <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">
-            {d.pendingPayments.count > 0 && (
-              <StatCard
-                label={`${d.pendingPayments.count} paiement(s) à vérifier`}
-                value={d.pendingPayments.totals.map((s) => formatMoney(s.amountMinor, s.currency)).join(" · ")}
-                hint="Annoncés, pas encore vus sur le compte : sans reçu tant qu'ils ne sont pas confirmés"
-                icon={Hourglass}
-                href="/finance/payments?vue=a-verifier"
-                tone="warning"
-              />
-            )}
-            {d.unpaidInvoices.count > 0 && (
-              <StatCard
-                label={`${d.unpaidInvoices.count} facture(s) à encaisser`}
-                value={d.unpaidInvoices.totals.map((s) => formatMoney(s.amountMinor, s.currency)).join(" · ")}
-                hint="Factures émises, pas encore payées"
-                icon={FileText}
-                href="/finance/invoices?etat=issued"
-              />
-            )}
-            {d.unpaidInvoices.overdueCount > 0 && (
-              <StatCard
-                label={`${d.unpaidInvoices.overdueCount} facture(s) en retard`}
-                value={d.unpaidInvoices.overdue.length ? `Depuis le ${formatDate(`${d.unpaidInvoices.overdue[0]!.invoice.dueDate}T12:00:00Z`, tz)}` : "—"}
-                hint="Échéance dépassée"
-                icon={AlertTriangle}
-                href="/finance/invoices?etat=overdue"
-                tone="danger"
-              />
-            )}
-          </div>
-          {d.unpaidInvoices.overdue.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {d.unpaidInvoices.overdue.map(({ invoice, client }) => (
-                <li key={invoice.id}>
-                  <Link href={`/finance/invoices/${invoice.id}`} className="block rounded-xl transition hover:ring-2 hover:ring-navy-200">
-                    <Card className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                      <span className="min-w-0">
-                        <span className="block font-mono text-xs text-slate-500">{invoice.number}</span>
-                        <span className="block truncate font-medium text-slate-900">{client ? `${client.firstName} ${client.lastName}` : "—"}</span>
-                      </span>
-                      <span className="text-left sm:text-right">
-                        <span className="block font-semibold tabular-nums text-red-800">{formatMoney(invoice.totalMinor, invoice.currency)}</span>
-                        <span className="block text-xs text-slate-500">Échéance : {formatDate(`${invoice.dueDate}T12:00:00Z`, tz)}</span>
-                      </span>
-                    </Card>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
+          <FinanceWatchCards watch={d} timeZone={tz} withOverdueList />
           <p className="mt-3 text-xs text-slate-500">
             Une facture est un document remis au client : l&apos;argent reçu s&apos;enregistre dans le dossier (onglet Finance), qui délivre le reçu.
           </p>

@@ -34,7 +34,7 @@ async function Form() {
       partnersLocked={locked.includes("partners")}
       defaultCountry={agency.countryCode}
       defaultMemberId={currentMemberId}
-      countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name }))}
+      countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name, frequent: c.frequent }))}
       members={members
         .filter(({ member }) => member.role !== "viewer")
         .map(({ member }) => ({ value: member.id, label: `${member.fullName} (${ROLE[member.role].label})` }))}

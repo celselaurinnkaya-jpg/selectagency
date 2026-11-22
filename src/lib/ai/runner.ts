@@ -1,7 +1,7 @@
 import "server-only";
 import { getAnthropicClient } from "./client";
 import { buildSystemPrompt } from "./prompts";
-import { toWhatsAppText } from "./whatsapp-format";
+import { finalizeAgentReply } from "./reply";
 import type { AiAgentRecord } from "@/lib/domain/ai";
 
 // Une passe de dialogue avec l'agent IA, par l'API officielle d'Anthropic.
@@ -75,13 +75,13 @@ export async function runAgentConversation(
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("\n");
-  const hasTransfer = rawText.includes("[DEMANDE_TRANSFERT]");
+  const { text: replyText, transfer: hasTransfer } = finalizeAgentReply(rawText);
   const tokensPrompt = response.usage.input_tokens;
   const tokensCompletion = response.usage.output_tokens;
   const usd = costUsd(model, tokensPrompt, tokensCompletion);
 
   return {
-    replyText: toWhatsAppText(rawText.replace(/\[DEMANDE_TRANSFERT\]/g, "")),
+    replyText,
     model: model.id,
     tokensPrompt,
     tokensCompletion,

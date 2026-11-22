@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Building2, CreditCard, LayoutDashboard, LifeBuoy, ScrollText, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Building2, CreditCard, LayoutDashboard, LifeBuoy, Presentation, ScrollText, Users, Wallet, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 
 // Menu de la console SELECT, sur le modèle du menu de l'espace agence.
@@ -14,6 +14,7 @@ const ITEMS: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Formules et abonnements", href: "/admin/abonnements", icon: CreditCard },
   { label: "Paiements des abonnements", href: "/admin/paiements", icon: Wallet },
   { label: "Support", href: "/admin/support", icon: LifeBuoy },
+  { label: "Démonstrations", href: "/admin/demonstrations", icon: Presentation },
   { label: "Journal", href: "/admin/journal", icon: ScrollText },
 ];
 

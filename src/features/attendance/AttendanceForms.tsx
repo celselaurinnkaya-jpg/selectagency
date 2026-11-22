@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
 import type { AttendanceSettings } from "@/lib/domain/types";
 import { initialFormState, type FormState } from "@/lib/form-state";
-import { clockInAction, clockOutAction, correctAttendanceAction, declareAttendanceAction, saveAttendanceSettingsAction } from "./actions";
+import { clockInAction, clockOutAction, correctAttendanceAction, declareAttendanceAction, saveAttendanceExemptionsAction, saveAttendanceSettingsAction } from "./actions";
 import type { ClockState, MissingDeparture } from "./queries";
 
 // Présences : bouton de pointage et formulaires. Champs contrôlés et envoi par onSubmit : React 19 ne remet pas
@@ -316,6 +316,43 @@ export function AttendanceSettingsForm({ settings }: { settings: AttendanceSetti
       <Button type="submit" disabled={pending}>
         {pending ? "Enregistrement…" : "Enregistrer les horaires"}
       </Button>
+    </form>
+  );
+}
+
+/** Choix des membres qui ne pointent pas (ex. un propriétaire à l'étranger). Responsables seulement. */
+export function AttendanceExemptionsForm({ members }: { members: { id: string; name: string; exempt: boolean }[] }) {
+  const [chosen, setChosen] = useState<string[]>(members.filter((m) => m.exempt).map((m) => m.id));
+  const [state, setState] = useState<FormState>(initialFormState);
+  const [pending, startTransition] = useTransition();
+  return (
+    <form
+      className="space-y-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        startTransition(async () => setState(await saveAttendanceExemptionsAction(chosen)));
+      }}
+    >
+      <p className="text-sm text-slate-600">Cochez les membres qui ne pointent pas : ils ne sont plus comptés absents et le bouton de pointage ne leur est plus proposé.</p>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {members.map((m) => (
+          <li key={m.id}>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm shadow-[0_1px_2px_rgba(2,55,100,0.08)]">
+              <input
+                type="checkbox"
+                checked={chosen.includes(m.id)}
+                onChange={(event) => setChosen((ids) => (event.target.checked ? [...ids, m.id] : ids.filter((id) => id !== m.id)))}
+                className="size-4 accent-navy-800"
+              />
+              <span>{m.name} ne pointe pas</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <Button type="submit" variant="outline" disabled={pending}>
+        {pending ? "Enregistrement…" : "Enregistrer"}
+      </Button>
+      <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
     </form>
   );
 }

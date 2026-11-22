@@ -252,6 +252,37 @@ export interface PlatformTicket {
   messages: number;
 }
 
+export type DemoRequestStatus = "new" | "contacted" | "closed";
+
+export interface DemoRequest {
+  id: string;
+  createdAt: string;
+  fullName: string;
+  agencyName: string;
+  countryCode: string;
+  phone: string;
+  email?: string;
+  message: string;
+  status: DemoRequestStatus;
+  handledAt?: string;
+}
+
+/** Demandes de démonstration envoyées depuis le site public (les nouvelles d'abord). */
+export async function listDemoRequests(): Promise<DemoRequest[]> {
+  return (await call("platform_demo_requests", { p_status: null })).map((r) => ({
+    id: String(r.id),
+    createdAt: iso(r.created_at)!,
+    fullName: String(r.full_name),
+    agencyName: String(r.agency_name),
+    countryCode: String(r.country_code),
+    phone: String(r.phone),
+    email: text(r.email),
+    message: String(r.message ?? ""),
+    status: r.status as DemoRequestStatus,
+    handledAt: iso(r.handled_at),
+  }));
+}
+
 export async function listTickets(filters: { status?: TicketStatus; organizationId?: string } = {}): Promise<PlatformTicket[]> {
   return (await call("platform_tickets", { p_status: filters.status ?? null, p_org: filters.organizationId ?? null })).map((r) => ({
     id: String(r.id),

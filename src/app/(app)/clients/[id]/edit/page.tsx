@@ -34,13 +34,15 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
   const { client } = detail;
   const { agency, members, currentMemberId } = team;
 
+  const isProspect = client.status === "prospect";
+
   return (
     <>
       <PageHeader
-        back={{ href: `/clients/${client.id}`, label: "Retour à la fiche client" }}
+        back={isProspect ? { href: `/prospects/${client.id}`, label: "Retour au prospect" } : { href: `/clients/${client.id}`, label: "Retour à la fiche client" }}
         eyebrow={<span className="font-mono text-sm text-slate-500">{client.reference}</span>}
         title={`Modifier ${client.firstName} ${client.lastName}`}
-        description="Mettez à jour les informations d'identité, les coordonnées ou les responsables de ce client."
+        description={isProspect ? "Mettez à jour les coordonnées ou le conseiller en charge de ce prospect." : "Mettez à jour les informations d'identité, les coordonnées ou les responsables de ce client."}
       />
       <ClientForm
         client={client}
@@ -49,7 +51,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
         campaigns={campaigns}
         defaultCountry={client.residenceCountry || agency.countryCode}
         defaultMemberId={client.assignedTo || currentMemberId}
-        countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name }))}
+        countries={countryOptions(RESIDENCE_COUNTRIES).map((c) => ({ value: c.code, label: c.name, frequent: c.frequent }))}
         members={members
           .filter(({ member }) => member.role !== "viewer")
           .map(({ member }) => ({ value: member.id, label: `${member.fullName} (${ROLE[member.role].label})` }))}

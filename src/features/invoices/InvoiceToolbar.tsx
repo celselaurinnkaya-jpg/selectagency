@@ -9,15 +9,25 @@ import { Textarea } from "@/components/ui/textarea";
 import type { InvoiceStatus } from "@/lib/domain/types";
 import { EmailDocumentButton } from "@/features/printables/EmailDocumentButton";
 import { initialFormState } from "@/lib/form-state";
-import { deleteInvoiceAction, logInvoiceSharedAction, setInvoiceStatusAction } from "./actions";
+import { formatMoney } from "@/lib/format";
+import { deleteInvoiceAction, logInvoiceSharedAction, markInvoicePaidAction, setInvoiceStatusAction } from "./actions";
 
-const NEXT: Record<InvoiceStatus, { status: "issued" | "paid" | "cancelled"; label: string; variant: "accent" | "outline" | "destructive" }[]> = {
+// « Payée » a son propre formulaire (propriétaire, avec les paiements qui règlent la facture), comme
+// l'annulation (motif obligatoire). « Remettre à payer » est réservé au propriétaire.
+const NEXT: Record<InvoiceStatus, { status: "issued" | "cancelled"; label: string; variant: "accent" | "outline" | "destructive"; ownerOnly?: boolean }[]> = {
   draft: [{ status: "issued", label: "Émettre la facture", variant: "accent" }],
-  // L'annulation a son propre formulaire, avec un motif obligatoire.
-  issued: [{ status: "paid", label: "Marquer comme payée", variant: "accent" }],
-  paid: [{ status: "issued", label: "Remettre à payer", variant: "outline" }],
+  issued: [],
+  paid: [{ status: "issued", label: "Remettre à payer", variant: "outline", ownerOnly: true }],
   cancelled: [],
 };
+
+/** Paiement confirmé (avec reçu) que la propriétaire peut désigner pour régler la facture. */
+export interface PayableReceipt {
+  id: string;
+  receiptNumber: string;
+  label: string;
+  amountMinor: number;
+}
 
 /**
  * Actions sur une facture. WhatsApp : sur téléphone, le PDF est partagé directement (feuille de
@@ -34,6 +44,10 @@ export function InvoiceToolbar({
   message,
   email,
   directEmail = false,
+  isOwner = false,
+  totalMinor = 0,
+  currency = "",
+  payableWith = [],
 }: {
   invoiceId: string;
   number: string;
@@ -46,7 +60,13 @@ export function InvoiceToolbar({
   email?: string;
   /** Envoi direct par e-mail possible sur ce serveur (Brevo configuré). */
   directEmail?: boolean;
+  /** Propriétaire de l'agence : seul à marquer payée ou à remettre « à payer ». */
+  isOwner?: boolean;
+  totalMinor?: number;
+  currency?: string;
+  payableWith?: PayableReceipt[];
 }) {
+  const actions = NEXT[status].filter((n) => !n.ownerOnly || isOwner);
   const [statusState, statusAction, statusPending] = useActionState(setInvoiceStatusAction, initialFormState);
   const [deleteError, setDeleteError] = useState<string>();
   const [deleting, startDelete] = useTransition();
@@ -165,11 +185,18 @@ export function InvoiceToolbar({
         </form>
       )}
 
-      {canWrite && NEXT[status].length > 0 && (
+      {canWrite && status === "issued" && isOwner && (
+        <PayInvoiceForm invoiceId={invoiceId} number={number} totalMinor={totalMinor} currency={currency} payableWith={payableWith} />
+      )}
+      {canWrite && status === "issued" && !isOwner && (
+        <p className="text-xs text-slate-500">Seul le propriétaire de l&apos;agence marque la facture payée, en choisissant les reçus qui la règlent.</p>
+      )}
+
+      {canWrite && (actions.length > 0 || status === "issued") && (
         <form action={statusAction} className="space-y-2">
           <input type="hidden" name="invoiceId" value={invoiceId} />
           <div className="flex flex-wrap gap-2">
-            {NEXT[status].map((n) => (
+            {actions.map((n) => (
               <Button key={n.status} type="submit" name="status" value={n.status} variant={n.variant} size="sm" disabled={statusPending}>
                 {n.label}
               </Button>
@@ -221,10 +248,88 @@ export function InvoiceToolbar({
       )}
       {status === "paid" && canWrite && (
         <p className="text-xs text-slate-500">
-          Une facture payée est verrouillée. Si elle a été marquée payée par erreur, remettez-la « à payer ». Pour corriger son contenu, annulez-la
-          avec un motif et créez-en une nouvelle.
+          Une facture payée est verrouillée. Si elle a été marquée payée par erreur, la propriétaire peut la remettre « à payer ». Pour corriger son
+          contenu, annulez-la avec un motif et créez-en une nouvelle.
         </p>
       )}
     </div>
+  );
+}
+
+/** La propriétaire coche le ou les paiements confirmés qui règlent la facture ; la base revérifie tout. */
+function PayInvoiceForm({
+  invoiceId,
+  number,
+  totalMinor,
+  currency,
+  payableWith,
+}: {
+  invoiceId: string;
+  number: string;
+  totalMinor: number;
+  currency: string;
+  payableWith: PayableReceipt[];
+}) {
+  const [state, action, pending] = useActionState(markInvoicePaidAction, initialFormState);
+  const [open, setOpen] = useState(false);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const selectedMinor = payableWith.filter((p) => chosen.includes(p.id)).reduce((sum, p) => sum + p.amountMinor, 0);
+  const covered = selectedMinor >= totalMinor;
+
+  if (!open) {
+    return (
+      <Button type="button" variant="accent" size="sm" onClick={() => setOpen(true)}>
+        Marquer comme payée
+      </Button>
+    );
+  }
+  return (
+    <form action={action} className="space-y-3 rounded-xl border border-navy-200 bg-navy-50 p-4">
+      <input type="hidden" name="invoiceId" value={invoiceId} />
+      <p className="text-sm font-semibold text-navy-900">Quels paiements règlent la facture {number} ({formatMoney(totalMinor, currency)}) ?</p>
+      {payableWith.length === 0 ? (
+        <p className="text-sm text-slate-700">
+          Aucun paiement confirmé (avec reçu) n&apos;est disponible pour cette facture. Enregistrez d&apos;abord l&apos;encaissement dans le dossier,
+          puis revenez ici.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {payableWith.map((p) => (
+            <li key={p.id}>
+              <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg bg-white px-3 py-2 text-sm">
+                <input
+                  type="checkbox"
+                  name="paymentId"
+                  value={p.id}
+                  checked={chosen.includes(p.id)}
+                  onChange={(event) => setChosen((ids) => (event.target.checked ? [...ids, p.id] : ids.filter((id) => id !== p.id)))}
+                  className="size-4 accent-navy-800"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-slate-900">Reçu {p.receiptNumber}</span>
+                  <span className="block text-xs text-slate-500">{p.label}</span>
+                </span>
+                <span className="font-semibold tabular-nums text-slate-900">{formatMoney(p.amountMinor, currency)}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+      {payableWith.length > 0 && (
+        <p className={covered ? "text-sm text-emerald-800" : "text-sm text-orange-800"}>
+          Sélectionné : <span className="font-semibold tabular-nums">{formatMoney(selectedMinor, currency)}</span>
+          {covered ? " — le montant de la facture est couvert." : ` — il manque ${formatMoney(totalMinor - selectedMinor, currency)}.`}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        <Button type="submit" variant="accent" size="sm" disabled={pending || !covered || chosen.length === 0}>
+          {pending ? "Enregistrement…" : "Confirmer : facture payée"}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Fermer
+        </Button>
+      </div>
+      <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
+    </form>
   );
 }

@@ -27,7 +27,7 @@ async function Form({ searchParams }: Pick<PageProps<"/cases/new">, "searchParam
     <CaseForm
       clients={options.clients.map((c) => ({ value: c.id, label: c.label }))}
       members={options.members.map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }))}
-      destinations={countryOptions(DESTINATION_COUNTRIES).map((c) => ({ value: c.code, label: c.name }))}
+      destinations={countryOptions(DESTINATION_COUNTRIES).map((c) => ({ value: c.code, label: c.name, frequent: c.frequent }))}
       defaultClientId={options.preselectedClientId}
       defaultMemberId={options.currentMemberId}
     />

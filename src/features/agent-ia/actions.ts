@@ -7,7 +7,7 @@ import { dbMessage } from "@/lib/data/errors";
 import { formValues, type FormState } from "@/lib/form-state";
 import { AI_NOT_CONFIGURED_GEMINI, AiUnavailableError, runAgentConversation, type ChatMessageInput, type AiRunExecutionResult } from "@/lib/ai/runner";
 import { buildSystemPrompt } from "@/lib/ai/prompts";
-import { toWhatsAppText } from "@/lib/ai/whatsapp-format";
+import { finalizeAgentReply } from "@/lib/ai/reply";
 import { readPublicPage } from "@/lib/ai/fetch-page";
 import { formatKnowledgeForPrompt, chunkText, type KnowledgeSnippet } from "@/lib/ai/knowledge";
 import { toAiAgent, type AiAgentRecord } from "@/lib/domain/ai";
@@ -110,7 +110,7 @@ export async function saveAiAgentWithFallback(
  * Assure qu'un agent officiel "Support client" existe en base pour l'agence.
  * S'il n'existe pas encore, il est initialisé et son UUID réel est renvoyé.
  */
-export async function ensureAgencyAgentId(ctx: { supabase: any; organizationId: string }): Promise<string | null> {
+export async function ensureAgencyAgentId(ctx: { supabase: any; organizationId: string; agency?: { name: string } }): Promise<string | null> {
   // 1. Chercher si un agent existe déjà
   const { data: existing } = await ctx.supabase
     .from("ai_agents")
@@ -126,7 +126,7 @@ export async function ensureAgencyAgentId(ctx: { supabase: any; organizationId: 
 
   // 2. Initialisation automatique de l'agent Support client officiel
   const defaultInstructions = `# DESCRIPTION DU RÔLE
-Tu es le service client d'élite pour notre agence.
+Tu es le service client d'élite de l'agence ${ctx.agency?.name ?? ""}.
 Tu aides les clients de façon amicale, chaleureuse et naturelle, exactement comme un membre d'expérience de notre équipe.
 Tu réponds aux questions, clarifies les démarches, orientes les prospects et assures une expérience client irréprochable.
 
@@ -290,7 +290,7 @@ export async function testAiAgentMessageAction(
         personality: "Chaleureux, rapide et professionnel",
         systemInstructions:
           previewConfig?.systemInstructions ||
-          "Tu es le service client d'élite pour notre agence. Tu aides les clients de façon amicale et naturelle.",
+          `Tu es le service client d'élite de l'agence ${ctx.agency.name}. Tu aides les clients de façon amicale et naturelle.`,
         servicesScope: previewConfig?.servicesScope,
         responseDelaySeconds: 15,
         facebookUrl: previewConfig?.facebookUrl,
@@ -353,14 +353,10 @@ export async function testAiAgentMessageAction(
       });
 
       const geminiReply = geminiResult.text;
-      const hasTransfer =
-        geminiReply.includes("[DEMANDE_TRANSFERT]") ||
-        /(transf[eè]re votre demande|transmets votre dossier|conseiller va prendre le relais|passe la main [aà] un conseiller|un conseiller humain va vous recontacter)/i.test(
-          geminiReply
-        );
+      const { text: replyText, transfer: hasTransfer } = finalizeAgentReply(geminiReply, { detectPhrases: true });
 
       return {
-        replyText: toWhatsAppText(geminiReply.replace(/[DEMANDE_TRANSFERT]/g, "")),
+        replyText,
         model: geminiResult.model,
         tokensPrompt: Math.round((agent.systemInstructions.length + (knowledgeContext?.length || 0)) / 4),
         tokensCompletion: Math.round(geminiReply.length / 4),

@@ -9,7 +9,8 @@ import { loadInvoices, loadInvoiceSettings } from "@/features/invoices/queries";
 import { agencyFinance } from "./calculations";
 import { documentFromPayment } from "./receipt";
 import { activeMembers } from "@/lib/domain/members";
-import type { Payment } from "@/lib/domain/types";
+import type { AgencyContext } from "@/lib/auth/context";
+import type { Client, Payment } from "@/lib/domain/types";
 import { campaignStats } from "@/features/communications/campaigns";
 
 /** Montants par devise (une agence peut encaisser en XAF et en EUR : jamais de conversion). */
@@ -47,12 +48,6 @@ export async function getFinanceOverview(periodKey?: string) {
     };
   });
 
-  // À surveiller en premier : paiements annoncés pas encore vérifiés, et factures émises pas encore payées.
-  const pending = data.payments.filter((p) => p.status === "pending");
-  const today = dayKey(now, tz);
-  const unpaid = canSeeFinance ? await loadInvoices(ctx, (q) => q.eq("status", "issued")) : [];
-  const overdue = unpaid.filter((invoice) => isOverdue(invoice.status, invoice.dueDate, today)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-
   return {
     agency: data.agency,
     isDemo: ctx.isDemo,
@@ -61,15 +56,31 @@ export async function getFinanceOverview(periodKey?: string) {
     canSeeFinance,
     totals,
     balances,
+    ...(await loadFinanceWatch(ctx, data.payments, data.clients, now, tz)),
+  };
+}
+
+/**
+ * À surveiller en premier (Synthèse et tableau de bord) : paiements annoncés pas encore vérifiés, factures
+ * émises pas encore payées, et les plus anciennes factures en retard.
+ */
+export async function loadFinanceWatch(ctx: AgencyContext, payments: Payment[], clients: Client[], now: Date, tz: string) {
+  const pending = payments.filter((p) => p.status === "pending");
+  const today = dayKey(now, tz);
+  const unpaid = allowed(ctx, "finance.read") ? await loadInvoices(ctx, (q) => q.eq("status", "issued")) : [];
+  const overdue = unpaid.filter((invoice) => isOverdue(invoice.status, invoice.dueDate, today)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  return {
     pendingPayments: { count: pending.length, totals: sumByCurrency(pending, (p) => p.currency, (p) => p.amountMinor) },
     unpaidInvoices: {
       count: unpaid.length,
       totals: sumByCurrency(unpaid, (i) => i.currency, (i) => i.totalMinor),
       overdueCount: overdue.length,
-      overdue: overdue.slice(0, 5).map((invoice) => ({ invoice, client: data.clients.find((c) => c.id === invoice.clientId) })),
+      overdue: overdue.slice(0, 5).map((invoice) => ({ invoice, client: clients.find((c) => c.id === invoice.clientId) })),
     },
   };
 }
+
+export type FinanceWatch = Awaited<ReturnType<typeof loadFinanceWatch>>;
 
 export type PaymentFilter = "tous" | "a-verifier" | "confirmes" | "annules";
 

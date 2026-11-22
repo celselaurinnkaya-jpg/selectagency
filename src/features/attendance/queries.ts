@@ -31,6 +31,16 @@ export async function loadAttendanceSettings(ctx: AgencyContext): Promise<Attend
   return toAttendanceSettings(data);
 }
 
+/**
+ * Membres dispensés de pointage (rapport de re-test du 22/11 : le propriétaire était compté absent).
+ * Avant la migration 20261122140000, la colonne n'existe pas : personne n'est dispensé.
+ */
+export async function loadAttendanceExemptions(ctx: AgencyContext): Promise<string[]> {
+  const { data, error } = await ctx.supabase.from("attendance_settings").select("exempt_member_ids").eq("organization_id", ctx.organizationId).maybeSingle();
+  if (error || !data) return [];
+  return ((data.exempt_member_ids as string[] | null) ?? []).map(String);
+}
+
 async function loadEntries(ctx: AgencyContext, since: string, memberId?: string): Promise<AttendanceEntry[]> {
   const rows = await fetchRows(
     ctx,
@@ -61,6 +71,8 @@ export interface ClockState {
   late?: string;
   missing: MissingDeparture[];
   writable: boolean;
+  /** Dispensé de pointage par l'agence : pas de bouton, jamais compté absent. */
+  exempt?: boolean;
 }
 
 function clockState(entries: AttendanceEntry[], settings: AttendanceSettings, now: Date, timeZone: string, today: string, writable: boolean): ClockState {
@@ -107,8 +119,12 @@ export async function getMyClock(): Promise<ClockState> {
   const now = new Date();
   const tz = ctx.agency.timezone;
   const today = dayKey(now, tz);
-  const [settings, entries] = await Promise.all([loadAttendanceSettings(ctx), loadEntries(ctx, addDays(today, -DECLARE_DAYS), ctx.member.id)]);
-  return clockState(entries, settings, now, tz, today, ctx.writable);
+  const [settings, entries, exempt] = await Promise.all([
+    loadAttendanceSettings(ctx),
+    loadEntries(ctx, addDays(today, -DECLARE_DAYS), ctx.member.id),
+    loadAttendanceExemptions(ctx),
+  ]);
+  return { ...clockState(entries, settings, now, tz, today, ctx.writable), exempt: exempt.includes(ctx.member.id) };
 }
 
 export const ATTENDANCE_PERIODS: { key: AttendancePeriod; label: string }[] = [
@@ -144,13 +160,16 @@ export async function getAttendancePage(periodParam: string | undefined, memberP
   const range = periodDays(period, today);
   const since = [range.from, addDays(today, -DECLARE_DAYS)].sort()[0]!;
 
-  const [settings, entries, memberRows] = await Promise.all([
+  const [settings, entries, memberRows, exemptIds] = await Promise.all([
     loadAttendanceSettings(ctx),
     loadEntries(ctx, since, canManage ? undefined : ctx.member.id),
     fetchRows(ctx, "members", MEMBER.list),
+    loadAttendanceExemptions(ctx),
   ]);
   const allMembers = memberRows.map(toMember);
-  const team = canManage ? activeMembers(allMembers).filter((m) => m.hasAccount !== false) : allMembers.filter((m) => m.id === ctx.member.id);
+  // Les membres dispensés de pointage ne sont ni attendus ni comptés absents.
+  const pointingTeam = activeMembers(allMembers).filter((m) => m.hasAccount !== false);
+  const team = (canManage ? pointingTeam : allMembers.filter((m) => m.id === ctx.member.id)).filter((m) => !exemptIds.includes(m.id));
   const byMember = (id: string) => entries.filter((e) => e.memberId === id);
 
   const teamToday: TeamToday[] = canManage ? team.map((member) => ({ member, summary: summarizeDay(byMember(member.id), today, settings, now, tz, today) })) : [];
@@ -177,7 +196,9 @@ export async function getAttendancePage(periodParam: string | undefined, memberP
   return {
     agency: ctx.agency,
     me: ctx.member,
-    clock: clockState(byMember(ctx.member.id), settings, now, tz, today, ctx.writable),
+    clock: { ...clockState(byMember(ctx.member.id), settings, now, tz, today, ctx.writable), exempt: exemptIds.includes(ctx.member.id) },
+    // Pour le choix des membres dispensés (responsables).
+    pointingTeam: canManage ? pointingTeam.map((m) => ({ id: m.id, name: m.fullName, exempt: exemptIds.includes(m.id) })) : [],
     canManage,
     canEdit: allowed(ctx, "attendance.manage"),
     settings,

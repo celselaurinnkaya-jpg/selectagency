@@ -112,7 +112,7 @@ type StepRow = { key: string; kind: string; position: number; status: string; ne
 async function transition(
   who: User,
   caseId: string,
-  mode: "advance" | "skip" | "back",
+  mode: "advance" | "skip" | "back" | "jump",
   to: string | null,
   extra: { confirmation?: string; evidence?: string; source?: string; reason?: string; acknowledge?: boolean } = {},
 ) {
@@ -933,12 +933,51 @@ describe("factures", () => {
     const status = (who: User, s: string) => one(who, "select public.set_invoice_status($1, $2, 'Facture {facture} : état modifié.')", [id, s]);
     await expect(status(KARL, "draft")).rejects.toThrow(/ne peut pas passer/);
     await expect(status(BRUNO, "paid")).rejects.toThrow(/introuvable/);
-    await status(MAX, "paid");
+    await expect(status(MAX, "paid")).rejects.toThrow(/choisit les paiements confirmés/);
+
+    // Payée : par le propriétaire seulement, avec des paiements confirmés du même client, du même dossier, dans la même devise.
+    const charge = (
+      await one<{ id: string }>(
+        KARL,
+        "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Accompagnement visa', 'agency_fee', 300000, 'XAF') returning id",
+        [org, caseId],
+      )
+    ).id;
+    const pay = (amount: number, pending = false) =>
+      one<{ r: { id: string } }>(
+        KARL,
+        "select public.record_payment($1, $2, 'cash', 'Espèces', '', 'Paul', now(), $3::jsonb, 'Paiement (reçu {recu}).', $4) as r",
+        [caseId, amount, JSON.stringify([{ charge_id: charge, amount_minor: amount }]), pending],
+      ).then((x) => x.r.id);
+    const small = await pay(50000);
+    const big = await pay(150000);
+    const announced = await pay(10000, true);
+    const markPaid = (who: User, ids: string[]) => one(who, "select public.mark_invoice_paid($1, $2::uuid[], 'Facture {facture} payée (reçus {recus}).')", [id, ids]);
+    await expect(markPaid(MAX, [big])).rejects.toThrow(/Seul le propriétaire/);
+    await expect(markPaid(KARL, [])).rejects.toThrow(/Choisissez/);
+    await expect(markPaid(KARL, [small])).rejects.toThrow(/ne couvrent pas/);
+    await expect(markPaid(KARL, [announced, big])).rejects.toThrow(/ne convient pas/);
+    await markPaid(KARL, [small, big]);
+    expect((await one<{ status: string }>(KARL, "select status from public.invoices where id = $1", [id])).status).toBe("paid");
+    const paidEvent = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 and text like 'Facture %payée%' order by at desc limit 1", [caseId]);
+    expect(paidEvent.text).toMatch(new RegExp(`^Facture FAC-${YEAR}-00001 payée \\(reçus .+, .+\\)\\.$`));
     await expect(save(KARL, { id })).rejects.toThrow(/émise ne se modifie plus/);
     await expect(one(MAX, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/Seul un brouillon se supprime/);
-    // Erreur de saisie : la facture payée redevient « à payer », toujours verrouillée.
+
+    // Un paiement qui la réglait est annulé : la facture redevient « à payer », avec une trace.
+    await one(KARL, "select public.void_payment($1, 'Erreur de saisie du montant', 'Paiement annulé.')", [small]);
+    expect((await one<{ status: string }>(KARL, "select status from public.invoices where id = $1", [id])).status).toBe("issued");
+    expect(await rows(KARL, "select payment_id from public.invoice_payments where invoice_id = $1", [id])).toEqual([]);
+    const reopened = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 and text like '%remise « à payer »%' order by at desc limit 1", [caseId]);
+    expect(reopened.text).toMatch(/^Facture FAC-.+ remise « à payer » : le paiement \(reçu .+\) qui la réglait a été annulé\.$/);
+
+    // Payée de nouveau ; seule la propriétaire peut la remettre « à payer » (erreur de saisie), toujours verrouillée.
+    const rest = await pay(60000);
+    await markPaid(KARL, [big, rest]);
+    await expect(status(MAX, "issued")).rejects.toThrow(/Seul le propriétaire/);
     await status(KARL, "issued");
     expect((await one<{ paid_at: string | null }>(KARL, "select paid_at from public.invoices where id = $1", [id])).paid_at).toBeNull();
+    expect(await rows(KARL, "select payment_id from public.invoice_payments where invoice_id = $1", [id])).toEqual([]);
     await expect(save(KARL, { id })).rejects.toThrow(/émise ne se modifie plus/);
     // Annulée : elle reste, avec son numéro, et ne se supprime pas.
     await one(KARL, "select public.set_invoice_status($1, 'cancelled', 'Facture {facture} : annulée. Motif : montant erroné.')", [id]);
@@ -2023,6 +2062,31 @@ describe("sécurité S1 : dossiers et étapes modifiés uniquement par les fonct
     await expect(transition(KARL, id, "back", "visa_prep", { reason: "Réouverture" })).rejects.toThrow(/pas modifiable/);
   });
 
+  it("passe directement à une étape plus loin, avec un motif, et une preuve pour une décision", async () => {
+    const id = await newCase(LINA, stepsOf());
+    await expect(transition(LINA, id, "jump", "visa_refused")).rejects.toThrow(/motif du passage direct/);
+    await expect(transition(LINA, id, "jump", "new_candidate", { reason: "Retour" })).rejects.toThrow(/étape à atteindre/);
+    await expect(transition(LINA, id, "jump", "inconnue", { reason: "Essai" })).rejects.toThrow(/étape à atteindre/);
+    await expect(transition(LINA, id, "jump", "visa_refused", { reason: "Refus annoncé" })).rejects.toThrow(/déclarée ou confirmée/);
+    for (const who of [MAX, NOAH]) await expect(transition(who, id, "jump", "visa_refused", { reason: "Refus" })).rejects.toThrow(/pas le droit de le modifier/);
+
+    const refused = await transition(LINA, id, "jump", "visa_refused", { reason: "Refus annoncé par le client", confirmation: "declared", source: "Appel du client le 22/11" });
+    expect(refused).toMatchObject({ closes: false, to_label: "Visa refusé" });
+    expect(await caseRow(id)).toMatchObject({ status: "active", outcome: "refused" });
+    expect(await step(id, "visa_refused")).toEqual({ status: "in_progress", confirmation_level: "declared", evidence_ref: null, source_note: "Appel du client le 22/11" });
+    expect(await step(id, "new_candidate")).toMatchObject({ status: "skipped" });
+    const states = await rows<{ key: string; status: string }>(KARL, "select key, status from public.case_steps where case_id = $1 and position < (select position from public.case_steps where case_id = $1 and key = 'visa_refused') order by position", [id]);
+    expect(states.every((s) => s.status === "skipped")).toBe(true);
+    const history = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc, id desc limit 1", [id]);
+    expect(history.text).toBe("Passage direct de « Nouveau candidat » à « Visa refusé ». Motif : Refus annoncé par le client (déclaré, non vérifié ; source : Appel du client le 22/11)");
+
+    // La clôture par passage direct garde le contrôle du solde.
+    await db.query("insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais', 'agency_fee', 50000, 'XAF')", [org, id]);
+    await expect(transition(LINA, id, "jump", "closed", { reason: "Abandon du projet" })).rejects.toThrow(/solde du dossier n'est pas réglé/);
+    expect(await transition(LINA, id, "jump", "closed", { reason: "Abandon du projet", acknowledge: true })).toMatchObject({ closes: true });
+    expect(await caseRow(id)).toMatchObject({ status: "closed", outcome: "refused" });
+  });
+
   it("une décision exige toujours une preuve, même si le modèle a été trafiqué", async () => {
     // Modèle fabriqué : une étape de l'agence mène directement à « Visa accordé ».
     const forged = [
@@ -2443,6 +2507,16 @@ describe("présences : pointage des arrivées et des départs", () => {
       work_days: [1, 2, 3, 4, 5, 6],
       grace_minutes: 15,
     });
+  });
+
+  it("dispense de pointage les membres choisis par les responsables", async () => {
+    const save = (who: User, ids: string[]) => one(who, "select public.save_attendance_exemptions($1, $2::uuid[])", [org, ids]);
+    await expect(save(LINA, [karl])).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(save(KARL, ["00000000-0000-4000-8000-000000000000"])).rejects.toThrow(/Membre introuvable/);
+    await save(KARL, [karl, karl]);
+    expect(await one(LINA, "select exempt_member_ids, grace_minutes from public.attendance_settings")).toEqual({ exempt_member_ids: [karl], grace_minutes: 15 });
+    await save(KARL, []);
+    expect((await one<{ exempt_member_ids: string[] }>(LINA, "select exempt_member_ids from public.attendance_settings")).exempt_member_ids).toEqual([]);
   });
 });
 
@@ -2869,5 +2943,129 @@ describe("Agent IA et WhatsApp", () => {
     await expect(
       one(null, "select public.record_wa_history_message($1, '555000', '1', null, 'inbound', 'x', 'text', 'x', now(), false)", [BAD]),
     ).rejects.toThrow(/Secret système invalide/);
+  });
+});
+
+describe("demandes de démonstration du site", () => {
+  beforeAll(async () => {
+    await db.query("insert into private.platform_admins (user_id) values ($1) on conflict do nothing", [GRACE.id]);
+  });
+
+  const request = (who: User | null, phone: string, opts: { name?: string; country?: string; email?: string | null } = {}) =>
+    one(who, "select public.request_demo($1, 'Agence Horizon', $2, $3, $4, 'Nous avons 3 conseillers.')", [
+      opts.name ?? "Awa Diallo",
+      opts.country ?? "SN",
+      phone,
+      opts.email === undefined ? "awa@horizon.sn" : opts.email,
+    ]);
+
+  it("enregistre la demande d'un visiteur, lisible seulement par la console SELECT", async () => {
+    await request(null, "+221 77 000 00 01");
+    await expect(rows(null, "select * from private.demo_requests")).rejects.toThrow(/permission denied/);
+    await expect(rows(HUGO, "select * from private.demo_requests")).rejects.toThrow(/permission denied/);
+    await expect(rows(HUGO, "select * from public.platform_demo_requests()")).rejects.toThrow(/réservé à l'équipe SELECT/);
+    await expect(rows(GRACE, "select * from public.platform_demo_requests()")).rejects.toThrow(/réservé à l'équipe SELECT/);
+    const [demo] = await rows<{ id: string; agency_name: string; status: string; email: string }>(GRACE_MFA, "select * from public.platform_demo_requests()");
+    expect(demo).toMatchObject({ agency_name: "Agence Horizon", status: "new", email: "awa@horizon.sn" });
+
+    await expect(one(HUGO, "select public.platform_set_demo_request_status($1, 'contacted')", [demo!.id])).rejects.toThrow(/réservé à l'équipe SELECT/);
+    await one(GRACE_MFA, "select public.platform_set_demo_request_status($1, 'contacted')", [demo!.id]);
+    const [after] = await rows<{ status: string; handled_at: string | null }>(GRACE_MFA, "select status, handled_at from public.platform_demo_requests('contacted')");
+    expect(after!.status).toBe("contacted");
+    expect(after!.handled_at).not.toBeNull();
+    await expect(one(GRACE_MFA, "select public.platform_set_demo_request_status($1, 'archivée')", [demo!.id])).rejects.toThrow(/Statut inconnu/);
+  });
+
+  it("refuse les demandes incomplètes et limite les répétitions", async () => {
+    await expect(request(null, "+221 77 000 00 02", { name: "A" })).rejects.toThrow(/votre nom/);
+    await expect(request(null, "+221 77 000 00 02", { country: "Sénégal" })).rejects.toThrow(/votre pays/);
+    await expect(request(null, "123")).rejects.toThrow(/numéro de téléphone/);
+    await expect(request(null, "+221 77 000 00 02", { email: "pas-une-adresse" })).rejects.toThrow(/e-mail invalide/);
+    await request(null, "+221 77 000 00 03", { email: null });
+    await request(null, "+221 77 000 00 03", { email: null });
+    await request(HUGO, "+221 77 000 00 03", { email: null });
+    await expect(request(null, "+221 77 000 00 03", { email: null })).rejects.toThrow(/déjà été reçue/);
+  });
+});
+
+describe("factures et reste à payer du dossier", () => {
+  const OLGA = user(18, "olga@agence-o.test", "Olga Mvondo");
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [OLGA.id, OLGA.email]);
+  });
+
+  it("n'émet qu'une facture rattachée à un dossier, et l'ajoute une seule fois à son reste à payer", async () => {
+    const org = await createOrg(OLGA, "Agence O");
+    const olga = await memberId(OLGA);
+    const clientId = (await createClient(OLGA, org, olga, "Ngoma")).id;
+    const travelCase = (await createCase(OLGA, org, clientId, olga)).id;
+    const items = JSON.stringify([{ label: "Frais de dossier", quantity: 1, unit_amount_minor: 50000, tax_rate: 0 }]);
+    const save = (caseId: string | null, issue: boolean, currency = "XAF") =>
+      one<{ r: { id: string } }>(
+        OLGA,
+        "select public.save_invoice(null, $1, $2, $3, current_date, current_date + 30, '', 0, '', null, $4, $5::jsonb, 'Facture {facture}.') as r",
+        [clientId, caseId, currency, issue, items],
+      ).then((x) => x.r.id);
+
+    await expect(save(null, true)).rejects.toThrow(/choisissez le dossier du client/);
+    const draft = await save(null, false);
+    await expect(one(OLGA, "select public.add_invoice_to_charges($1, 'agency_fee')", [draft])).rejects.toThrow(/Seule une facture émise/);
+
+    const issued = await save(travelCase, true);
+    await expect(one(OLGA, "select public.add_invoice_to_charges($1, 'autre')", [issued])).rejects.toThrow(/frais de l'agence ou d'un montant pour un tiers/);
+    await expect(one(BRUNO, "select public.add_invoice_to_charges($1, 'agency_fee')", [issued])).rejects.toThrow(/introuvable/);
+    await one(OLGA, "select public.add_invoice_to_charges($1, 'agency_fee')", [issued]);
+    expect(await rows(OLGA, "select label, charge_type, amount_minor::int as amount, currency from public.charges where invoice_id = $1", [issued])).toEqual([
+      { label: expect.stringMatching(/^Facture FAC-/), charge_type: "agency_fee", amount: 50000, currency: "XAF" },
+    ]);
+    await expect(one(OLGA, "select public.add_invoice_to_charges($1, 'agency_fee')", [issued])).rejects.toThrow(/déjà dans le reste à payer/);
+
+    const inEuros = await save(travelCase, true, "EUR");
+    await expect(one(OLGA, "select public.add_invoice_to_charges($1, 'agency_fee')", [inEuros])).rejects.toThrow(/ne mélange pas les devises/);
+  });
+});
+
+describe("dépenses : justificatif et validation", () => {
+  let org: string;
+
+  beforeAll(async () => {
+    org = (await one<{ id: string }>(KARL, "select organization_id as id from public.members where user_id = auth.uid()")).id;
+  });
+
+  const expense = (who: User, amount: number, receipt: string | null = null) =>
+    one<{ id: string; approval_status: string }>(
+      who,
+      "insert into public.expenses (organization_id, expense_type, label, amount_minor, currency, paid_at, recorded_by, receipt_path, approval_status) values ($1, 'operating', 'Connexion internet', $2, 'XAF', now(), (select id from public.members where user_id = auth.uid() and organization_id = $1), $3, 'approved') returning id, approval_status",
+      [org, amount, receipt],
+    );
+
+  it("met à valider la dépense d'un membre, validée seulement par le propriétaire", async () => {
+    expect((await expense(KARL, 20000)).approval_status).toBe("approved");
+    const byLina = await expense(LINA, 15000);
+    expect(byLina.approval_status).toBe("pending");
+    const review = (who: User, approve: boolean, note: string | null) => one(who, "select public.review_expense($1, $2, $3)", [byLina.id, approve, note]);
+    await expect(review(LINA, true, null)).rejects.toThrow(/Seul le propriétaire/);
+    await expect(review(MAX, true, null)).rejects.toThrow(/Seul le propriétaire/);
+    await expect(review(KARL, false, "")).rejects.toThrow(/motif du refus/);
+    await review(KARL, false, "Facture introuvable");
+    expect(await one(KARL, "select approval_status, review_note from public.expenses where id = $1", [byLina.id])).toEqual({ approval_status: "rejected", review_note: "Facture introuvable" });
+    await expect(review(KARL, true, null)).rejects.toThrow(/déjà été examinée/);
+    await expect(as(LINA, (tx) => tx.query("update public.expenses set approval_status = 'approved' where id = $1", [byLina.id]))).resolves.toBeDefined();
+    expect((await one<{ approval_status: string }>(KARL, "select approval_status from public.expenses where id = $1", [byLina.id])).approval_status).toBe("rejected");
+  });
+
+  it("exige le justificatif au-delà du seuil de l'agence, et un fichier réellement reçu", async () => {
+    await expect(one(LINA, "select public.save_expense_settings($1, 50000)", [org])).rejects.toThrow(/propriétaire et les administrateurs/);
+    await one(KARL, "select public.save_expense_settings($1, 50000)", [org]);
+    await expense(LINA, 50000);
+    await expect(expense(LINA, 50001)).rejects.toThrow(/Justificatif obligatoire/);
+    await expect(expense(LINA, 80000, `${org}/1-recu.pdf`)).rejects.toThrow(/n'a pas été reçu/);
+    await as(LINA, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('expense-receipts', $1)", [`${org}/2-recu.pdf`]));
+    await expect(as(BRUNO, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('expense-receipts', $1)", [`${org}/3-recu.pdf`]))).rejects.toThrow(/row-level security/);
+    expect((await expense(LINA, 80000, `${org}/2-recu.pdf`)).approval_status).toBe("pending");
+    await expect(expense(LINA, 80000, "autre-agence/2-recu.pdf")).rejects.toThrow(/check constraint|n'a pas été reçu/);
+    expect(await rows(BRUNO, "select name from storage.objects where bucket_id = 'expense-receipts'")).toEqual([]);
+    await one(KARL, "select public.save_expense_settings($1, null)", [org]);
   });
 });

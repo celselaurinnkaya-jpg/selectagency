@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
+import { CountryOptions } from "@/components/shared/CountryOptions";
 import { CLIENT_SOURCE, SERVICE_MOTIVES } from "@/lib/domain/labels";
 import type { ClientSource } from "@/lib/domain/types";
 import { initialFormState, type FormState } from "@/lib/form-state";
@@ -16,6 +17,7 @@ import { convertProspectAction, saveProspectAction, scheduleFollowUpAction } fro
 // « action » après chaque réponse, même refusée : rien ne doit se perdre).
 
 interface Option {
+  frequent?: boolean;
   value: string;
   label: string;
 }
@@ -68,7 +70,7 @@ export function ProspectForm({
   const [source, setSource] = useState<ClientSource | "">("");
   const [sourceDetail, setSourceDetail] = useState("");
   const [campaign, setCampaign] = useState("");
-  const [motive, setMotive] = useState("study_abroad");
+  const [motive, setMotive] = useState("");
   const [assignedTo, setAssignedTo] = useState(defaultMemberId);
   const [followUp, setFollowUp] = useState(addDays(today, 1));
   const [notes, setNotes] = useState("");
@@ -138,11 +140,7 @@ export function ProspectForm({
           </FormField>
           <FormField id="p-country" label="Pays" required error={e.residenceCountry}>
             <select id="p-country" value={country} onChange={(ev) => setCountry(ev.target.value)} className={selectClass}>
-              {countries.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
+              <CountryOptions options={countries} />
             </select>
           </FormField>
           <FormField id="p-city" label="Ville" error={e.city}>
@@ -201,6 +199,7 @@ export function ProspectForm({
           )}
           <FormField id="p-motive" label="Projet" error={e.serviceMotive}>
             <select id="p-motive" value={motive} onChange={(ev) => setMotive(ev.target.value)} className={selectClass}>
+              <option value="">— Non précisé —</option>
               {Object.entries(SERVICE_MOTIVES).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -277,7 +276,20 @@ export function ConvertProspectButton({ clientId, name }: { clientId: string; na
         {name} devient client de l&apos;agence. La fiche reste la même : rendez-vous, relances et historique sont conservés.
       </p>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="accent" disabled={pending} onClick={() => startTransition(async () => setState(await convertProspectAction(clientId)))}>
+        <Button
+          type="button"
+          variant="accent"
+          disabled={pending}
+          onClick={() =>
+            startTransition(async () => {
+              const res = await convertProspectAction(clientId);
+              setState(res);
+              if (res.ok && res.redirectTo) {
+                window.location.href = res.redirectTo;
+              }
+            })
+          }
+        >
           {pending ? "Transformation…" : "Confirmer"}
         </Button>
         <Button type="button" variant="ghost" disabled={pending} onClick={() => setConfirming(false)}>

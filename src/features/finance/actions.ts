@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 import { z } from "zod";
+import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
@@ -194,6 +195,8 @@ const expenseSchema = z.object({
   currency: z.string().regex(/^[A-Z]{3}$/, "Devise invalide."),
   paidDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indiquez la date."),
   caseId: z.string().optional(),
+  // Chemin du justificatif déjà déposé par le navigateur dans le bucket privé ; la base vérifie qu'il existe.
+  receiptPath: z.string().max(300).optional(),
 });
 
 export async function createExpenseAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -210,6 +213,7 @@ export async function createExpenseAction(_prev: FormState, formData: FormData):
   if (input.caseId && !travelCase) return { message: "Dossier introuvable.", values };
   const amountMinor = parseAmount(input.amount, input.currency);
   if (!amountMinor) return { message: "Certains champs sont à corriger.", fieldErrors: { amount: [`Montant invalide en ${input.currency}.`] }, values };
+  if (input.receiptPath && !input.receiptPath.startsWith(`${ctx.organizationId}/`)) return { message: "Justificatif invalide : renvoyez le fichier.", values };
 
   const { error } = await ctx.supabase.from("expenses").insert({
     organization_id: ctx.organizationId,
@@ -222,8 +226,48 @@ export async function createExpenseAction(_prev: FormState, formData: FormData):
     paid_at: localDateTimeToIso(input.paidDate, "12:00", data.agency.timezone),
     // Remplacé par la base par la personne connectée (trigger) : jamais une valeur du navigateur.
     recorded_by: ctx.member.id,
+    receipt_path: input.receiptPath || null,
   });
   if (error) return { message: dbMessage(error), values };
   refresh();
-  return { ok: true, message: `Dépense enregistrée : ${formatMoney(amountMinor, input.currency)}.` };
+  const toValidate = ctx.member.role !== "owner" ? " Elle sera comptée une fois validée par le propriétaire." : "";
+  return { ok: true, message: `Dépense enregistrée : ${formatMoney(amountMinor, input.currency)}.${toValidate}` };
+}
+
+/** Validation ou refus d'une dépense par le propriétaire (motif obligatoire pour un refus ; la base revérifie). */
+export async function reviewExpenseAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = z
+    .object({ expenseId: z.uuid(), decision: z.enum(["approve", "reject"]), note: z.string().trim().max(300).optional() })
+    .safeParse({ expenseId: formData.get("expenseId"), decision: formData.get("decision"), note: formData.get("note") ?? undefined });
+  if (!parsed.success) return { message: "Dépense introuvable." };
+  if (parsed.data.decision === "reject" && (parsed.data.note?.length ?? 0) < 3) return { message: "Indiquez le motif du refus.", fieldErrors: { note: ["Motif obligatoire."] } };
+  const ctx = await getAgencyContext();
+  if (ctx.member.role !== "owner") return { message: "Seul le propriétaire de l'agence valide les dépenses." };
+  const { error } = await ctx.supabase.rpc("review_expense", {
+    p_expense_id: parsed.data.expenseId,
+    p_approve: parsed.data.decision === "approve",
+    p_note: parsed.data.note ?? null,
+  });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: parsed.data.decision === "approve" ? "Dépense validée : elle compte dans les chiffres." : "Dépense refusée : elle ne compte pas dans les chiffres." };
+}
+
+/** Seuil au-delà duquel le justificatif est obligatoire (vide = jamais obligatoire). */
+export async function saveExpenseSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const raw = String(formData.get("threshold") ?? "").trim();
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "settings.manage")) return { message: forbiddenMessage(ctx, "settings.manage") };
+  let threshold: number | null = null;
+  if (raw) {
+    threshold = raw === "0" ? 0 : parseAmount(raw, ctx.agency.currency);
+    if (threshold === null) return { message: `Montant invalide en ${ctx.agency.currency}.`, fieldErrors: { threshold: ["Montant invalide."] } };
+  }
+  const { error } = await ctx.supabase.rpc("save_expense_settings", { p_organization_id: ctx.organizationId, p_receipt_required_above_minor: threshold });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return {
+    ok: true,
+    message: threshold === null ? "Le justificatif n'est plus obligatoire." : `Justificatif obligatoire au-delà de ${formatMoney(threshold, ctx.agency.currency)}.`,
+  };
 }

@@ -14,7 +14,8 @@ export const metadata: Metadata = { title: "Documents" };
 
 const VIEWS: { key: DocumentView; label: string; empty: string }[] = [
   { key: "a-examiner", label: "À examiner", empty: "Aucune pièce reçue en attente de vérification." },
-  { key: "manquants", label: "Manquants", empty: "Aucune pièce obligatoire manquante sur les dossiers actifs." },
+  // Même règle que la fiche du dossier : obligatoire et non reçue, à corriger ou expirée.
+  { key: "manquants", label: "Manquants", empty: "Aucune pièce obligatoire manquante (non reçue, à corriger ou expirée) sur les dossiers actifs." },
   { key: "a-corriger", label: "À corriger", empty: "Aucune pièce en attente de correction." },
   { key: "expiration", label: "Expiration proche", empty: "Aucun document n'expire dans les 90 prochains jours." },
   { key: "tous", label: "Toutes les pièces", empty: "Aucune pièce attendue." },

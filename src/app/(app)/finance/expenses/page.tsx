@@ -41,7 +41,7 @@ async function Expenses() {
     <>
       <FinanceTabs />
       {canWrite && (
-        <Section title="Enregistrer une dépense" className="mb-6">
+        <Section id="nouvelle-depense" title="Enregistrer une dépense" className="mb-6">
           <Card>
             <ExpenseForm currency={agency.currency} defaultDate={dayKey(now, tz)} cases={cases} />
           </Card>

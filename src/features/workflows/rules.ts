@@ -4,10 +4,10 @@ import { CONFIRMATION } from "@/lib/domain/labels";
 // Règles de transition des dossiers (plan §8.3), sous forme de fonctions pures :
 // - une étape « organisme extérieur » ne se termine qu'avec un niveau de confirmation :
 //   « déclaré » (source obligatoire) ou « confirmé » (référence du justificatif obligatoire) ;
-// - revenir en arrière ou passer une étape facultative exige un motif ;
+// - revenir en arrière, passer une étape facultative ou aller directement à une étape plus loin exige un motif ;
 // - clôturer un dossier dont le solde n'est pas réglé exige une confirmation explicite.
 
-export type TransitionMode = "advance" | "skip" | "back";
+export type TransitionMode = "advance" | "skip" | "back" | "jump";
 
 export interface TransitionInput {
   mode: TransitionMode;
@@ -49,6 +49,13 @@ export function backOptions(steps: CaseStep[], current: CaseStep): StepTransitio
     .map((s) => ({ to: s.key, label: `Revenir à « ${s.label} »` }));
 }
 
+/** Passage direct : n'importe quelle étape plus loin, pas encore terminée (ex. « Visa refusé »). */
+export function jumpOptions(steps: CaseStep[], current: CaseStep): StepTransitionOption[] {
+  return byPosition(steps)
+    .filter((s) => s.position > current.position && (s.status === "pending" || s.status === "skipped"))
+    .map((s) => ({ to: s.key, label: s.kind === "outcome" ? `Décision : ${s.label}` : s.label }));
+}
+
 export function requiresConfirmation(step: CaseStep): boolean {
   return step.kind === "external_event";
 }
@@ -81,6 +88,27 @@ export function validateTransition(
 
     const target = steps.find((s) => s.key === input.to);
     if (target?.kind === "closure" && context.balanceDueMinor > 0 && !input.acknowledgeBalance) {
+      return { ok: false, error: "Le solde du dossier n'est pas réglé : confirmez la clôture malgré tout.", field: "acknowledgeBalance" };
+    }
+    return { ok: true };
+  }
+
+  if (input.mode === "jump") {
+    const target = steps.find((s) => s.key === input.to);
+    if (!target || !jumpOptions(steps, current).some((o) => o.to === input.to)) return { ok: false, error: "Choisissez l'étape à atteindre.", field: "to" };
+    if (!hasText(input.reason)) return { ok: false, error: "Indiquez le motif du passage direct à cette étape.", field: "reason" };
+    if (target.kind === "outcome") {
+      if (!input.confirmation) {
+        return { ok: false, error: "Indiquez si l'information est déclarée ou confirmée par un justificatif.", field: "confirmation" };
+      }
+      if (input.confirmation === "declared" && !hasText(input.sourceNote)) {
+        return { ok: false, error: "Précisez la source de l'information (par exemple : appel du client le 12/11).", field: "sourceNote" };
+      }
+      if (input.confirmation === "confirmed" && !hasText(input.evidenceRef)) {
+        return { ok: false, error: "Indiquez la référence du justificatif qui prouve cette information.", field: "evidenceRef" };
+      }
+    }
+    if (target.kind === "closure" && context.balanceDueMinor > 0 && !input.acknowledgeBalance) {
       return { ok: false, error: "Le solde du dossier n'est pas réglé : confirmez la clôture malgré tout.", field: "acknowledgeBalance" };
     }
     return { ok: true };
@@ -139,7 +167,7 @@ export function applyTransition(
   const goesBackwards = target.position < current.position;
 
   const confirmation =
-    input.mode === "advance" && requiresConfirmation(current)
+    (input.mode === "advance" && requiresConfirmation(current)) || (input.mode === "jump" && target.kind === "outcome")
       ? {
           confirmationLevel: input.confirmation,
           evidenceRef: input.confirmation === "confirmed" ? input.evidenceRef?.trim() : undefined,
@@ -150,6 +178,7 @@ export function applyTransition(
   const next = steps.map((step): CaseStep => {
     if (step.id === current.id) {
       if (input.mode === "back") return resetStep(step);
+      if (input.mode === "jump") return { ...step, status: "skipped", note: input.reason?.trim(), completedAt: context.at, completedBy: context.actorId };
       return {
         ...step,
         ...confirmation,
@@ -189,6 +218,13 @@ export function applyTransition(
 export function describeTransition(from: CaseStep, to: CaseStep, input: TransitionInput): string {
   if (input.mode === "back") return `Retour à l'étape « ${to.label} ». Motif : ${input.reason?.trim()}`;
   if (input.mode === "skip") return `Étape « ${from.label} » passée. Motif : ${input.reason?.trim()}`;
+  if (input.mode === "jump") {
+    let jump = `Passage direct de « ${from.label} » à « ${to.label} ». Motif : ${input.reason?.trim()}`;
+    if (to.kind === "outcome" && input.confirmation) {
+      jump += input.confirmation === "confirmed" ? ` (confirmé, justificatif au dossier : ${input.evidenceRef?.trim()})` : ` (déclaré, non vérifié ; source : ${input.sourceNote?.trim()})`;
+    }
+    return to.kind === "closure" ? `${jump}. Dossier clôturé.` : jump;
+  }
   let text = `Étape « ${from.label} » terminée`;
   if (input.confirmation) {
     text += ` (${CONFIRMATION[input.confirmation].label.toLowerCase()}`;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { instantiateSteps } from "./instantiate";
-import { applyTransition, backOptions, currentStep, forwardOptions, validateTransition } from "./rules";
+import { applyTransition, backOptions, currentStep, forwardOptions, jumpOptions, validateTransition } from "./rules";
 import { templateByKey } from "./templates";
 
 const study = templateByKey("study_abroad")!;
@@ -69,5 +69,36 @@ describe("transitions d'étapes", () => {
     expect(validateTransition(steps, input, { balanceDueMinor: 5000 })).toMatchObject({ ok: false, field: "acknowledgeBalance" });
     expect(validateTransition(steps, { ...input, acknowledgeBalance: true }, { balanceDueMinor: 5000 })).toEqual({ ok: true });
     expect(applyTransition(steps, input, ctx).closes).toBe(true);
+  });
+});
+
+describe("passage direct à une étape", () => {
+  it("va directement à « Visa refusé » avec un motif et une preuve, en marquant les étapes sautées", () => {
+    const steps = instantiateSteps("c1", study);
+    const current = currentStep(steps)!;
+    expect(jumpOptions(steps, current).some((o) => o.to === "visa_refused" && o.label === "Décision : Visa refusé")).toBe(true);
+    const noReason = validateTransition(steps, { mode: "jump", to: "visa_refused" }, { balanceDueMinor: 0 });
+    expect(noReason).toMatchObject({ ok: false, field: "reason" });
+    const noProof = validateTransition(steps, { mode: "jump", to: "visa_refused", reason: "Refus annoncé" }, { balanceDueMinor: 0 });
+    expect(noProof).toMatchObject({ ok: false, field: "confirmation" });
+    const input = { mode: "jump" as const, to: "visa_refused", reason: "Refus annoncé", confirmation: "declared" as const, sourceNote: "Appel du client" };
+    expect(validateTransition(steps, input, { balanceDueMinor: 0 })).toEqual({ ok: true });
+
+    const result = applyTransition(steps, input, ctx);
+    expect(result.outcome).toBe("refused");
+    const byKey = (key: string) => result.steps.find((s) => s.key === key)!;
+    expect(byKey(current.key)).toMatchObject({ status: "skipped", note: "Refus annoncé" });
+    expect(byKey("visa_refused")).toMatchObject({ status: "in_progress", confirmationLevel: "declared", sourceNote: "Appel du client" });
+    expect(result.steps.filter((s) => s.position > current.position && s.position < byKey("visa_refused").position).every((s) => s.status === "skipped")).toBe(true);
+    expect(result.description).toBe(`Passage direct de « ${current.label} » à « Visa refusé ». Motif : Refus annoncé (déclaré, non vérifié ; source : Appel du client)`);
+  });
+
+  it("refuse une étape déjà passée et garde le contrôle du solde pour une clôture", () => {
+    const steps = instantiateSteps("c1", study, "visa_submission");
+    const current = currentStep(steps)!;
+    expect(jumpOptions(steps, current).some((o) => o.to === steps[0]!.key)).toBe(false);
+    expect(validateTransition(steps, { mode: "jump", to: steps[0]!.key, reason: "Retour" }, { balanceDueMinor: 0 })).toMatchObject({ ok: false, field: "to" });
+    expect(validateTransition(steps, { mode: "jump", to: "closed", reason: "Abandon" }, { balanceDueMinor: 5000 })).toMatchObject({ ok: false, field: "acknowledgeBalance" });
+    expect(validateTransition(steps, { mode: "jump", to: "closed", reason: "Abandon", acknowledgeBalance: true }, { balanceDueMinor: 5000 })).toEqual({ ok: true });
   });
 });

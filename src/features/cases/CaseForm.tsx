@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
+import { CountryOptions } from "@/components/shared/CountryOptions";
 import { initialFormState } from "@/lib/form-state";
 import { APPLICANT_TAGS, CATEGORY_LABELS, PRIORITY } from "@/lib/domain/labels";
 import type { CaseCategory } from "@/lib/domain/types";
@@ -13,6 +14,7 @@ import { templatesForCategory } from "@/features/workflows/templates";
 import { createCaseAction } from "./actions";
 
 interface Option {
+  frequent?: boolean;
   value: string;
   label: string;
 }
@@ -101,11 +103,7 @@ function CaseFormFields({ clients, members, destinations, defaultClientId, defau
               <option value="" disabled>
                 Choisir un pays
               </option>
-              {destinations.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
+              <CountryOptions options={destinations} />
               <option value="__OTHER__">Autre pays (saisir manuellement)...</option>
             </select>
             {destSelect === "__OTHER__" && (

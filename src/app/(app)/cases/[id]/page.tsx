@@ -40,7 +40,9 @@ import { appointmentPhrase, bulletList, prepareMessages } from "@/features/commu
 import { CHECKLIST_DISCLAIMER, DOCUMENT_TYPES } from "@/features/documents/checklists";
 import { AddRequirementForm, RemoveFileButton, RequirementEditor, ReviewDocumentForm } from "@/features/documents/DocumentForms";
 import { DocumentUpload } from "@/features/documents/DocumentUpload";
+import { isMissingRequired } from "@/lib/domain/requirements";
 import { MissingDocumentsEmailButton } from "@/features/documents/MissingDocumentsEmailButton";
+import { MissingDocumentsWhatsAppButton } from "@/features/documents/MissingDocumentsWhatsAppButton";
 import { emailSendingEnabled } from "@/lib/email/brevo";
 import { AppointmentActions, AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { appointmentValues } from "@/features/appointments/values";
@@ -118,7 +120,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const appointmentMembers = activeMembers(members)
     .filter((m) => m.role !== "viewer")
     .map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` }));
-  const missing = requirements.filter((r) => r.isRequired && (r.status === "not_received" || r.status === "to_correct" || r.status === "expired"));
+  const missing = requirements.filter(isMissingRequired);
   const toReview = requirements.filter((r) => r.status === "received" || r.status === "to_verify");
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
   const isActive = c.status === "active";
@@ -282,6 +284,9 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
                   needsConfirmation={transitions.needsConfirmation}
                   balanceDue={balanceLabel}
                   notifiedKeys={notifiedKeys}
+                  jump={transitions.jump}
+                  outcomeKeys={transitions.outcomeKeys}
+                  closureKeys={transitions.closureKeys}
                 />
               ) : (
                 <p className="text-sm text-slate-600">
@@ -295,18 +300,35 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
 
       {tab === "documents" && (
         <div className="space-y-6">
-          {canEdit && directEmail && missing.length > 0 && (
+          {canEdit && missing.length > 0 && (
             <Card className="space-y-3">
               <p className="text-sm text-slate-700">
                 <strong className="text-navy-800 tabular-nums">{missing.length}</strong> pièce{missing.length > 1 ? "s" : ""} obligatoire
-                {missing.length > 1 ? "s" : ""} manque{missing.length > 1 ? "nt" : ""} encore. Envoyez la liste au client, au nom de votre agence.
+                {missing.length > 1 ? "s" : ""} manque{missing.length > 1 ? "nt" : ""} encore. Envoyez la liste au client, au nom de votre agence, par
+                WhatsApp{directEmail ? " ou par e-mail" : ""}.
               </p>
-              <MissingDocumentsEmailButton
-                caseId={c.id}
-                email={client.email}
-                optedOut={client.emailOptOut}
-                items={missing.map((r) => ({ label: r.label, status: r.status, comment: r.status === "to_correct" ? r.reviewComment : undefined }))}
-              />
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start">
+                <MissingDocumentsWhatsAppButton
+                  clientId={client.id}
+                  caseId={c.id}
+                  phoneDigits={whatsappDigits(client)}
+                  text={[
+                    `Bonjour ${client.firstName},`,
+                    `Pour avancer votre dossier ${c.reference}, il nous manque encore :`,
+                    missing.map((r) => `- ${r.label}${r.status === "to_correct" && r.reviewComment ? ` (à corriger : ${r.reviewComment})` : ""}`).join("\n"),
+                    "Merci de nous les transmettre dès que possible.",
+                    agency.name,
+                  ].join("\n\n")}
+                />
+                {directEmail && (
+                  <MissingDocumentsEmailButton
+                    caseId={c.id}
+                    email={client.email}
+                    optedOut={client.emailOptOut}
+                    items={missing.map((r) => ({ label: r.label, status: r.status, comment: r.status === "to_correct" ? r.reviewComment : undefined }))}
+                  />
+                )}
+              </div>
             </Card>
           )}
           <Section title="Pièces du dossier">
@@ -547,7 +569,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
           {permissions.financeWrite && c.status !== "cancelled" && fromInvoice && !charges.some((x) => x.remainingMinor > 0) && (
             <Section title="Enregistrer un paiement" id="paiement">
               <Notice tone="warning" title={`Facture ${fromInvoice.number}`}>
-                Pour enregistrer son encaissement, ajoutez d&apos;abord les prestations convenues (section « Prestations convenues » ci-dessus) :
+                Pour enregistrer son encaissement, ajoutez d&apos;abord son montant au reste à payer du dossier (bouton sur la page de la facture), ou les prestations convenues (section « Prestations convenues » ci-dessus) :
                 le paiement se répartit sur elles, délivre un reçu et met à jour le reste à payer du dossier.
               </Notice>
             </Section>

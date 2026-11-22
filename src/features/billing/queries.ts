@@ -52,6 +52,17 @@ export async function getBilling() {
     subscription: ctx.subscription,
     writable: ctx.writable,
     memberCount: activeMembers(data.members).filter((m) => m.hasAccount !== false).length,
+    // Même calcul que la page Équipe et que la base (private.check_invitation_limit) : une invitation encore
+    // valable occupe déjà une place.
+    pendingInvitations: canRead
+      ? ((await ctx.supabase
+          .from("invitations")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", ctx.organizationId)
+          .is("accepted_at", null)
+          .is("revoked_at", null)
+          .gt("expires_at", new Date().toISOString())).count ?? 0)
+      : 0,
     plans: (plansResult.data ?? []).map((r: Record<string, unknown>) => toPlan(r)),
     payments,
   };

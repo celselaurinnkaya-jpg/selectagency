@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { instantiateSteps } from "./instantiate";
 import { caseKindLabel, isStructuralStep, resolveTemplate, templatesForCategory, WORKFLOW_TEMPLATES } from "./templates";
 
 describe("modèles d'étapes", () => {
@@ -24,5 +25,12 @@ describe("modèles d'étapes", () => {
     const structural = steps.filter((s) => isStructuralStep(s, steps)).map((s) => s.key);
     expect(structural).toEqual(expect.arrayContaining(["school_choice", "institution_response", "enrolment", "visa_prep", "visa_granted", "visa_refused", "departure_prep", "closed"]));
     expect(structural).not.toContain("documents");
+  });
+});
+
+describe("nombre d'étapes annoncé sur le site", () => {
+  it("est celui d'un dossier créé avec le modèle, clôture comprise", () => {
+    for (const template of WORKFLOW_TEMPLATES) expect(instantiateSteps("dossier", template).length).toBe(template.steps.length);
+    expect(WORKFLOW_TEMPLATES.find((t) => t.key === "campus_france")?.steps.length).toBe(14);
   });
 });

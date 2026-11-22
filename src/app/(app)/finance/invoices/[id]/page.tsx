@@ -7,9 +7,10 @@ import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader, StatusBadge } from "@/components/shared/ui";
 import { INVOICE_OVERDUE, INVOICE_STATUS } from "@/lib/domain/labels";
-import { formatMoney } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { formatDay } from "@/features/invoices/document";
 import { InvoiceDocument } from "@/features/invoices/InvoiceDocument";
+import { InvoiceBalanceForm } from "@/features/invoices/InvoiceBalanceForm";
 import { InvoiceToolbar } from "@/features/invoices/InvoiceToolbar";
 import { getInvoice } from "@/features/invoices/queries";
 import { emailSendingEnabled } from "@/lib/email/brevo";
@@ -28,7 +29,7 @@ async function Invoice({ params, searchParams }: PageProps<"/finance/invoices/[i
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getInvoice(id);
   if (!detail) notFound();
-  const { invoice: inv, client, travelCase, document, images, canWrite, canDelete, phoneDigits } = detail;
+  const { invoice: inv, client, travelCase, document, images, canWrite, canDelete, phoneDigits, isOwner, payableWith, settledBy, agency, balance } = detail;
   const total = formatMoney(inv.totalMinor, inv.currency);
   const message = [
     `Bonjour ${client.firstName},`,
@@ -83,11 +84,61 @@ async function Invoice({ params, searchParams }: PageProps<"/finance/invoices/[i
             canDelete={canDelete}
             phoneDigits={phoneDigits}
             message={message}
+            isOwner={isOwner}
+            totalMinor={inv.totalMinor}
+            currency={inv.currency}
+            payableWith={payableWith.map((p) => ({
+              id: p.id,
+              receiptNumber: p.receiptNumber ?? "",
+              label: `${formatDate(p.paidAt, agency.timezone, "dateTime")} · ${p.methodLabel}`,
+              amountMinor: p.amountMinor,
+            }))}
           />
         </div>
       </div>
 
       <InvoiceDocument data={document} images={images} />
+
+      {/* Un seul reste à payer : celui du dossier. La facture y entre une fois, sur décision d'une personne. */}
+      {balance && travelCase && (inv.status === "issued" || inv.status === "paid") && (
+        <div className="mt-6 print:hidden">
+          {balance.linked ? (
+            <Notice tone="success" title="Reste à payer du dossier">
+              Le montant de cette facture est compris dans le reste à payer du dossier {travelCase.reference} (prestation « Facture {inv.number} »).
+            </Notice>
+          ) : canWrite ? (
+            <Notice title="Reste à payer du dossier">
+              <InvoiceBalanceForm
+                invoiceId={inv.id}
+                caseReference={travelCase.reference}
+                totalLabel={formatMoney(inv.totalMinor, inv.currency)}
+                otherChargesLabel={balance.otherChargesMinor > 0 ? formatMoney(balance.otherChargesMinor, inv.currency) : undefined}
+              />
+            </Notice>
+          ) : (
+            <Notice title="Reste à payer du dossier">
+              Le montant de cette facture n&apos;est pas encore dans le reste à payer du dossier {travelCase.reference}.
+            </Notice>
+          )}
+        </div>
+      )}
+
+      {settledBy.length > 0 && (
+        <div className="mt-6 print:hidden">
+          <Notice tone="success" title="Facture réglée par">
+            <ul className="space-y-1">
+              {settledBy.map((p) => (
+                <li key={p.id}>
+                  <Link href={`/finance/receipts/${p.id}`} className="font-medium underline">
+                    Reçu {p.receiptNumber}
+                  </Link>{" "}
+                  · <span className="tabular-nums">{formatMoney(p.amountMinor, p.currency)}</span> · {formatDate(p.paidAt, agency.timezone)}
+                </li>
+              ))}
+            </ul>
+          </Notice>
+        </div>
+      )}
 
       <div className="mt-6 print:hidden">
         {/* Une facture ne crée ni paiement ni reçu : l'argent reçu s'enregistre dans le dossier, qui tient le reste à payer. */}

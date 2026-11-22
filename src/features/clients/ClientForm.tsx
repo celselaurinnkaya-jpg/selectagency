@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
+import { CountryOptions } from "@/components/shared/CountryOptions";
 import { initialFormState } from "@/lib/form-state";
 import {
   CLIENT_SOURCE,
@@ -21,6 +22,7 @@ import type { Client } from "@/lib/domain/types";
 import { saveClientAction } from "./actions";
 
 interface Option {
+  frequent?: boolean;
   value: string;
   label: string;
 }
@@ -129,7 +131,8 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           </FormField>
 
           <FormField id="serviceMotive" label="Motif de service" error={e.serviceMotive}>
-            <select id="serviceMotive" name="serviceMotive" defaultValue={v.serviceMotive ?? client?.serviceMotive ?? "study_abroad"} className={selectClass}>
+            <select id="serviceMotive" name="serviceMotive" defaultValue={v.serviceMotive ?? client?.serviceMotive ?? ""} className={selectClass}>
+              <option value="">— Non précisé —</option>
               {Object.entries(SERVICE_MOTIVES).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -175,11 +178,7 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
               className={selectClass}
             >
               <option value="">— Non précisé —</option>
-              {countries.map((c) => (
-                <option key={c.value} value={c.label}>
-                  {c.label}
-                </option>
-              ))}
+              <CountryOptions options={countries} byLabel />
               <option value="__OTHER__">Autre nationalité (saisir manuellement)...</option>
             </select>
             {natSelect === "__OTHER__" && (
@@ -252,11 +251,7 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
               onChange={(e) => setResidenceSelect(e.target.value)}
               className={selectClass}
             >
-              {countries.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
+              <CountryOptions options={countries} />
               <option value="__OTHER__">Autre pays (saisir manuellement)...</option>
             </select>
             {residenceSelect === "__OTHER__" && (

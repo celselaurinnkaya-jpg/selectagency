@@ -35,7 +35,7 @@ const clientSchema = z.object({
   residenceCountry: z.string().trim().min(1, "Choisissez ou indiquez le pays de résidence.").max(80),
   city: z.string().trim().min(1, "Indiquez la ville.").max(80),
   address: z.string().trim().max(250).optional(),
-  phone: z.string().trim().min(6, "Indiquez le numéro de téléphone."),
+  phone: z.string().trim().min(1, "Indiquez le numéro de téléphone.").min(6, "Numéro invalide : il est trop court. Exemple : +237 6 99 00 00 00."),
   whatsapp: z.string().trim().optional(),
   email: z.union([z.literal(""), z.string().trim().email("Adresse e-mail invalide.")]).optional(),
   preferredLanguage: z.string().min(1, "Choisissez la langue de communication.").max(10),
@@ -213,9 +213,13 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
   // Partenaire : la base crée ou déplace la commission (refus si elle est déjà payée).
   const partnerError = await applyClientPartner(ctx, saved.id, existing?.partnerId, partner.partnerId);
 
+  const isProspect = existing?.status === "prospect";
   revalidatePath("/clients");
+  revalidatePath("/prospects");
   revalidatePath(`/clients/${saved.id}`);
-  redirect(`/clients/${saved.id}?ok=${existing ? "client-modifie" : "client-cree"}${partnerError ? "&partenaire=refuse" : ""}`);
+  revalidatePath(`/prospects/${saved.id}`);
+  const target = isProspect ? `/prospects/${saved.id}` : `/clients/${saved.id}`;
+  redirect(`${target}?ok=${existing ? (isProspect ? "prospect-modifie" : "client-modifie") : "client-cree"}${partnerError ? "&partenaire=refuse" : ""}`);
 }
 
 export const createClientAction = saveClientAction;

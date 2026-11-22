@@ -142,7 +142,7 @@ export function ServiceProgress({
       {canEdit && next && (
         <Button type="button" variant="outline" disabled={pending} onClick={() => toggle(next)} className="w-full justify-start sm:w-auto">
           <Check aria-hidden />
-          {pending ? "Enregistrement…" : `Étape faite : ${next.label}`}
+          {pending ? "Enregistrement…" : `Marquer « ${next.label} » comme faite`}
         </Button>
       )}
       <details className="text-sm">

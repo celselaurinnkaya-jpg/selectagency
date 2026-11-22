@@ -117,7 +117,9 @@ async function Team() {
         </div>
         {canAdd && members.length === 1 && (
           <p className="mt-3 text-sm text-slate-600">
-            Vous êtes seul dans l&apos;agence pour l&apos;instant. Invitez vos collaborateurs : chacun aura son compte et ne verra que ce que son rôle permet.
+            {invitations.some((i) => !i.expired)
+              ? "Vous êtes le seul membre actif pour l'instant : une invitation en attente occupe déjà une place, jusqu'à ce que la personne crée son compte."
+              : "Vous êtes seul dans l'agence pour l'instant. Invitez vos collaborateurs : chacun aura son compte et ne verra que ce que son rôle permet."}
           </p>
         )}
       </Section>

@@ -115,6 +115,10 @@ export async function updateSubscriptionAction(_prev: FormState, formData: FormD
   if (input.status === "trialing" && !input.trialEndsAt) {
     return { message: "Certains champs sont à corriger.", fieldErrors: { trialEndsAt: ["Indiquez la fin de l'essai."] }, values };
   }
+  // Rapport de re-test du 22/11 : un abonnement « actif » affichait une prochaine échéance « — ».
+  if ((input.status === "active" || input.status === "past_due") && !input.currentPeriodEnd) {
+    return { message: "Certains champs sont à corriger.", fieldErrors: { currentPeriodEnd: ["Indiquez la date de la prochaine échéance."] }, values };
+  }
 
   const { error } = await user.supabase.rpc("platform_update_subscription", {
     p_org: input.organizationId,
@@ -201,6 +205,15 @@ export async function replyTicketAction(_prev: FormState, formData: FormData): P
   if (error) return { message: dbMessage(error), values };
   refresh();
   return { ok: true, message: "Réponse publiée : l'agence la voit dans sa demande." };
+}
+
+export async function setDemoRequestStatusAction(formData: FormData): Promise<void> {
+  const parsed = z.object({ requestId: z.uuid(), status: z.enum(["new", "contacted", "closed"]) }).safeParse(formValues(formData));
+  if (!parsed.success) return;
+  const user = await platformAdminForAction();
+  if (!user) return;
+  await user.supabase.rpc("platform_set_demo_request_status", { p_id: parsed.data.requestId, p_status: parsed.data.status });
+  refresh();
 }
 
 export async function setTicketStatusAction(formData: FormData): Promise<void> {

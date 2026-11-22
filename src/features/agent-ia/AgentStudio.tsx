@@ -76,7 +76,7 @@ const TEMPLATE_PRESETS = [
     key: "support_client",
     title: "Support Client Polyvalent (Recommandé)",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le service client d'élite pour notre agence.
+Tu es le service client d'élite de l'agence {{agence}}.
 Tu aides les clients de façon amicale, chaleureuse et naturelle, exactement comme un membre d'expérience de notre équipe.
 Tu réponds aux questions, clarifies les démarches, orientes les prospects et assures une expérience client irréprochable.
 
@@ -92,7 +92,7 @@ Tu réponds aux questions, clarifies les démarches, orientes les prospects et a
     key: "visas",
     title: "Spécialiste Procédures Visas",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le spécialiste consulaire de notre agence.
+Tu es le spécialiste consulaire de l'agence {{agence}}.
 Ton rôle est d'orienter les voyageurs sur les pièces à fournir et le montage des dossiers pour les visas Schengen, Canada, USA, Turquie et Dubaï.
 
 # RÈGLES DE SÉCURITÉ
@@ -104,7 +104,7 @@ Ton rôle est d'orienter les voyageurs sur les pièces à fournir et le montage 
     key: "studies",
     title: "Conseiller Campus France & Études",
     prompt: `# DESCRIPTION DU RÔLE
-Tu es le conseiller mobilité internationale de notre agence.
+Tu es le conseiller mobilité internationale de l'agence {{agence}}.
 Tu accompagnes les bacheliers et étudiants dans leurs projets d'études à l'étranger (Campus France, universités canadiennes et européennes).
 
 # MISSIONS
@@ -142,9 +142,12 @@ export function AgentStudio({
   // Onglet actif : par défaut sur "all" pour voir immédiatement les 3 parties (Prompt, Documents PDF, Liens)
   const [activeTab, setActiveTab] = useState<StudioTab>("all");
 
+  // Le prompt porte le nom de l'agence : modèles avec {{agence}}, et anciens prompts qui citaient le logiciel.
+  const withAgencyName = (text: string) => text.replaceAll("{{agence}}", agencyName).replace(/\bSELECT Agency\b/g, agencyName);
+
   // États du formulaire de l'agent (synchronisés avec l'agent actif)
   const [promptText, setPromptText] = useState(
-    activeAgent?.systemInstructions || TEMPLATE_PRESETS[0].prompt
+    withAgencyName(activeAgent?.systemInstructions || TEMPLATE_PRESETS[0].prompt)
   );
   const [modelTier, setModelTier] = useState<"haiku" | "sonnet">(
     activeAgent?.modelTier || "haiku"
@@ -204,7 +207,7 @@ export function AgentStudio({
     setSelectedAgentId(newId);
     const nextAgent = agents.find((a) => a.id === newId);
     if (nextAgent) {
-      setPromptText(nextAgent.systemInstructions || TEMPLATE_PRESETS[0].prompt);
+      setPromptText(withAgencyName(nextAgent.systemInstructions || TEMPLATE_PRESETS[0].prompt));
       setModelTier(nextAgent.modelTier);
       setResponseDelay(nextAgent.responseDelaySeconds ?? 15);
       setFacebookUrl(nextAgent.facebookUrl || "");
@@ -714,7 +717,7 @@ export function AgentStudio({
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setPromptText(t.prompt)}
+                        onClick={() => setPromptText(withAgencyName(t.prompt))}
                         className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-700 hover:bg-slate-100 transition"
                       >
                         {t.title}

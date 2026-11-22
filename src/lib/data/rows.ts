@@ -491,7 +491,10 @@ export function paymentToRow(p: Payment): Row {
   };
 }
 
-export const EXPENSE = columns("id", "case_id", "expense_type", "label", "supplier", "amount_minor", "currency", "paid_at", "recorded_by");
+export const EXPENSE = columns(
+  "id", "case_id", "expense_type", "label", "supplier", "amount_minor", "currency", "paid_at", "recorded_by",
+  "receipt_path", "approval_status", "reviewed_at", "review_note",
+);
 
 export function toExpense(r: Row): Expense {
   return {
@@ -504,6 +507,10 @@ export function toExpense(r: Row): Expense {
     currency: str(r.currency),
     paidAt: iso(r.paid_at),
     recordedBy: str(r.recorded_by),
+    receiptPath: optStr(r.receipt_path),
+    approvalStatus: (optStr(r.approval_status) as Expense["approvalStatus"]) ?? "approved",
+    reviewedAt: r.reviewed_at ? iso(r.reviewed_at) : undefined,
+    reviewNote: optStr(r.review_note),
   };
 }
 
@@ -518,6 +525,7 @@ export function expenseToRow(e: Expense): Row {
     currency: e.currency,
     paid_at: e.paidAt,
     recorded_by: e.recordedBy,
+    approval_status: e.approvalStatus ?? "approved",
   };
 }
 

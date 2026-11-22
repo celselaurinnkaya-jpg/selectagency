@@ -26,6 +26,7 @@ import { APPOINTMENT_KIND, APPOINTMENT_STATUS, STEP_KIND } from "@/lib/domain/la
 import { formatDate, formatMoney, formatRelativeDay } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getDashboard } from "@/features/dashboard/queries";
+import { FinanceWatchCards, hasFinanceWatch } from "@/features/finance/FinanceWatch";
 import { ClockPanel } from "@/features/attendance/AttendanceForms";
 import { getMyClock } from "@/features/attendance/queries";
 
@@ -55,9 +56,11 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
     return (
       <div className="space-y-4">
       {confirmation && <Notice tone="success">{confirmation}</Notice>}
-      <Card>
-        <ClockPanel clock={clock} showMissingLink />
-      </Card>
+      {!clock.exempt && (
+        <Card>
+          <ClockPanel clock={clock} showMissingLink />
+        </Card>
+      )}
       <EmptyState
         icon={FolderPlus}
         title="Bienvenue dans votre espace"
@@ -88,10 +91,12 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           {d.agency.name} · <span className="inline-block first-letter:uppercase">{formatDate(d.now.toISOString(), tz, "weekday")}</span>
         </p>
         </div>
-        {/* Pointage de l'arrivée et du départ (Présences). */}
-        <div className="rounded-xl border border-white/15 bg-white/5 p-3 lg:max-w-md">
-          <ClockPanel clock={clock} onNavy showMissingLink />
-        </div>
+        {/* Pointage de l'arrivée et du départ (Présences), sauf pour un membre dispensé. */}
+        {!clock.exempt && (
+          <div className="rounded-xl border border-white/15 bg-white/5 p-3 lg:max-w-md">
+            <ClockPanel clock={clock} onNavy showMissingLink />
+          </div>
+        )}
       </div>
 
       <Section title="Accès rapide">
@@ -159,15 +164,29 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
           <StatCard label="En attente d'un tiers" value={d.kpis.waitingThirdParty} hint="Établissement, consulat, administration" icon={Hourglass} href="/cases?attente=external_event" />
           <StatCard label="Dossiers incomplets" value={d.kpis.incomplete} hint={`${d.kpis.missingDocuments} pièce(s) obligatoire(s) manquante(s)`} icon={FileWarning} href="/documents?vue=manquants" tone={d.kpis.incomplete ? "danger" : "navy"} />
           <StatCard label="Rendez-vous" value={d.kpis.upcomingAppointments} hint="Dans les 7 prochains jours" icon={CalendarDays} href="/appointments" />
-          <StatCard label="Tâches en retard" value={d.kpis.overdueTasks} hint="Échéance dépassée" icon={AlertTriangle} href="/tasks?vue=en-retard" tone={d.kpis.overdueTasks ? "danger" : "navy"} />
+          {/* Tâches ET prochaines actions de dossier en retard : les mêmes que dans « À traiter aujourd'hui ». */}
+          <StatCard
+            label="En retard"
+            value={d.kpis.overdueTasks + d.kpis.overdueCaseActions}
+            hint={`${d.kpis.overdueTasks} tâche(s) · ${d.kpis.overdueCaseActions} action(s) de dossier`}
+            icon={AlertTriangle}
+            href={d.kpis.overdueTasks ? "/tasks?vue=en-retard" : "#a-traiter"}
+            tone={d.kpis.overdueTasks + d.kpis.overdueCaseActions ? "danger" : "navy"}
+          />
           <StatCard label="Dossiers clôturés" value={d.kpis.closedInPeriod} hint={d.period.label} icon={CheckCircle2} href="/cases?statut=closed" tone="success" />
         </div>
       </Section>
 
       {d.canSeeFinance && (
       <Section title="Finances" action={<Link href="/finance" className="text-sm font-medium text-navy-700 hover:underline">Détail financier</Link>}>
+        {hasFinanceWatch(d.financeWatch) && (
+          <div className="mb-4">
+            <p className="mb-2 text-sm font-semibold text-slate-800">À surveiller</p>
+            <FinanceWatchCards watch={d.financeWatch} timeZone={tz} />
+          </div>
+        )}
         {d.finance.length === 0 ? (
-          <p className="text-sm text-slate-600">Aucun paiement ni dépense enregistré.</p>
+          <p className="text-sm text-slate-600">Aucun paiement, aucune dépense et aucun reste à recevoir pour le moment.</p>
         ) : (
           d.finance.map((f) => (
             <div key={f.currency} className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:grid-cols-3">

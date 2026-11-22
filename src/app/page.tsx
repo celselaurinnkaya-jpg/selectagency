@@ -22,7 +22,6 @@ import {
   Plane,
   Receipt,
   Route,
-  Send,
   ShieldCheck,
   Smartphone,
   UserPlus,
@@ -31,11 +30,13 @@ import {
 } from "lucide-react";
 import { cn } from "cn";
 import { Logo } from "@/components/brand/Logo";
-import { Notice, PlannedAction, SectionTitle } from "@/components/shared/ui";
+import { SectionTitle } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
 import { HeroPreview, PhonePreview } from "@/features/landing/visuals";
 import { WORKFLOW_DISCLAIMER, WORKFLOW_TEMPLATES } from "@/features/workflows/templates";
 import { isDemoEnabled } from "@/lib/env";
+import { countryOptions, RESIDENCE_COUNTRIES } from "@/lib/countries";
+import { DemoRequestForm } from "@/features/demo-requests/DemoRequestForm";
 import type { CaseCategory, StepKind } from "@/lib/domain/types";
 
 // Page d'accueil publique. Règle du plan (Phase 8) : aucune affirmation invérifiable, donc ni faux
@@ -50,16 +51,17 @@ const NAV = [
   { href: "#contact", label: "Contact" },
 ];
 
-// Coordonnées FICTIVES, affichées comme telles, en attendant les vraies : à remplacer ici.
-// Volontairement sans lien (mailto:, tel:, wa.me) : rien ne doit partir vers une adresse inventée.
-// Le domaine .example est réservé et ne peut appartenir à personne.
-const CONTACT: { icon: LucideIcon; label: string; value: string }[] = [
-  { icon: Mail, label: "E-mail", value: "contact@selectagency.example" },
-  { icon: Phone, label: "Téléphone", value: "+237 6XX XX XX XX" },
-  { icon: MessageCircle, label: "WhatsApp", value: "+237 6XX XX XX XX" },
-  { icon: MapPin, label: "Adresse", value: "Douala, Cameroun" },
-  { icon: Clock, label: "Horaires", value: "Du lundi au vendredi, de 8 h à 17 h" },
-];
+// Coordonnées publiques de SELECT Agency. Une ligne n'apparaît que si sa valeur est renseignée : aucune
+// coordonnée inventée n'est affichée. Téléphone et WhatsApp au format international (ex. « +242 06 000 00 00 »).
+const CONTACT_DETAILS = { email: "", phone: "", whatsapp: "", address: "", hours: "" };
+
+const CONTACT: { icon: LucideIcon; label: string; value: string; href?: string }[] = [
+  { icon: Mail, label: "E-mail", value: CONTACT_DETAILS.email, href: `mailto:${CONTACT_DETAILS.email}` },
+  { icon: Phone, label: "Téléphone", value: CONTACT_DETAILS.phone, href: `tel:${CONTACT_DETAILS.phone.replace(/[^\d+]/g, "")}` },
+  { icon: MessageCircle, label: "WhatsApp", value: CONTACT_DETAILS.whatsapp, href: `https://wa.me/${CONTACT_DETAILS.whatsapp.replace(/\D/g, "")}` },
+  { icon: MapPin, label: "Adresse", value: CONTACT_DETAILS.address },
+  { icon: Clock, label: "Horaires", value: CONTACT_DETAILS.hours },
+].filter((c) => c.value.trim() !== "");
 
 const CATEGORY_ICONS: Record<CaseCategory, LucideIcon> = {
   study_abroad: GraduationCap,
@@ -100,7 +102,7 @@ const FEATURES: { icon: LucideIcon; title: string; text: string; soon?: boolean 
   { icon: ListChecks, title: "Tâches", text: "Le travail de chaque membre de l'équipe, les échéances et les retards à rattraper." },
   { icon: UserPlus, title: "Équipe et rôles", text: "Invitez vos collègues par un lien personnel et donnez à chacun le rôle qui correspond à son travail." },
   { icon: LayoutDashboard, title: "Tableau de bord", text: "Les dossiers à traiter, les pièces en attente et les encaissements du moment, dès l'ouverture." },
-  { icon: CalendarDays, title: "Rendez-vous", text: "Entretiens, dépôts et échéances au même endroit.", soon: true },
+  { icon: CalendarDays, title: "Rendez-vous", text: "Entretiens, dépôts et échéances au même endroit." },
 ];
 
 const STATS = [
@@ -138,7 +140,7 @@ const FAQ = [
   },
   {
     q: "Puis-je envoyer des messages WhatsApp à mes clients ?",
-    a: "SELECT Agency prépare le message (pièces manquantes, rappel de rendez-vous, solde à régler). Vous l'envoyez ensuite vous-même depuis WhatsApp, et le message est noté « préparé » dans l'historique du client.",
+    a: "Oui, de deux façons. SELECT Agency prépare les messages courants (pièces manquantes, rappel de rendez-vous, solde à régler) : vous les envoyez vous-même depuis WhatsApp, et ils sont notés « préparés » dans l'historique du client. Avec l'option Agent IA (formules PRO et BUSINESS), un assistant peut aussi répondre à vos clients sur votre numéro WhatsApp Business, au nom de votre agence, une fois ce numéro connecté par la procédure officielle de Meta ; un conseiller reprend la main à tout moment.",
   },
   {
     q: "Combien coûte SELECT Agency ?",
@@ -303,7 +305,8 @@ export default function HomePage() {
           <ul className="reveal -mx-4 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-3">
             {WORKFLOW_TEMPLATES.map((template, i) => {
               const Icon = CATEGORY_ICONS[template.category];
-              const steps = template.steps.filter((s) => s.kind !== "closure");
+              // Toutes les étapes, clôture comprise : le même nombre que dans un dossier créé avec ce modèle.
+              const steps = template.steps;
               return (
                 <li
                   key={template.key}
@@ -481,41 +484,43 @@ export default function HomePage() {
           </div>
         </section>
 
-        {/* Contact (coordonnées fictives pour le moment) */}
+        {/* Contact : coordonnées réelles (si renseignées) et formulaire de démonstration */}
         <section id="contact" className="mx-auto max-w-6xl scroll-mt-20 px-4 pt-16 sm:px-6 sm:pt-24">
           <div className="grid gap-10 lg:grid-cols-[2fr_3fr]">
             <div>
               <SectionIntro
                 eyebrow="Contact"
                 title="Parlons de votre agence"
-                text="Une question, une démonstration pour votre équipe ou l'envie de rejoindre les agences pilotes : écrivez-nous ou appelez-nous."
+                text="Une question, une démonstration pour votre équipe ou l'envie de rejoindre les agences pilotes : laissez-nous vos coordonnées, l'équipe SELECT vous recontacte."
               />
-              <div className="reveal mt-6 space-y-5">
-                <Notice tone="warning" title="Coordonnées provisoires">
-                  Ces coordonnées sont fictives : elles seront remplacées par les vraies avant l&apos;ouverture au public.
-                </Notice>
-                <PlannedAction label="Demander une démonstration" reason="Formulaire bientôt disponible." icon={Send} />
-              </div>
+              {CONTACT.length > 0 && (
+                <ul className="reveal mt-6 grid gap-3">
+                  {CONTACT.map((c) => (
+                    <li
+                      key={c.label}
+                      className="group flex items-start gap-4 rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.1)] ring-1 ring-border transition duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-navy-200 sm:p-5"
+                    >
+                      <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-citron-400 transition duration-300 group-hover:scale-110 group-hover:-rotate-6">
+                        <c.icon className="size-5" aria-hidden />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm text-slate-500">{c.label}</p>
+                        {c.href ? (
+                          <a href={c.href} className="mt-1 block font-semibold break-words text-navy-800 tabular-nums hover:underline">
+                            {c.value}
+                          </a>
+                        ) : (
+                          <p className="mt-1 font-semibold break-words text-navy-800 tabular-nums">{c.value}</p>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <ul className="grid gap-3 sm:grid-cols-2">
-              {CONTACT.map((c) => (
-                <li
-                  key={c.label}
-                  className="reveal group flex items-start gap-4 rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.1)] ring-1 ring-border transition duration-300 hover:-translate-y-1 hover:ring-2 hover:ring-navy-200 sm:p-5 sm:first:col-span-2"
-                >
-                  <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-navy-800 text-citron-400 transition duration-300 group-hover:scale-110 group-hover:-rotate-6">
-                    <c.icon className="size-5" aria-hidden />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                      {c.label}
-                      <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">Fictif</span>
-                    </p>
-                    <p className="mt-1 font-semibold break-words text-navy-800 tabular-nums">{c.value}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="reveal">
+              <DemoRequestForm countries={countryOptions(RESIDENCE_COUNTRIES)} />
+            </div>
           </div>
         </section>
 

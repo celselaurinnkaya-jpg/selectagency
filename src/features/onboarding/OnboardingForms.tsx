@@ -4,11 +4,12 @@ import { useActionState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
+import { CountryOptions } from "@/components/shared/CountryOptions";
 import { initialFormState } from "@/lib/form-state";
 import { CURRENCY_OPTIONS, TIMEZONE_OPTIONS } from "@/lib/format";
 import { acceptInvitationAction, createAgencyAction, createDemoAgencyAction } from "./actions";
 
-export function CreateAgencyForm({ countries, defaultFullName }: { countries: { code: string; name: string }[]; defaultFullName: string }) {
+export function CreateAgencyForm({ countries, defaultFullName }: { countries: { code: string; name: string; frequent?: boolean }[]; defaultFullName: string }) {
   const [state, action, pending] = useActionState(createAgencyAction, initialFormState);
   const e = state.fieldErrors ?? {};
   const v = state.values ?? {};
@@ -21,11 +22,7 @@ export function CreateAgencyForm({ countries, defaultFullName }: { countries: { 
       <div className="grid gap-4 sm:grid-cols-2">
         <FormField id="countryCode" label="Pays" required error={e.countryCode}>
           <select id="countryCode" name="countryCode" defaultValue={v.countryCode ?? "CM"} className={selectClass}>
-            {countries.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.name}
-              </option>
-            ))}
+            <CountryOptions options={countries.map((c) => ({ value: c.code, label: c.name, frequent: c.frequent }))} />
           </select>
         </FormField>
         <FormField id="city" label="Ville" required error={e.city}>

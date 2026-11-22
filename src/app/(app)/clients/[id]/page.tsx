@@ -33,6 +33,7 @@ import {
 } from "@/lib/domain/labels";
 import { activeMembers } from "@/lib/domain/members";
 import { formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/format";
+import { isMissingRequired } from "@/lib/domain/requirements";
 import { AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { getClientDetail } from "@/features/clients/queries";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
@@ -77,11 +78,11 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
-  const base = `/clients/${client.id}`;
-  const missing = requirements.filter((r) => r.isRequired && (r.status === "not_received" || r.status === "to_correct"));
+  const isProspect = client.status === "prospect";
+  const base = isProspect ? `/prospects/${client.id}` : `/clients/${client.id}`;
+  const missing = requirements.filter(isMissingRequired);
   const nextAppointment = appointments.find((a) => new Date(a.startsAt).getTime() > now.getTime());
   const balance = cases.reduce((sum, s) => sum + s.finance.balanceMinor, 0);
-  const isProspect = client.status === "prospect";
   const messages = prepareMessages(
     messageTemplates,
     {

@@ -37,7 +37,7 @@ async function Billing({ searchParams }: { searchParams: PageProps<"/settings/bi
   if (!billing.canRead) {
     return <Notice>Seuls le propriétaire et les administrateurs de l&apos;agence consultent l&apos;abonnement.</Notice>;
   }
-  const { subscription, plans, payments, memberCount, now, agency } = billing;
+  const { subscription, plans, payments, memberCount, pendingInvitations, now, agency } = billing;
   const tz = agency.timezone;
   if (!subscription) {
     return <Notice tone="warning">Aucun abonnement n&apos;est enregistré pour cette agence. Écrivez au support SELECT.</Notice>;
@@ -65,12 +65,23 @@ async function Billing({ searchParams }: { searchParams: PageProps<"/settings/bi
         <StatCard label="Formule" value={<span className="text-base">{subscription.plan?.name ?? (status === "trialing" ? "Essai gratuit" : "Non définie")}</span>} icon={CreditCard} />
         <StatCard
           label={status === "trialing" || status === "trial_expired" ? "Fin de l'essai" : "Prochaine échéance"}
-          value={<span className="text-base">{deadline ? formatDate(deadline, tz) : "—"}</span>}
-          hint={deadline && status !== "trial_expired" ? `dans ${daysLeft(deadline, now)} jour(s)` : undefined}
+          value={<span className="text-base">{deadline ? formatDate(deadline, tz) : "À fixer"}</span>}
+          hint={
+            deadline
+              ? status !== "trial_expired"
+                ? `dans ${daysLeft(deadline, now)} jour(s)`
+                : undefined
+              : "L'équipe SELECT n'a pas encore fixé cette date : écrivez au support."
+          }
           icon={CalendarClock}
           tone={status === "trial_expired" || status === "suspended" ? "danger" : "navy"}
         />
-        <StatCard label="Membres" value={limit ? `${memberCount} / ${limit}` : memberCount} hint={limit ? "places de la formule" : "sans limite de membres"} icon={Users} />
+        <StatCard
+          label="Places utilisées"
+          value={limit ? `${memberCount + pendingInvitations} / ${limit}` : memberCount + pendingInvitations}
+          hint={`${memberCount} membre(s)${pendingInvitations ? ` et ${pendingInvitations} invitation(s) en attente` : ""}${limit ? "" : ", sans limite"}`}
+          icon={Users}
+        />
       </div>
 
       {status === "trialing" && (

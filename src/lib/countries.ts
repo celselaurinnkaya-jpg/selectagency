@@ -38,5 +38,8 @@ export const WORLD_COUNTRIES = [
 export function countryOptions(priority: string[]) {
   const sorted = (codes: string[]) => codes.map((code) => ({ code, name: countryName(code) })).sort((a, b) => a.name.localeCompare(b.name, "fr"));
   const first = new Set(priority);
-  return [...sorted(priority), ...sorted(WORLD_COUNTRIES.filter((code) => !first.has(code)))];
+  return [
+    ...sorted(priority).map((c) => ({ ...c, frequent: true })),
+    ...sorted(WORLD_COUNTRIES.filter((code) => !first.has(code))).map((c) => ({ ...c, frequent: false })),
+  ];
 }

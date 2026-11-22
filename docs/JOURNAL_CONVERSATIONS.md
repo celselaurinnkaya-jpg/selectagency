@@ -15,6 +15,95 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 77 — 22 Novembre 2026 (Antigravity) — Plan d'action Rapport v2 : Surbrillance prospects, clôture des relances, menu Nouveau et Clôture de caisse
+* **Demande de l'utilisateur** : « vas y » — Exécution et finalisation pas à pas en suivant le plan.
+* **Réalisations** :
+  1. **Surbrillance du menu sur une fiche prospect & Cycle de vie** :
+     - Création de la route `/prospects/[id]` et de l'édition `/prospects/[id]/edit` : le menu « Prospects » reste allumé tant que la personne est prospect.
+     - Navigation vers `/prospects/[id]` depuis la liste des prospects.
+     - Redirection intelligente vers `/clients/[id]` dès que la personne est convertie en client.
+  2. **Clôture automatique des relances lors de la conversion d'un prospect** :
+     - Dans `convertProspectAction` (`src/features/prospects/actions.ts`), toutes les tâches ouvertes de prospection du contact sont automatiquement marquées terminées (`status = 'done'`).
+  3. **Menu « Nouveau » de l'en-tête enrichi** :
+     - Ajout de « Nouvelle facture » (`/finance/invoices/new`) et « Nouvelle dépense » (`/finance/expenses#nouvelle-depense`) avec leurs icônes dédiées dans `HeaderMenus.tsx`.
+  4. **Clôture de caisse journalière (Point 17 du plan)** :
+     - Migration `supabase/migrations/20261122170000_cloture_caisse.sql` : table `cash_closings` (encaissements du jour, espèces théoriques vs réelles, écart calculé, répartition par méthode, notes).
+     - Fonction sécurisée `close_daily_cash` avec vérification des rôles (`owner`, `admin`, `accountant`) et journalisation dans `activity_events`.
+     - Nouvel onglet Finance « Clôture de caisse » (`/finance/cash-closing`), avec interface `CashClosingForm`, récapitulatif en direct et tableau d'historique des clôtures.
+* **Vérifications & Tests** :
+  - `npm run typecheck` : 0 erreur TypeScript.
+  - `npm test` : 36 suites de tests exécutées, 276/276 tests passés avec succès (100%).
+* **Statut Git** : Déploiement demandé explicitement par l'utilisateur (« fais le push ») ➔ commit et push vers `origin/main` pour mise en ligne sur Vercel.
+
+### Session 76 — 22 Novembre 2026 (Claude Code) — Rapport de re-test v2 : points 6 à 14 du plan, et nouveaux problèmes 4 et 5
+* **Point 6 — lenteur d'un dossier (10 s)** :
+  - `getCaseDetail` : client, devis, factures, fichiers, réglage e-mail et modèles de messages sont lus en même temps (un aller-retour au lieu de six).
+  - Le reste dépend de la région : Vercel exécute le site aux États-Unis (`iad1` par défaut), il faut connaître la région Supabase pour rapprocher les deux. Question posée à l'utilisateur.
+* **Point 7 — factures et prestations reliées (un seul reste à payer)** :
+  - Migration `20261122130000_factures_prestations.sql` : `save_invoice` (même fonction que 20261122100000, déjà publiée et laissée telle quelle) refuse d'émettre une facture sans dossier ; colonne `charges.invoice_id`, fonction `add_invoice_to_charges`. Une facture s'ajoute une seule fois au reste à payer, dans la devise du dossier, sur décision d'une personne (pas d'ajout automatique : une facture qui reprend des prestations déjà convenues ferait payer deux fois).
+  - Application : encadré « Reste à payer du dossier » sur la facture (nature du montant : frais de l'agence ou montant pour un tiers) ; dossier obligatoire dans l'éditeur pour émettre ; message adapté sur le dossier.
+* **Point 8** : bloc « À surveiller » (paiements à vérifier, factures à encaisser, en retard) sur le tableau de bord, composant partagé avec la Synthèse (`FinanceWatch.tsx`, `loadFinanceWatch`). Le reste à recevoir s'affiche même sans paiement.
+* **Point 9** : la carte « Tâches en retard » devient « En retard » : tâches ET actions de dossier en retard (même calcul que « À traiter aujourd'hui »).
+* **Point 10 — option « ne pointe pas »** :
+  - Migration `20261122140000_presences_dispense.sql` : `attendance_settings.exempt_member_ids`, fonction `save_attendance_exemptions`.
+  - Présences : section « Qui pointe ? » (propriétaire et administrateurs) ; un membre dispensé n'est plus compté absent et ne voit plus le bouton de pointage.
+* **Point 11** : bouton « Relancer par WhatsApp » dans l'onglet Documents du dossier, à côté de l'e-mail. C'est le WhatsApp manuel (wa.me, noté « préparé »), pas l'agent IA.
+* **Point 12 — Services** :
+  - bouton « Marquer « … » comme faite » ;
+  - noms affichés « Prénom Nom », sans majuscules forcées.
+* **Point 13** :
+  - « Numéro invalide : il est trop court » pour « 123 » (clients et prospects) ;
+  - motif de service et projet du prospect non préremplis (« — Non précisé — »).
+* **Point 14** :
+  - page Abonnement : « Places utilisées » = membres + invitations en attente, comme la page Équipe et la base ;
+  - échéance absente affichée « À fixer » avec une explication ;
+  - la console SELECT exige la date de prochaine échéance pour un abonnement actif ou en retard ;
+  - texte « seul dans l'agence » adapté aux invitations en attente.
+* **Nouveau problème 4** : listes de pays avec les intitulés « Pays fréquents » et « Tous les pays » (`CountryOptions`), dans 6 formulaires.
+* **Nouveau problème 5** : une seule règle « pièce manquante » (`src/lib/domain/requirements.ts` : obligatoire et non reçue, à corriger ou expirée) pour le dossier, la fiche client, la page Documents et le tableau de bord.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - tests : 271/271 ; tests de la base : 99/99.
+* **À appliquer par l'utilisateur** : `npx supabase db push` (6 migrations du 22/11 : 100000, 110000, 120000, 130000, 140000, et celles à venir).
+* **Non envoyé sur GitHub.**
+
+### Session 75 — 22 Novembre 2026 (Claude Code) — Rapport de re-test v2 : plan suivi point par point (points 1 à 5)
+* **Demande de l'utilisateur** : « voilà le deuxième rapport, je veux que tu suives parfaitement le plan sans sauter un point ».
+* **Point 1 — majuscules perdues dans les réponses de l'agent IA (bloquant)** :
+  - Cause : un de mes scripts (travail repris dans le commit 65fbf2b, session 72) avait abîmé deux expressions du testeur (`src/features/agent-ia/actions.ts`). `/[DEMANDE_TRANSFERT]/g` retirait chaque lettre D, E, M, A, N, T, R, S, F ; les `\b` de la détection de transfert étaient devenus des caractères de contrôle.
+  - Les vraies réponses WhatsApp (`runner.ts`) n'étaient pas touchées.
+  - Correction : une seule fonction `finalizeAgentReply` (`src/lib/ai/reply.ts`), sans expression régulière pour la balise, utilisée par le testeur et par les vraies réponses. Tests : 10 réponses variées.
+  - Essai réel : 10 questions posées à Gemini avec les vraies consignes. Aucune lettre perdue, ni « SELECT Agency » ni « ** ». L'essai était temporaire et le fichier a été supprimé.
+  - Leçon : ne plus écrire de code contenant des barres obliques inversées par le terminal (heredoc ou `node -e`), et ne pas utiliser `String.replace` avec un texte contenant « $` ». Passer par des fichiers écrits directement.
+* **Point 2 — nom de l'agence dans le prompt par défaut** :
+  - modèles du Studio avec `{{agence}}`, remplacé par le nom de l'agence ;
+  - anciens prompts : « SELECT Agency » remplacé à l'affichage ;
+  - agents créés par défaut (`queries.ts`, `actions.ts`) au nom de l'agence.
+* **Point 3 — site public** :
+  - coordonnées fictives retirées : `CONTACT_DETAILS` dans `src/app/page.tsx`, vide tant que l'utilisateur n'a pas donné les vraies ; une ligne vide n'est pas affichée ;
+  - formulaire « Demander une démonstration » réel (`src/features/demo-requests/`), avec un champ piège à robots ;
+  - migration `20261122110000_demandes_demo.sql` : table `private.demo_requests`, fonctions `request_demo` (visiteurs, 3 demandes par téléphone ou e-mail en 24 h, 300 par jour), `platform_demo_requests` et `platform_set_demo_request_status` (console) ;
+  - nouvelle page de la console : « Démonstrations » (`/admin/demonstrations`) ;
+  - tests de la base ajoutés.
+* **Point 4 — site public** :
+  - « Bientôt » retiré de Rendez-vous ;
+  - nombre d'étapes = celui d'un vrai dossier (clôture comprise : Campus France 14) ; l'illustration affiche « Étape 5 sur 14 », calculé depuis le modèle ; un test verrouille ce nombre ;
+  - FAQ WhatsApp : l'agent IA est mentionné (point 29 du rapport).
+* **Point 5 — « Marquer comme payée »** :
+  - migration `20261122120000_factures_payees.sql` :
+    - table `invoice_payments` ;
+    - `mark_invoice_paid` : propriétaire seulement ; paiements confirmés avec reçu, même client, même dossier, même devise, total suffisant ; un paiement ne règle qu'une facture ;
+    - `set_invoice_status` refuse « payée », et seule la propriétaire remet « à payer » ;
+    - un déclencheur remet la facture « à payer » si un paiement qui la réglait est annulé.
+  - Application : formulaire « Marquer comme payée » (propriétaire) avec les reçus à cocher et le total couvert ; encadré « Facture réglée par » avec des liens vers les reçus.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - tests : 267/267 ; tests de la base : 97/97.
+* **À faire par l'utilisateur** :
+  - donner les vraies coordonnées (e-mail, téléphone, WhatsApp) ;
+  - lancer `npx supabase db push` (3 migrations : factures verrouillées, demandes de démonstration, factures payées).
+* **Non envoyé sur GitHub.**
+
 ### Session 74 — 22 Novembre 2026 (Claude Code) — Verrouillage complet des factures, puis Finance A à D
 * **Demande de l'utilisateur** : « vas-y le verrouillage des factures, puis la Finance (A à D) ».
 * **Verrouillage des factures** :

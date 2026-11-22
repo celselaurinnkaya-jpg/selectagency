@@ -5,6 +5,7 @@ import { EVENT, toEvent } from "@/lib/data/rows";
 import { dayKey, formatMoney } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { agencyFinance } from "@/features/finance/calculations";
+import { loadFinanceWatch } from "@/features/finance/queries";
 import { summarizeCase } from "@/features/cases/summary";
 
 export interface ToHandleItem {
@@ -29,8 +30,11 @@ export async function getDashboard(periodKey?: string) {
     payments: true,
     expenses: true,
   });
-  // Activité récente : les six derniers événements seulement, sans relire tout l'historique.
-  const { data: recentEvents, error } = await ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(6);
+  // Activité récente (les six derniers événements seulement) et finances à surveiller, lues en même temps.
+  const [{ data: recentEvents, error }, financeWatch] = await Promise.all([
+    ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(6),
+    loadFinanceWatch(ctx, data.payments, data.clients, now, data.agency.timezone),
+  ]);
   if (error) throw new Error(`Lecture impossible (activity_events) : ${error.message}`);
   data.events = ((recentEvents ?? []) as unknown as Record<string, unknown>[]).map(toEvent);
   const tz = data.agency.timezone;
@@ -136,11 +140,27 @@ export async function getDashboard(periodKey?: string) {
       closedInPeriod: data.cases.filter((c) => c.closedAt && inPeriod(c.closedAt)).length,
       upcomingAppointments: upcoming.length,
       overdueTasks: data.tasks.filter((t) => (t.status === "todo" || t.status === "in_progress") && new Date(t.dueAt).getTime() < now.getTime()).length,
+      // Prochaines actions de dossier en retard, comptées comme dans « À traiter aujourd'hui » (sans doublon avec une tâche).
+      overdueCaseActions: toHandle.filter((item) => item.kind === "next_action").length,
     },
-    finance: agencyFinance(data.charges, data.payments, data.expenses, period).map((f) => ({
-      ...f,
-      balanceDueMinor: balancesByCurrency.get(f.currency) ?? 0,
-    })),
+    // Une devise avec un reste à recevoir s'affiche même sans paiement ni dépense (rapport de re-test du 22/11).
+    finance: (() => {
+      const movements = agencyFinance(data.charges, data.payments, data.expenses, period);
+      const currencies = [...new Set([...movements.map((f) => f.currency), ...[...balancesByCurrency].filter(([, v]) => v > 0).map(([c]) => c)])].sort();
+      return currencies.map((currency) => {
+        const f = movements.find((m) => m.currency === currency);
+        return {
+          currency,
+          receivedMinor: f?.receivedMinor ?? 0,
+          agencyRevenueMinor: f?.agencyRevenueMinor ?? 0,
+          thirdPartyReceivedMinor: f?.thirdPartyReceivedMinor ?? 0,
+          operatingExpensesMinor: f?.operatingExpensesMinor ?? 0,
+          estimatedMarginMinor: f?.estimatedMarginMinor ?? 0,
+          balanceDueMinor: balancesByCurrency.get(currency) ?? 0,
+        };
+      });
+    })(),
+    financeWatch,
     toHandle,
     upcoming,
     recentCases: summaries

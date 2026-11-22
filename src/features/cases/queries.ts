@@ -9,7 +9,7 @@ import { imageUrls } from "@/features/invoices/document";
 import { loadInvoices, loadInvoiceSettings } from "@/features/invoices/queries";
 import { loadQuotes, quoteTotal } from "@/features/quotes/queries";
 import { loadMessageTemplates } from "@/features/communications/queries";
-import { backOptions, forwardOptions, requiresConfirmation } from "@/features/workflows/rules";
+import { backOptions, forwardOptions, jumpOptions, requiresConfirmation } from "@/features/workflows/rules";
 import { summarizeCase } from "./summary";
 import { caseSummarySpec } from "./summary-document";
 import { activeMembers } from "@/lib/domain/members";
@@ -76,22 +76,29 @@ export async function getCaseDetail(id: string) {
   });
   const travelCase = data.cases[0];
   if (!travelCase) return null;
-  const { clients = [] } = await loadTables(ctx, { clients: (q) => q.eq("id", travelCase.clientId) });
+
+  // Rapport de re-test du 22/11 : la page d'un dossier mettait 10 s. Ces lectures ne dépendent que du dossier :
+  // elles partent toutes en même temps au lieu de se suivre (un aller-retour avec la base au lieu de six).
+  const requirementIds = data.requirements.map((r) => r.id);
+  const financeRead = allowed(ctx, "finance.read");
+  const [{ clients = [] }, quotes, invoices, files, { data: emailSettings }, messageTemplates] = await Promise.all([
+    loadTables(ctx, { clients: (q) => q.eq("id", travelCase.clientId) }),
+    financeRead ? loadQuotes(ctx, id) : Promise.resolve([]),
+    financeRead ? loadInvoices(ctx, (q) => q.eq("case_id", id)) : Promise.resolve([]),
+    // Fichiers des pièces : la RLS ne les montre qu'aux rôles qui peuvent ouvrir les documents.
+    allowed(ctx, "documents.read") && requirementIds.length
+      ? fetchRows(ctx, "document_files", DOCUMENT_FILE.list, (q) => q.in("requirement_id", requirementIds), ["created_at", "id"]).then((rows) => rows.map(toDocumentFile))
+      : Promise.resolve([]),
+    // E-mail « avancement du dossier » activé par l'agence (désactivé par défaut).
+    ctx.supabase.from("email_settings").select("notify_case_status").eq("organization_id", ctx.organizationId).maybeSingle(),
+    loadMessageTemplates(ctx),
+  ]);
   data.clients = clients;
 
   const summary = summarizeCase(data, travelCase, now);
-  const [quotes, invoices] = allowed(ctx, "finance.read") ? await Promise.all([loadQuotes(ctx, id), loadInvoices(ctx, (q) => q.eq("case_id", id))]) : [[], []];
-  // Fichiers des pièces : la RLS ne les montre qu'aux rôles qui peuvent ouvrir les documents.
-  const requirementIds = data.requirements.map((r) => r.id);
-  const files =
-    allowed(ctx, "documents.read") && requirementIds.length
-      ? (await fetchRows(ctx, "document_files", DOCUMENT_FILE.list, (q) => q.in("requirement_id", requirementIds), ["created_at", "id"])).map(toDocumentFile)
-      : [];
   const steps = [...data.steps].sort((a, b) => a.position - b.position);
   const payments = [...data.payments].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
   const current = summary.current;
-  // E-mail « avancement du dossier » activé par l'agence (désactivé par défaut).
-  const { data: emailSettings } = await ctx.supabase.from("email_settings").select("notify_case_status").eq("organization_id", ctx.organizationId).maybeSingle();
 
   return {
     summary,
@@ -111,6 +118,9 @@ export async function getCaseDetail(id: string) {
       ? {
           forward: forwardOptions(steps, current),
           back: backOptions(steps, current),
+          jump: jumpOptions(steps, current),
+          outcomeKeys: steps.filter((s) => s.kind === "outcome").map((s) => s.key),
+          closureKeys: steps.filter((s) => s.kind === "closure").map((s) => s.key),
           canSkip: current.isOptional,
           needsConfirmation: requiresConfirmation(current),
         }
@@ -126,7 +136,7 @@ export async function getCaseDetail(id: string) {
     expenses: data.expenses,
     events: [...data.events].sort((a, b) => b.at.localeCompare(a.at)),
     communications: [...data.communications].sort((a, b) => (b.occurredAt ?? b.at).localeCompare(a.occurredAt ?? a.at)),
-    messageTemplates: await loadMessageTemplates(ctx),
+    messageTemplates,
     canManageTemplates: allowed(ctx, "settings.manage"),
   };
 }
