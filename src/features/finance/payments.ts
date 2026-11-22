@@ -21,6 +21,12 @@ export const PAYMENT_METHODS: { value: string; kind: PaymentMethodKind; label: s
  * Montant saisi (« 150 000 », « 99,90 ») → unités mineures entières. Renvoie null si la saisie
  * n'est pas un montant positif valide pour la devise (trop de décimales, lettres…).
  */
+/** Montant prêt à saisir dans un champ (inverse de parseAmount) : 50000 XAF → « 50000 », 1250 EUR → « 12.50 ». */
+export function amountInputValue(amountMinor: number, currency: string): string {
+  const digits = minorUnits(currency);
+  return digits === 0 ? String(amountMinor) : (amountMinor / 10 ** digits).toFixed(digits);
+}
+
 export function parseAmount(input: string, currency: string): number | null {
   const digits = minorUnits(currency);
   const compact = input.replace(/[\s  ]/g, "").replace(",", ".");

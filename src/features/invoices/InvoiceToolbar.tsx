@@ -4,7 +4,8 @@ import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
 import { Download, MessageCircle, Pencil, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FormMessage } from "@/components/shared/form";
+import { describedBy, FormField, FormMessage } from "@/components/shared/form";
+import { Textarea } from "@/components/ui/textarea";
 import type { InvoiceStatus } from "@/lib/domain/types";
 import { EmailDocumentButton } from "@/features/printables/EmailDocumentButton";
 import { initialFormState } from "@/lib/form-state";
@@ -12,10 +13,8 @@ import { deleteInvoiceAction, logInvoiceSharedAction, setInvoiceStatusAction } f
 
 const NEXT: Record<InvoiceStatus, { status: "issued" | "paid" | "cancelled"; label: string; variant: "accent" | "outline" | "destructive" }[]> = {
   draft: [{ status: "issued", label: "Émettre la facture", variant: "accent" }],
-  issued: [
-    { status: "paid", label: "Marquer comme payée", variant: "accent" },
-    { status: "cancelled", label: "Annuler la facture", variant: "outline" },
-  ],
+  // L'annulation a son propre formulaire, avec un motif obligatoire.
+  issued: [{ status: "paid", label: "Marquer comme payée", variant: "accent" }],
   paid: [{ status: "issued", label: "Remettre à payer", variant: "outline" }],
   cancelled: [],
 };
@@ -52,6 +51,8 @@ export function InvoiceToolbar({
   const [deleteError, setDeleteError] = useState<string>();
   const [deleting, startDelete] = useTransition();
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [cancelState, cancelAction, cancelPending] = useActionState(setInvoiceStatusAction, initialFormState);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const pdfUrl = `/finance/invoices/${invoiceId}/pdf`;
@@ -173,11 +174,57 @@ export function InvoiceToolbar({
                 {n.label}
               </Button>
             ))}
+            {status === "issued" && !confirmCancel && (
+              <Button type="button" variant="outline" size="sm" onClick={() => setConfirmCancel(true)}>
+                Annuler la facture
+              </Button>
+            )}
           </div>
           <FormMessage message={statusState.message} tone={statusState.ok ? "success" : "error"} />
         </form>
       )}
-      {status === "paid" && canWrite && <p className="text-xs text-slate-500">Une facture payée est verrouillée : remettez-la « à payer » pour la corriger.</p>}
+
+      {canWrite && status === "issued" && confirmCancel && (
+        <form action={cancelAction} className="space-y-2 rounded-xl border border-red-200 bg-red-50 p-4">
+          <input type="hidden" name="invoiceId" value={invoiceId} />
+          <input type="hidden" name="status" value="cancelled" />
+          <FormField id="cancel-reason" label="Motif de l'annulation" required error={cancelState.fieldErrors?.reason}>
+            <Textarea
+              id="cancel-reason"
+              name="reason"
+              rows={2}
+              required
+              minLength={5}
+              maxLength={300}
+              placeholder="Ex. : montant erroné, facture refaite sous le numéro suivant."
+              {...describedBy("cancel-reason", cancelState.fieldErrors?.reason)}
+            />
+          </FormField>
+          <p className="text-xs text-red-900">
+            La facture <strong>{number}</strong> restera visible, marquée « annulée », avec son numéro. Le motif est noté dans l&apos;historique du
+            client.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="destructive" size="sm" disabled={cancelPending}>
+              {cancelPending ? "Annulation…" : "Confirmer l'annulation"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmCancel(false)}>
+              Garder la facture
+            </Button>
+          </div>
+          <FormMessage message={cancelState.ok ? undefined : cancelState.message} />
+        </form>
+      )}
+
+      {status === "issued" && canWrite && (
+        <p className="text-xs text-slate-500">Facture émise : elle ne se modifie plus. En cas d&apos;erreur, annulez-la avec un motif, puis créez une nouvelle facture.</p>
+      )}
+      {status === "paid" && canWrite && (
+        <p className="text-xs text-slate-500">
+          Une facture payée est verrouillée. Si elle a été marquée payée par erreur, remettez-la « à payer ». Pour corriger son contenu, annulez-la
+          avec un motif et créez-en une nouvelle.
+        </p>
+      )}
     </div>
   );
 }

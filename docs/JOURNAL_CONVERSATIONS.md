@@ -15,6 +15,66 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 74 — 22 Novembre 2026 (Claude Code) — Verrouillage complet des factures, puis Finance A à D
+* **Demande de l'utilisateur** : « vas-y le verrouillage des factures, puis la Finance (A à D) ».
+* **Verrouillage des factures** :
+  - Migration `supabase/migrations/20261122100000_factures_verrouillees.sql` (`create or replace`, mêmes signatures) :
+    - `save_invoice` refuse toute facture qui n'est pas un brouillon ;
+    - `save_invoice` refuse une date d'émission dans le futur (un jour de marge) ;
+    - `delete_invoice` ne supprime qu'un brouillon.
+    - **À appliquer par l'utilisateur** : `npx supabase db push`. D'ici là, l'application bloque déjà ces cas.
+  - Application :
+    - motif obligatoire pour annuler une facture (5 à 300 caractères), écrit dans l'historique (« Facture … : annulée. Motif : … ») ;
+    - date d'émission future refusée, selon le fuseau de l'agence ;
+    - textes de la barre d'outils adaptés (facture émise ou payée verrouillée).
+  - Tests de la base mis à jour : facture émise ni modifiable ni supprimable, annulation avec motif, brouillon seul supprimable, date future refusée.
+* **Finance** :
+  - **A** : la Synthèse affiche le « Reste à recevoir » même sans paiement ni dépense, au lieu de « Aucun mouvement ».
+  - **D** : nouveau bloc « À surveiller » en tête de la Synthèse :
+    - paiements à vérifier ;
+    - factures à encaisser ;
+    - factures en retard (les 5 plus anciennes, avec un lien vers chacune).
+  - **B** : page Devis, section « Nouveau devis » : on choisit le dossier, et « Préparer le devis » ouvre l'onglet Finance du dossier sur la section Devis (`#devis`).
+  - **C** (choix : bouton, sans création automatique de paiement) :
+    - sur une facture émise, encadré « Encaissement de cette facture » avec le bouton « Enregistrer l'encaissement », qui ouvre le paiement du dossier avec le montant de la facture proposé (`?facture=…#paiement`) ;
+    - sans prestation, le dossier explique d'ajouter d'abord les prestations ;
+    - facture sans dossier : explication et lien vers le client.
+* **Vérifications** :
+  - `tsc` : 0 erreur ; ESLint : 0 erreur ;
+  - tests : 259/259, plus un nouveau test `amountInputValue` ;
+  - tests de la base : 95/95.
+  - Pas d'essai dans l'application : la base locale est celle de production.
+* **Non envoyé sur GitHub** (en attente de demande explicite).
+
+### Session 73 — 22 Novembre 2026 (Claude Code) — Vérification : le rapport de test a-t-il été entièrement traité ?
+* **Demande de l'utilisateur** : « fais juste la vérification si tout le rapport a été réalisé ». Aucun code modifié.
+* **État vérifié** :
+  - commit `65fbf2b` (session 72, Antigravity), déjà poussé sur GitHub ;
+  - `tsc` : 0 erreur ; tests : 259/259.
+* **Fait** :
+  - agent IA au nom de l'agence et mise en forme WhatsApp ;
+  - fiche client sans valeurs imposées ;
+  - badge « Actif sur WhatsApp » selon la ligne réelle, faux score supprimé ;
+  - libellés des modèles d'IA ;
+  - réponses IA simulées retirées ;
+  - liste mondiale des pays ;
+  - texte « Phase 5 » supprimé ;
+  - avis « données de démonstration » réservé à la démo ;
+  - virgule orpheline dans la liste clients.
+* **Fait en partie** :
+  - factures émises verrouillées dans l'application seulement : les fonctions de la base (`save_invoice`, `delete_invoice`) acceptent encore la modification et la suppression d'une facture émise ;
+  - pas de motif obligatoire à l'annulation ;
+  - date d'émission dans le futur toujours acceptée.
+* **Pas fait** :
+  - site public (coordonnées « Fictif », Rendez-vous « Bientôt », FAQ WhatsApp) ;
+  - Finance : Synthèse, factures et paiements à vérifier, bouton devis, lien facture-paiement, devises de la calculatrice ;
+  - tableau de bord, présences, relances, Services ;
+  - dossiers (sauts d'étape), documents (message après vérification, relance WhatsApp, contrôle du contenu des PDF) ;
+  - places Équipe et Abonnement, échéance de l'abonnement ;
+  - heure du bac à sable, performance, page /app, menu « Nouveau », recherche, support ;
+  - message pour un téléphone invalide, type « Étudiant » imposé au prospect ;
+  - données « TEST CLAUDE » toujours en base.
+
 ### Session 72 — 21 Novembre 2026 (Antigravity) — Traitement intégral du Rapport de test complet (4 bloquants & finitions)
 * **Demande de l'utilisateur** : « voila le rapport de text , analyse et ameliore chaque etape » (Document : *Rapport de test complet — SELECT Agency* par @Celse Laurin, 21/11/2026).
 * **Analyse & Solutions apportées** :

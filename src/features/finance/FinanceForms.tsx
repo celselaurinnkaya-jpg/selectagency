@@ -66,6 +66,7 @@ export function RecordPaymentForm({
   pendingLabel,
   defaultDate,
   defaultPayer,
+  defaultAmount = "",
 }: {
   caseId: string;
   currency: string;
@@ -74,10 +75,12 @@ export function RecordPaymentForm({
   pendingLabel?: string;
   defaultDate: string;
   defaultPayer: string;
+  /** Montant proposé (ex. le total d'une facture du dossier) : la personne le vérifie avant d'enregistrer. */
+  defaultAmount?: string;
 }) {
   const [state, setState] = useState<FormState>(initialFormState);
   const [saving, startTransition] = useTransition();
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(defaultAmount);
   const [method, setMethod] = useState("cash");
   const [status, setStatus] = useState<(typeof PAYMENT_STATES)[number]["value"]>("recorded");
   const [reference, setReference] = useState("");

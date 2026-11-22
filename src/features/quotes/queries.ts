@@ -24,9 +24,21 @@ export async function listQuotes() {
   const { data, ctx } = await readAgency({ cases: true, clients: true });
   const canSeeFinance = allowed(ctx, "finance.read");
   const quotes = canSeeFinance ? await loadQuotes(ctx) : [];
+  const canWrite = allowed(ctx, "finance.write");
   return {
     agency: data.agency,
     canSeeFinance,
+    canWrite,
+    // Dossiers où un devis peut être préparé (comme dans l'onglet Finance du dossier : ni clos, ni annulé).
+    openCases: canWrite
+      ? data.cases
+          .filter((c) => c.status === "active" || c.status === "on_hold")
+          .sort((a, b) => b.openedAt.localeCompare(a.openedAt))
+          .map((c) => {
+            const client = data.clients.find((x) => x.id === c.clientId);
+            return { id: c.id, label: `${c.reference} — ${client ? `${client.firstName} ${client.lastName}` : "client"} — ${c.title}` };
+          })
+      : [],
     rows: quotes.map((quote) => ({
       quote,
       total: quoteTotal(quote),

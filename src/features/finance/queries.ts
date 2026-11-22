@@ -4,30 +4,70 @@ import { loadTables, readAgency } from "@/lib/data/agency";
 import { dayKey } from "@/lib/format";
 import { lastMonths, resolvePeriod } from "@/lib/period";
 import { summarizeCase } from "@/features/cases/summary";
-import { imageUrls } from "@/features/invoices/document";
-import { loadInvoiceSettings } from "@/features/invoices/queries";
+import { imageUrls, isOverdue } from "@/features/invoices/document";
+import { loadInvoices, loadInvoiceSettings } from "@/features/invoices/queries";
 import { agencyFinance } from "./calculations";
 import { documentFromPayment } from "./receipt";
 import { activeMembers } from "@/lib/domain/members";
 import type { Payment } from "@/lib/domain/types";
 import { campaignStats } from "@/features/communications/campaigns";
 
+/** Montants par devise (une agence peut encaisser en XAF et en EUR : jamais de conversion). */
+function sumByCurrency<T>(items: T[], currency: (item: T) => string, amount: (item: T) => number) {
+  const sums = new Map<string, number>();
+  for (const item of items) sums.set(currency(item), (sums.get(currency(item)) ?? 0) + amount(item));
+  return [...sums].sort(([a], [b]) => a.localeCompare(b)).map(([code, amountMinor]) => ({ currency: code, amountMinor }));
+}
+
 export async function getFinanceOverview(periodKey?: string) {
   const { data, now, ctx } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true, expenses: true });
-  const period = resolvePeriod(periodKey, now, data.agency.timezone);
+  const tz = data.agency.timezone;
+  const period = resolvePeriod(periodKey, now, tz);
+  const canSeeFinance = allowed(ctx, "finance.read");
   const summaries = data.cases.map((c) => summarizeCase(data, c, now));
   const balances = summaries.filter((s) => s.finance.balanceMinor > 0).sort((a, b) => b.finance.balanceMinor - a.finance.balanceMinor);
+
+  // Encaissements et dépenses de la période. Le reste à recevoir des dossiers s'affiche aussi pour une
+  // devise sans aucun paiement ni dépense : avant, la page disait « Aucun mouvement » et le cachait.
+  const movements = agencyFinance(data.charges, data.payments, data.expenses, period);
+  const currencies = [...new Set([...movements.map((t) => t.currency), ...balances.map((b) => b.finance.currency)])].sort();
+  const totals = currencies.map((currency) => {
+    const t = movements.find((m) => m.currency === currency);
+    return {
+      currency,
+      receivedMinor: t?.receivedMinor ?? 0,
+      agencyRevenueMinor: t?.agencyRevenueMinor ?? 0,
+      thirdPartyReceivedMinor: t?.thirdPartyReceivedMinor ?? 0,
+      operatingExpensesMinor: t?.operatingExpensesMinor ?? 0,
+      disbursementsMinor: t?.disbursementsMinor ?? 0,
+      estimatedMarginMinor: t?.estimatedMarginMinor ?? 0,
+      thirdPartyHeldMinor: t?.thirdPartyHeldMinor ?? 0,
+      hasMovements: Boolean(t),
+      balanceDueMinor: balances.filter((b) => b.finance.currency === currency).reduce((sum, b) => sum + b.finance.balanceMinor, 0),
+    };
+  });
+
+  // À surveiller en premier : paiements annoncés pas encore vérifiés, et factures émises pas encore payées.
+  const pending = data.payments.filter((p) => p.status === "pending");
+  const today = dayKey(now, tz);
+  const unpaid = canSeeFinance ? await loadInvoices(ctx, (q) => q.eq("status", "issued")) : [];
+  const overdue = unpaid.filter((invoice) => isOverdue(invoice.status, invoice.dueDate, today)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
   return {
     agency: data.agency,
     isDemo: ctx.isDemo,
     now,
     period,
-    canSeeFinance: allowed(ctx, "finance.read"),
-    totals: agencyFinance(data.charges, data.payments, data.expenses, period).map((t) => ({
-      ...t,
-      balanceDueMinor: balances.filter((b) => b.finance.currency === t.currency).reduce((sum, b) => sum + b.finance.balanceMinor, 0),
-    })),
+    canSeeFinance,
+    totals,
     balances,
+    pendingPayments: { count: pending.length, totals: sumByCurrency(pending, (p) => p.currency, (p) => p.amountMinor) },
+    unpaidInvoices: {
+      count: unpaid.length,
+      totals: sumByCurrency(unpaid, (i) => i.currency, (i) => i.totalMinor),
+      overdueCount: overdue.length,
+      overdue: overdue.slice(0, 5).map((invoice) => ({ invoice, client: data.clients.find((c) => c.id === invoice.clientId) })),
+    },
   };
 }
 

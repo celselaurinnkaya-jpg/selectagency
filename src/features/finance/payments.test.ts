@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Charge } from "@/lib/domain/types";
-import { allocateFifo, parseAmount } from "./payments";
+import { allocateFifo, amountInputValue, parseAmount } from "./payments";
 
 const charge = (id: string, amountMinor: number): Charge => ({ id, caseId: "c", label: id, chargeType: "agency_fee", amountMinor, currency: "XAF" });
 
@@ -40,5 +40,15 @@ describe("répartition d'un paiement", () => {
 
   it("refuse un paiement supérieur au reste à payer", () => {
     expect(allocateFifo(70001, charges)).toBeNull();
+  });
+});
+
+describe("amountInputValue", () => {
+  it("propose le montant d'une facture dans le format que parseAmount relit", () => {
+    expect(amountInputValue(50000, "XAF")).toBe("50000");
+    expect(amountInputValue(1250, "EUR")).toBe("12.50");
+    for (const [minor, currency] of [[50000, "XAF"], [1250, "EUR"], [99, "USD"]] as const) {
+      expect(parseAmount(amountInputValue(minor, currency), currency)).toBe(minor);
+    }
   });
 });

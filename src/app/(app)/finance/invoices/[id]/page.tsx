@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Wallet } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader, StatusBadge } from "@/components/shared/ui";
 import { INVOICE_OVERDUE, INVOICE_STATUS } from "@/lib/domain/labels";
@@ -88,10 +90,38 @@ async function Invoice({ params, searchParams }: PageProps<"/finance/invoices/[i
       <InvoiceDocument data={document} images={images} />
 
       <div className="mt-6 print:hidden">
-        <Notice>
-          La facture est un document remis au client : marquer « payée » ne crée aucun reçu. Enregistrez l&apos;encaissement dans le dossier
-          (onglet Finance) pour délivrer un reçu numéroté.
-        </Notice>
+        {/* Une facture ne crée ni paiement ni reçu : l'argent reçu s'enregistre dans le dossier, qui tient le reste à payer. */}
+        {inv.status === "issued" && canWrite ? (
+          <Notice title="Encaissement de cette facture">
+            {travelCase ? (
+              <>
+                L&apos;argent reçu s&apos;enregistre dans le dossier {travelCase.reference} : il délivre un reçu numéroté et met à jour le reste à
+                payer. Ensuite, marquez cette facture comme payée.
+                <span className="mt-3 block">
+                  <Button asChild variant="accent" size="sm">
+                    <Link href={`/cases/${travelCase.id}?tab=finance&facture=${inv.id}#paiement`}>
+                      <Wallet aria-hidden />
+                      Enregistrer l&apos;encaissement
+                    </Link>
+                  </Button>
+                </span>
+              </>
+            ) : (
+              <>
+                Cette facture n&apos;est liée à aucun dossier. Enregistrez l&apos;argent reçu dans le dossier du client concerné (onglet Finance) :
+                c&apos;est lui qui délivre le reçu. Ensuite, marquez cette facture comme payée.{" "}
+                <Link href={`/clients/${client.id}`} className="font-medium underline">
+                  Voir les dossiers du client
+                </Link>
+              </>
+            )}
+          </Notice>
+        ) : (
+          <Notice>
+            La facture est un document remis au client : marquer « payée » ne crée aucun reçu. L&apos;encaissement s&apos;enregistre dans le dossier
+            (onglet Finance), qui délivre un reçu numéroté.
+          </Notice>
+        )}
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { dbMessage } from "@/lib/data/errors";
 import { INVOICE_STATUS } from "@/lib/domain/labels";
-import { CURRENCY_OPTIONS, formatMoney } from "@/lib/format";
+import { CURRENCY_OPTIONS, dayKey, formatMoney } from "@/lib/format";
 import type { FormState } from "@/lib/form-state";
 import { parseAmount } from "@/features/finance/payments";
 import { invoiceTotals, parseTaxRate } from "./totals";
@@ -73,6 +73,10 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
 
   const ctx = await getAgencyContext();
   if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
+  // Une facture ne s'émet pas à l'avance : sa date d'émission est celle du jour, ou une date passée.
+  if (v.issueDate > dayKey(new Date(), ctx.agency.timezone)) {
+    return { message: "La date d'émission ne peut pas être dans le futur.", fieldErrors: { issueDate: ["Aujourd'hui ou une date passée."] } };
+  }
   const isNew = !v.invoiceId;
   if (!isNew) {
     const { data: existing } = await ctx.supabase
@@ -118,18 +122,28 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
 const statusSchema = z.object({
   invoiceId: z.uuid(),
   status: z.enum(["issued", "paid", "cancelled"]),
+  reason: z.string().trim().max(300, "Motif trop long (300 caractères au plus).").optional(),
 });
 
 export async function setInvoiceStatusAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const parsed = statusSchema.safeParse({ invoiceId: formData.get("invoiceId"), status: formData.get("status") });
-  if (!parsed.success) return { message: "Action inconnue." };
+  const parsed = statusSchema.safeParse({
+    invoiceId: formData.get("invoiceId"),
+    status: formData.get("status"),
+    reason: formData.get("reason") ?? undefined,
+  });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Action inconnue." };
+  // Annuler une facture émise laisse une trace : le motif est écrit dans l'historique du client.
+  const reason = parsed.data.reason ?? "";
+  if (parsed.data.status === "cancelled" && reason.length < 5) {
+    return { message: "Indiquez le motif de l'annulation (5 caractères au moins).", fieldErrors: { reason: ["Motif obligatoire."] } };
+  }
   const ctx = await getAgencyContext();
   if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
   const label = INVOICE_STATUS[parsed.data.status].label.toLowerCase();
   const { error } = await ctx.supabase.rpc("set_invoice_status", {
     p_invoice_id: parsed.data.invoiceId,
     p_status: parsed.data.status,
-    p_event: `Facture {facture} : ${label}.`,
+    p_event: parsed.data.status === "cancelled" ? `Facture {facture} : ${label}. Motif : ${reason}` : `Facture {facture} : ${label}.`,
   });
   if (error) return { message: dbMessage(error) };
   refresh();

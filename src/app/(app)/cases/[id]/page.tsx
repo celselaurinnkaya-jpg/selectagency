@@ -46,6 +46,7 @@ import { AppointmentActions, AppointmentForm } from "@/features/appointments/App
 import { appointmentValues } from "@/features/appointments/values";
 import { AddChargeForm, PendingPaymentActions, RecordPaymentForm } from "@/features/finance/FinanceForms";
 import { formatDay, isOverdue } from "@/features/invoices/document";
+import { amountInputValue } from "@/features/finance/payments";
 import { QuoteForm } from "@/features/quotes/QuoteForms";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
 import { WORKFLOW_DISCLAIMER } from "@/features/workflows/templates";
@@ -109,6 +110,9 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
+  // Arrivée depuis une facture (« Enregistrer l'encaissement ») : son montant est proposé, à vérifier.
+  const fromInvoice = typeof query.facture === "string" ? invoices.find((inv) => inv.id === query.facture && inv.status === "issued") : undefined;
+  const suggestedAmount = fromInvoice && fromInvoice.currency === c.billingCurrency ? amountInputValue(fromInvoice.totalMinor, fromInvoice.currency) : "";
   const base = `/cases/${c.id}`;
   const memberName = (memberId?: string) => members.find((m) => m.id === memberId)?.fullName ?? "—";
   const appointmentMembers = activeMembers(members)
@@ -471,7 +475,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               </Card>
             )}
           </Section>
-          <Section title="Devis">
+          <Section title="Devis" id="devis">
             {quotes.length === 0 ? (
               <p className="mb-3 text-sm text-slate-600">Aucun devis. Un devis accepté par le client devient les prestations convenues du dossier.</p>
             ) : (
@@ -540,10 +544,29 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
               </ul>
             )}
           </Section>
+          {permissions.financeWrite && c.status !== "cancelled" && fromInvoice && !charges.some((x) => x.remainingMinor > 0) && (
+            <Section title="Enregistrer un paiement" id="paiement">
+              <Notice tone="warning" title={`Facture ${fromInvoice.number}`}>
+                Pour enregistrer son encaissement, ajoutez d&apos;abord les prestations convenues (section « Prestations convenues » ci-dessus) :
+                le paiement se répartit sur elles, délivre un reçu et met à jour le reste à payer du dossier.
+              </Notice>
+            </Section>
+          )}
           {permissions.financeWrite && c.status !== "cancelled" && charges.some((x) => x.remainingMinor > 0) && (
-            <Section title="Enregistrer un paiement">
+            <Section title="Enregistrer un paiement" id="paiement">
+              {fromInvoice && (
+                <div className="mb-3">
+                  <Notice title={`Encaissement de la facture ${fromInvoice.number}`}>
+                    {fromInvoice.currency === c.billingCurrency
+                      ? `Montant de la facture proposé : ${formatMoney(fromInvoice.totalMinor, fromInvoice.currency)}. Vérifiez-le avant d'enregistrer, puis marquez la facture comme payée.`
+                      : `La facture est en ${fromInvoice.currency} et le dossier en ${c.billingCurrency} : saisissez le montant reçu dans la devise du dossier.`}
+                  </Notice>
+                </div>
+              )}
               <Card>
                 <RecordPaymentForm
+                  key={fromInvoice?.id ?? "paiement"}
+                  defaultAmount={suggestedAmount}
                   caseId={c.id}
                   currency={c.billingCurrency}
                   remainingLabel={formatMoney(charges.reduce((sum, x) => sum + x.remainingMinor, 0), c.billingCurrency)}

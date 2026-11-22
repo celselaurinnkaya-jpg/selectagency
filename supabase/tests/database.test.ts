@@ -911,33 +911,52 @@ describe("factures", () => {
     await expect(save(KARL, { discount: 400000 })).rejects.toThrow(/remise ne peut pas dépasser/);
     const [draft] = await rows<{ id: string }>(KARL, "select id from public.invoices");
     await expect(save(BRUNO, { id: draft!.id })).rejects.toThrow(/Facture introuvable/);
+    await expect(
+      one(KARL, "select public.save_invoice(null, $1, null, 'XAF', current_date + 5, current_date + 30, '', 0, '', null, false, $2::jsonb, 'x')", [clientId, JSON.stringify(ITEMS)]),
+    ).rejects.toThrow(/dans le futur/);
     // Une tentative refusée ne consomme pas de numéro.
     expect((await save(KARL, { client: otherClientId, caseId: null })).number).toBe(`FAC-${YEAR}-00002`);
   });
 
-  it("modifie, émet, verrouille une facture payée et ne supprime que sur décision d'un responsable", async () => {
+  it("émet un brouillon, verrouille la facture émise et ne supprime qu'un brouillon, sur décision d'un responsable", async () => {
     const id = (await one<{ id: string }>(KARL, "select id from public.invoices where number = $1", [`FAC-${YEAR}-00001`])).id;
+    // Un brouillon se modifie, puis s'émet.
     const edited = await save(LINA, { id, issue: true, items: [{ label: "Accompagnement visa", quantity: 1, unit_amount_minor: 200000, tax_rate: 0 }] });
     expect(edited).toEqual({ id, number: `FAC-${YEAR}-00001`, status: "issued" });
     expect(await one(KARL, "select total_minor::int as total, (select count(*)::int from public.invoice_items where invoice_id = $1) as lines from public.invoices where id = $1", [id])).toEqual({ total: 200000, lines: 1 });
+
+    // Émise : plus de modification ni de suppression, même par un appel direct à la base.
+    await expect(save(LINA, { id })).rejects.toThrow(/émise ne se modifie plus/);
+    await expect(one(MAX, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/Seul un brouillon se supprime/);
+    expect((await one<{ total: number }>(KARL, "select total_minor::int as total from public.invoices where id = $1", [id])).total).toBe(200000);
 
     const status = (who: User, s: string) => one(who, "select public.set_invoice_status($1, $2, 'Facture {facture} : état modifié.')", [id, s]);
     await expect(status(KARL, "draft")).rejects.toThrow(/ne peut pas passer/);
     await expect(status(BRUNO, "paid")).rejects.toThrow(/introuvable/);
     await status(MAX, "paid");
-    await expect(save(KARL, { id })).rejects.toThrow(/payée ou annulée/);
-    await expect(one(KARL, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/payée ne se supprime pas/);
+    await expect(save(KARL, { id })).rejects.toThrow(/émise ne se modifie plus/);
+    await expect(one(MAX, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/Seul un brouillon se supprime/);
+    // Erreur de saisie : la facture payée redevient « à payer », toujours verrouillée.
     await status(KARL, "issued");
     expect((await one<{ paid_at: string | null }>(KARL, "select paid_at from public.invoices where id = $1", [id])).paid_at).toBeNull();
+    await expect(save(KARL, { id })).rejects.toThrow(/émise ne se modifie plus/);
+    // Annulée : elle reste, avec son numéro, et ne se supprime pas.
+    await one(KARL, "select public.set_invoice_status($1, 'cancelled', 'Facture {facture} : annulée. Motif : montant erroné.')", [id]);
+    await expect(one(MAX, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/Seul un brouillon se supprime/);
+    const cancelled = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc limit 1", [caseId]);
+    expect(cancelled.text).toBe(`Facture FAC-${YEAR}-00001 : annulée. Motif : montant erroné.`);
 
-    await expect(one(LINA, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/droit de la supprimer/);
-    await expect(one(BRUNO, "select public.delete_invoice($1, 'x')", [id])).rejects.toThrow(/introuvable/);
-    await one(MAX, "select public.delete_invoice($1, 'Facture {facture} supprimée.')", [id]);
-    expect(await rows(KARL, "select id from public.invoice_items where invoice_id = $1", [id])).toEqual([]);
+    // Un brouillon se supprime, par un responsable seulement.
+    const draft = await save(KARL);
+    expect(draft).toMatchObject({ number: `FAC-${YEAR}-00003`, status: "draft" });
+    await expect(one(LINA, "select public.delete_invoice($1, 'x')", [draft.id])).rejects.toThrow(/droit de la supprimer/);
+    await expect(one(BRUNO, "select public.delete_invoice($1, 'x')", [draft.id])).rejects.toThrow(/introuvable/);
+    await one(MAX, "select public.delete_invoice($1, 'Facture {facture} supprimée.')", [draft.id]);
+    expect(await rows(KARL, "select id from public.invoice_items where invoice_id = $1", [draft.id])).toEqual([]);
     const event = await one<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc limit 1", [caseId]);
-    expect(event.text).toBe(`Facture FAC-${YEAR}-00001 supprimée.`);
-    // Le numéro d'une facture supprimée n'est jamais réutilisé.
-    expect((await save(KARL)).number).toBe(`FAC-${YEAR}-00003`);
+    expect(event.text).toBe(`Facture FAC-${YEAR}-00003 supprimée.`);
+    // Le numéro d'un brouillon supprimé n'est jamais réutilisé.
+    expect((await save(KARL)).number).toBe(`FAC-${YEAR}-00004`);
   });
 });
 

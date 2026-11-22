@@ -3,11 +3,12 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { FileSignature } from "lucide-react";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, EmptyState, PageHeader, StatusBadge } from "@/components/shared/ui";
+import { Card, EmptyState, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { QUOTE_STATUS } from "@/lib/domain/labels";
 import { formatDate, formatMoney } from "@/lib/format";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
+import { NewQuoteChooser } from "@/features/quotes/NewQuoteChooser";
 import { listQuotes } from "@/features/quotes/queries";
 
 export const metadata: Metadata = { title: "Devis" };
@@ -17,7 +18,7 @@ export default function QuotesPage() {
     <>
       <PageHeader
         title="Devis"
-        description="Propositions chiffrées remises aux clients. Un devis accepté devient les prestations du dossier. Pour préparer un devis, ouvrez le dossier, onglet Finance."
+        description="Propositions chiffrées remises aux clients. Un devis se prépare dans le dossier du client : une fois accepté, il devient les prestations du dossier, sur lesquelles on enregistre les paiements."
       />
       <Suspense fallback={<PageSkeleton />}>
         <Quotes />
@@ -27,13 +28,18 @@ export default function QuotesPage() {
 }
 
 async function Quotes() {
-  const { rows, agency, canSeeFinance } = await listQuotes();
+  const { rows, agency, canSeeFinance, canWrite, openCases } = await listQuotes();
   if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
   return (
     <>
       <FinanceTabs />
+      {canWrite && (
+        <Section title="Nouveau devis" className="mb-5">
+          <NewQuoteChooser cases={openCases} />
+        </Section>
+      )}
       {rows.length === 0 ? (
-        <EmptyState icon={FileSignature} title="Aucun devis" description="Préparez un devis depuis l'onglet Finance d'un dossier." />
+        <EmptyState icon={FileSignature} title="Aucun devis" description="Choisissez le dossier du client ci-dessus pour préparer son premier devis." />
       ) : (
         <ul className="space-y-2">
           {rows.map(({ quote, total, travelCase, client }) => (
