@@ -10,7 +10,7 @@ import { agencyFinance } from "./calculations";
 import { documentFromPayment } from "./receipt";
 import { activeMembers } from "@/lib/domain/members";
 import type { AgencyContext } from "@/lib/auth/context";
-import type { Client, Payment } from "@/lib/domain/types";
+import type { Client, Expense, Payment } from "@/lib/domain/types";
 import { campaignStats } from "@/features/communications/campaigns";
 
 /** Montants par devise (une agence peut encaisser en XAF et en EUR : jamais de conversion). */
@@ -56,7 +56,7 @@ export async function getFinanceOverview(periodKey?: string) {
     canSeeFinance,
     totals,
     balances,
-    ...(await loadFinanceWatch(ctx, data.payments, data.clients, now, tz)),
+    ...(await loadFinanceWatch(ctx, data.payments, data.clients, now, tz, data.expenses)),
   };
 }
 
@@ -64,13 +64,16 @@ export async function getFinanceOverview(periodKey?: string) {
  * À surveiller en premier (Synthèse et tableau de bord) : paiements annoncés pas encore vérifiés, factures
  * émises pas encore payées, et les plus anciennes factures en retard.
  */
-export async function loadFinanceWatch(ctx: AgencyContext, payments: Payment[], clients: Client[], now: Date, tz: string) {
+export async function loadFinanceWatch(ctx: AgencyContext, payments: Payment[], clients: Client[], now: Date, tz: string, expenses: Expense[] = []) {
   const pending = payments.filter((p) => p.status === "pending");
+  // Dépenses saisies par un membre, en attente de la validation du propriétaire (hors des chiffres d'ici là).
+  const expensesToValidate = expenses.filter((e) => e.approvalStatus === "pending");
   const today = dayKey(now, tz);
   const unpaid = allowed(ctx, "finance.read") ? await loadInvoices(ctx, (q) => q.eq("status", "issued")) : [];
   const overdue = unpaid.filter((invoice) => isOverdue(invoice.status, invoice.dueDate, today)).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   return {
     pendingPayments: { count: pending.length, totals: sumByCurrency(pending, (p) => p.currency, (p) => p.amountMinor) },
+    pendingExpenses: { count: expensesToValidate.length, totals: sumByCurrency(expensesToValidate, (e) => e.currency, (e) => e.amountMinor) },
     unpaidInvoices: {
       count: unpaid.length,
       totals: sumByCurrency(unpaid, (i) => i.currency, (i) => i.totalMinor),
@@ -122,12 +125,21 @@ export async function listPayments(filter: PaymentFilter = "tous") {
 
 export async function listExpenses() {
   const { data, ctx, now } = await readAgency({ expenses: true, cases: true });
+  // Seuil du justificatif obligatoire (vide = jamais obligatoire), réglé par le propriétaire ou un administrateur.
+  const { data: settings } = await ctx.supabase.from("expense_settings").select("receipt_required_above_minor").eq("organization_id", ctx.organizationId).maybeSingle();
+  const threshold = settings?.receipt_required_above_minor;
   return {
     agency: data.agency,
     isDemo: ctx.isDemo,
     now,
+    organizationId: ctx.organizationId,
     canSeeFinance: allowed(ctx, "finance.read"),
     canWrite: allowed(ctx, "finance.write"),
+    // Seul le propriétaire valide les dépenses saisies par les autres membres.
+    isOwner: ctx.member.role === "owner",
+    canManageSettings: allowed(ctx, "settings.manage"),
+    receiptRequiredAboveMinor: threshold === null || threshold === undefined ? undefined : Number(threshold),
+    pendingCount: data.expenses.filter((e) => e.approvalStatus === "pending").length,
     cases: data.cases
       .filter((c) => c.status === "active" || c.status === "on_hold")
       .sort((a, b) => b.openedAt.localeCompare(a.openedAt))

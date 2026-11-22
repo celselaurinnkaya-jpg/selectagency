@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { AlertTriangle, FileText, Hourglass } from "lucide-react";
+import { AlertTriangle, FileText, Hourglass, Receipt } from "lucide-react";
 import { Card, StatCard } from "@/components/shared/ui";
 import { formatDate, formatMoney } from "@/lib/format";
 import type { FinanceWatch } from "./queries";
@@ -8,11 +8,11 @@ import type { FinanceWatch } from "./queries";
 // Rien ne s'affiche quand il n'y a rien à surveiller.
 
 export function hasFinanceWatch(watch: FinanceWatch): boolean {
-  return watch.pendingPayments.count > 0 || watch.unpaidInvoices.count > 0;
+  return watch.pendingPayments.count > 0 || watch.unpaidInvoices.count > 0 || watch.pendingExpenses.count > 0;
 }
 
 export function FinanceWatchCards({ watch, timeZone, withOverdueList = false }: { watch: FinanceWatch; timeZone: string; withOverdueList?: boolean }) {
-  const { pendingPayments, unpaidInvoices } = watch;
+  const { pendingPayments, unpaidInvoices, pendingExpenses } = watch;
   if (!hasFinanceWatch(watch)) return null;
   return (
     <>
@@ -34,6 +34,16 @@ export function FinanceWatchCards({ watch, timeZone, withOverdueList = false }: 
             hint="Factures émises, pas encore payées"
             icon={FileText}
             href="/finance/invoices?etat=issued"
+          />
+        )}
+        {pendingExpenses.count > 0 && (
+          <StatCard
+            label={`${pendingExpenses.count} dépense(s) à valider`}
+            value={pendingExpenses.totals.map((s) => formatMoney(s.amountMinor, s.currency)).join(" · ")}
+            hint="Saisies par l'équipe : elles comptent une fois validées par le propriétaire"
+            icon={Receipt}
+            href="/finance/expenses"
+            tone="warning"
           />
         )}
         {unpaidInvoices.overdueCount > 0 && (

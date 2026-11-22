@@ -33,7 +33,7 @@ export async function getDashboard(periodKey?: string) {
   // Activité récente (les six derniers événements seulement) et finances à surveiller, lues en même temps.
   const [{ data: recentEvents, error }, financeWatch] = await Promise.all([
     ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(6),
-    loadFinanceWatch(ctx, data.payments, data.clients, now, data.agency.timezone),
+    loadFinanceWatch(ctx, data.payments, data.clients, now, data.agency.timezone, data.expenses),
   ]);
   if (error) throw new Error(`Lecture impossible (activity_events) : ${error.message}`);
   data.events = ((recentEvents ?? []) as unknown as Record<string, unknown>[]).map(toEvent);

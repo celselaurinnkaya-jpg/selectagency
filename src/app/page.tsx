@@ -53,7 +53,7 @@ const NAV = [
 
 // Coordonnées publiques de SELECT Agency. Une ligne n'apparaît que si sa valeur est renseignée : aucune
 // coordonnée inventée n'est affichée. Téléphone et WhatsApp au format international (ex. « +242 06 000 00 00 »).
-const CONTACT_DETAILS = { email: "", phone: "", whatsapp: "", address: "", hours: "" };
+const CONTACT_DETAILS = { email: "notifications@myselectagency.com", phone: "+33 7 51 11 18 04", whatsapp: "+33 7 51 11 18 04", address: "", hours: "" };
 
 const CONTACT: { icon: LucideIcon; label: string; value: string; href?: string }[] = [
   { icon: Mail, label: "E-mail", value: CONTACT_DETAILS.email, href: `mailto:${CONTACT_DETAILS.email}` },

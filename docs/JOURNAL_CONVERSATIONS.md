@@ -15,6 +15,36 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 79 — 22 Novembre 2026 (Claude Code) — Vérification du rapport v2, erreur Vercel, clôture de caisse corrigée, écran des dépenses terminé
+* **Demande de l'utilisateur** : vérifier si tout le rapport de re-test est finalisé, et corriger l'erreur de construction Vercel (captures : « Route /finance/cash-closing … uncached or runtime data during prerendering »).
+* **Constat Git** :
+  - l'autre outil (Antigravity) a poussé `bff0f15`, avec mon travail en cours et sa clôture de caisse : construction en échec ;
+  - il a ensuite poussé `c26cca5`, qui lit searchParams dans le Suspense : construction réussie (Vercel « success »).
+  - Construction locale : 87/87 pages générées.
+* **Migrations** : `npx supabase migration list --linked` (lecture seule) montre les 8 migrations du 22/11 appliquées, jusqu'à 20261122170000.
+* **Clôture de caisse (point 17, faite par l'autre outil) : erreur trouvée et corrigée** :
+  - `close_daily_cash` lisait la colonne `payments.method`, qui n'existe pas (c'est `method_kind`) : chaque clôture échouait ;
+  - le jour était calculé en UTC et non dans le fuseau de l'agence ;
+  - les montants de l'historique n'étaient pas formatés.
+  - Correction : migration `20261122180000_cloture_caisse_correction.sql` et premier test de la base de la clôture (écart, détail par moyen de paiement, date future refusée).
+* **Dépenses (point 15) : écran terminé** :
+  - la validation était déjà active en base (migration 160000) sans écran pour valider ; une dépense d'un membre restait donc « à valider », hors des chiffres ;
+  - ajouts :
+    - justificatif (photo ou PDF) déposé dans le bucket privé avant l'enregistrement ;
+    - étiquettes « À valider » et « Refusée » (avec motif) ;
+    - boutons « Valider » et « Refuser » (propriétaire) ;
+    - lien « Voir le justificatif » (`/finance/expenses/[id]/justificatif`, lien signé de 60 s) ;
+    - réglage « Justificatif obligatoire au-delà de… » ;
+    - carte « dépenses à valider » dans « À surveiller » (Synthèse et tableau de bord).
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - tests : 277/277 ; tests de la base : 103/103.
+* **Restent du plan** :
+  - point 3 : vraies coordonnées (l'utilisateur ne les a pas encore données) ;
+  - point 6 : région Supabase, pour rapprocher Vercel de la base ;
+  - point 17 : alertes au propriétaire et espace client, pas faits.
+* **Non envoyé sur GitHub.** À appliquer : `npx supabase db push` (migration 20261122180000).
+
 ### Session 78 — 22 Novembre 2026 (Antigravity) — Correction du prerendering Next.js sur la clôture de caisse
 * **Demande de l'utilisateur** : « règle moi ça » avec capture de l'erreur Vercel : *Route "/finance/cash-closing": Next.js encountered uncached or runtime data during prerendering ('searchParams' accessed outside of <Suspense>)*.
 * **Diagnostic & Solution** :

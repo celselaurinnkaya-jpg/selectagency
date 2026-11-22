@@ -3069,3 +3069,36 @@ describe("dépenses : justificatif et validation", () => {
     await one(KARL, "select public.save_expense_settings($1, null)", [org]);
   });
 });
+
+describe("clôture de caisse journalière", () => {
+  const PAUL = user(19, "paul@agence-p.test", "Paul Caisse");
+  let org: string;
+  let caseId: string;
+  let charge: string;
+
+  beforeAll(async () => {
+    await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [PAUL.id, PAUL.email]);
+    org = await createOrg(PAUL, "Agence P");
+    const paul = await memberId(PAUL);
+    const clientId = (await createClient(PAUL, org, paul, "Caisse")).id;
+    caseId = (await createCase(PAUL, org, clientId, paul)).id;
+    charge = (await one<{ id: string }>(PAUL, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Accompagnement', 'agency_fee', 500000, 'XAF') returning id", [org, caseId])).id;
+  });
+
+  const pay = (amount: number, kind: string, label: string) =>
+    one(PAUL, "select public.record_payment($1, $2, $3, $4, '', 'Client', now(), $5::jsonb, 'Paiement (reçu {recu}).') as r", [caseId, amount, kind, label, JSON.stringify([{ charge_id: charge, amount_minor: amount }])]);
+
+  it("compte les encaissements confirmés du jour de l'agence, par moyen, et trace l'écart", async () => {
+    await pay(100000, "cash", "Espèces");
+    await pay(50000, "mobile_money", "Orange Money");
+    const today = (await db.query<{ d: string }>("select private.attendance_day($1, now())::text as d", [org])).rows[0]!.d;
+    const closing = await one<{ r: { expected_cash_minor: number; total_collected_minor: number; discrepancy_minor: number; breakdown: Record<string, number> } }>(
+      PAUL, "select public.close_daily_cash($1::date, 'XAF', 95000, 'Billet manquant') as r", [today],
+    );
+    expect(closing.r).toMatchObject({ expected_cash_minor: 100000, total_collected_minor: 150000, discrepancy_minor: -5000, breakdown: { cash: 100000, mobile_money: 50000 } });
+    const event = await one<{ text: string }>(PAUL, "select text from public.activity_events where organization_id = $1 and text like 'Clôture de caisse%' order by at desc limit 1", [org]);
+    expect(event.text).toMatch(/total encaissé 150.000\u00a0FCFA, espèces attendues 100.000\u00a0FCFA, espèces comptées 95.000\u00a0FCFA \(écart : -5.000\u00a0FCFA\)\.$/);
+    await expect(one(PAUL, "select public.close_daily_cash(current_date + 3, 'XAF', 0)")).rejects.toThrow(/journée passée/);
+    await expect(one(PAUL, "select public.close_daily_cash($1::date, 'XAF', -1)", [today])).rejects.toThrow(/invalide/);
+  });
+});

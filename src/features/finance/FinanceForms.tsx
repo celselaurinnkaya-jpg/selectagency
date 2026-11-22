@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useTransition } from "react";
+import { startTransition, useActionState, useState, useTransition } from "react";
 import Link from "next/link";
 import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,18 @@ import { Input } from "@/components/ui/input";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
 import { CURRENCY_OPTIONS } from "@/lib/format";
 import { initialFormState, type FormState } from "@/lib/form-state";
-import { addChargeAction, confirmPaymentAction, createExpenseAction, recordPaymentAction, voidPaymentAction } from "./actions";
+import { createClient } from "@/lib/supabase/browser";
+import { ACCEPTED_DOCUMENT_EXTENSIONS, ACCEPTED_DOCUMENT_TYPES, MAX_DOCUMENT_BYTES } from "@/features/documents/storage";
+import {
+  addChargeAction,
+  confirmPaymentAction,
+  createExpenseAction,
+  recordPaymentAction,
+  reviewExpenseAction,
+  saveExpenseSettingsAction,
+  voidPaymentAction,
+} from "./actions";
+import { EXPENSE_RECEIPTS_BUCKET, expenseReceiptPath } from "./expense-receipts";
 import { PAYMENT_METHODS } from "./payments";
 
 /** Prestation convenue avec le client : frais de l'agence ou montant à reverser à un tiers. */
@@ -227,12 +238,67 @@ export function PendingPaymentActions({ paymentId }: { paymentId: string }) {
 }
 
 /** Dépense de l'agence, ou somme versée à un tiers pour le compte d'un client (rattachée à son dossier). */
-export function ExpenseForm({ currency, defaultDate, cases }: { currency: string; defaultDate: string; cases: { value: string; label: string }[] }) {
+/**
+ * Nouvelle dépense, avec son justificatif (photo ou PDF du reçu). Le navigateur dépose d'abord le fichier dans le
+ * bucket privé, puis envoie la dépense avec le chemin du fichier ; la base vérifie qu'il a bien été reçu et applique
+ * le seuil de l'agence. Une dépense saisie par un autre membre que le propriétaire est « à valider ».
+ */
+export function ExpenseForm({
+  currency,
+  defaultDate,
+  cases,
+  organizationId,
+  receiptRequiredAbove,
+  needsValidation = false,
+}: {
+  currency: string;
+  defaultDate: string;
+  cases: { value: string; label: string }[];
+  organizationId: string;
+  /** Seuil déjà formaté (ex. « 50 000 FCFA ») au-delà duquel le justificatif est obligatoire. */
+  receiptRequiredAbove?: string;
+  /** La dépense sera validée par le propriétaire avant de compter. */
+  needsValidation?: boolean;
+}) {
   const [state, action, pending] = useActionState(createExpenseAction, initialFormState);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>();
   const e = state.fieldErrors ?? {};
   const v = state.ok ? {} : (state.values ?? {});
   return (
-    <form action={action} className="space-y-3" noValidate>
+    <form
+      className="space-y-3"
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const formData = new FormData(form);
+        const file = formData.get("receipt");
+        formData.delete("receipt");
+        setUploadError(undefined);
+        const submit = () => startTransition(() => action(formData));
+        if (!(file instanceof File) || file.size === 0) return submit();
+        if (!(ACCEPTED_DOCUMENT_TYPES as readonly string[]).includes(file.type) || file.size > MAX_DOCUMENT_BYTES) {
+          setUploadError("Justificatif refusé : envoyez un PDF ou une photo (JPEG, PNG, WebP) de 10 Mo au plus.");
+          return;
+        }
+        setUploading(true);
+        const path = expenseReceiptPath(organizationId, file.name);
+        createClient()
+          .storage.from(EXPENSE_RECEIPTS_BUCKET)
+          .upload(path, file, { contentType: file.type, upsert: false })
+          .then(({ error }) => {
+            setUploading(false);
+            if (error) {
+              setUploadError("L'envoi du justificatif a échoué. Vérifiez votre connexion internet, puis réessayez.");
+              return;
+            }
+            formData.set("receiptPath", path);
+            submit();
+            form.reset();
+          });
+      }}
+    >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <FormField id="expense-label" label="Dépense" required error={e.label} className="sm:col-span-2">
           <Input id="expense-label" name="label" defaultValue={v.label} placeholder="Ex. : Loyer du bureau, frais de visa reversés" {...describedBy("expense-label", e.label)} />
@@ -271,13 +337,83 @@ export function ExpenseForm({ currency, defaultDate, cases }: { currency: string
             ))}
           </select>
         </FormField>
+        <FormField
+          id="expense-receipt"
+          label="Justificatif (photo ou PDF du reçu)"
+          className="sm:col-span-2"
+          hint={receiptRequiredAbove ? `Obligatoire au-delà de ${receiptRequiredAbove}.` : "Conseillé : il prouve la dépense au propriétaire."}
+        >
+          <Input id="expense-receipt" name="receipt" type="file" accept={ACCEPTED_DOCUMENT_EXTENSIONS} className="h-auto py-2" {...describedBy("expense-receipt", undefined, "hint")} />
+        </FormField>
       </div>
+      {needsValidation && <p className="text-xs text-slate-500">La dépense comptera dans les chiffres une fois validée par le propriétaire de l&apos;agence.</p>}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
-        <Button type="submit" variant="accent" disabled={pending} className="sm:ml-auto">
-          {pending ? "Enregistrement…" : "Enregistrer la dépense"}
+        <FormMessage message={uploadError ?? state.message} tone={!uploadError && state.ok ? "success" : "error"} />
+        <Button type="submit" variant="accent" disabled={pending || uploading} className="sm:ml-auto">
+          {uploading ? "Envoi du justificatif…" : pending ? "Enregistrement…" : "Enregistrer la dépense"}
         </Button>
       </div>
+    </form>
+  );
+}
+
+/** Validation d'une dépense par le propriétaire : valider, ou refuser avec un motif. */
+export function ExpenseReviewForm({ expenseId }: { expenseId: string }) {
+  const [state, action, pending] = useActionState(reviewExpenseAction, initialFormState);
+  const [rejecting, setRejecting] = useState(false);
+  if (state.ok) return <FormMessage message={state.message} tone="success" />;
+  return (
+    <form action={action} className="space-y-2">
+      <input type="hidden" name="expenseId" value={expenseId} />
+      {rejecting && (
+        <FormField id={`expense-note-${expenseId.slice(0, 8)}`} label="Motif du refus" required error={state.fieldErrors?.note}>
+          <Input id={`expense-note-${expenseId.slice(0, 8)}`} name="note" placeholder="Ex. : reçu illisible, dépense non autorisée" />
+        </FormField>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {!rejecting && (
+          <Button type="submit" name="decision" value="approve" variant="accent" size="sm" disabled={pending}>
+            Valider la dépense
+          </Button>
+        )}
+        {rejecting ? (
+          <>
+            <Button type="submit" name="decision" value="reject" variant="destructive" size="sm" disabled={pending}>
+              Confirmer le refus
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setRejecting(false)}>
+              Annuler
+            </Button>
+          </>
+        ) : (
+          <Button type="button" variant="outline" size="sm" onClick={() => setRejecting(true)}>
+            Refuser
+          </Button>
+        )}
+      </div>
+      <FormMessage message={state.ok ? undefined : state.message} />
+    </form>
+  );
+}
+
+/** Seuil au-delà duquel le justificatif est obligatoire (propriétaire et administrateurs). */
+export function ExpenseSettingsForm({ currency, threshold }: { currency: string; threshold?: string }) {
+  const [state, action, pending] = useActionState(saveExpenseSettingsAction, initialFormState);
+  return (
+    <form action={action} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <FormField
+        id="expense-threshold"
+        label={`Justificatif obligatoire au-delà de (${currency})`}
+        error={state.fieldErrors?.threshold}
+        hint="Laissez vide pour ne jamais l'exiger. 0 = toujours exigé."
+        className="min-w-0 sm:w-80"
+      >
+        <Input id="expense-threshold" name="threshold" inputMode="decimal" defaultValue={threshold} className="tabular-nums" />
+      </FormField>
+      <Button type="submit" variant="outline" className="h-11" disabled={pending}>
+        {pending ? "Enregistrement…" : "Enregistrer le seuil"}
+      </Button>
+      <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
     </form>
   );
 }
