@@ -546,6 +546,52 @@ export function renderTransactionalEmail(
     };
   }
 
+  if (kind === "owner_alert") {
+    // Alerte au propriétaire, au nom de SELECT Agency : ce qui s'est passé, qui l'a fait, et le lien pour vérifier.
+    const ownerName = str(payload, "owner_name", "Bonjour");
+    const title = str(payload, "alert_title", "Alerte sur votre agence");
+    const message = str(payload, "alert_message");
+    const actorName = str(payload, "actor_name");
+    const linkPath = str(payload, "link_path", "/dashboard");
+    const rawRows = Array.isArray(payload.alert_rows) ? (payload.alert_rows as { label?: unknown; value?: unknown }[]) : [];
+    const rows = [
+      ...rawRows.map((r) => ({ label: String(r.label ?? ""), value: String(r.value ?? "") })),
+      ...(actorName ? [{ label: "Par", value: actorName }] : []),
+      { label: "Agence", value: agencyName },
+    ];
+    const url = `${baseUrl}${linkPath.startsWith("/") ? linkPath : `/${linkPath}`}`;
+    const bodyHtml = `
+      <p style="margin:0 0 12px 0;">Bonjour <strong>${escapeHtml(ownerName)}</strong>,</p>
+      <p style="margin:0 0 12px 0;">${escapeHtml(message)}</p>
+      ${renderDataRowsHtml(rows)}
+      <p style="margin:0 0 12px 0;color:#475569;font-size:13px;">Vous recevez cette alerte parce que vous êtes propriétaire de l'agence. Vous pouvez la désactiver dans Paramètres, E-mails.</p>
+    `;
+    const textContent = [
+      `Bonjour ${ownerName},`,
+      "",
+      title,
+      message,
+      ...rows.filter((r) => r.value.trim() !== "").map((r) => `- ${r.label} : ${r.value}`),
+      "",
+      `Vérifier : ${url}`,
+      "",
+      "Vous pouvez désactiver ces alertes dans Paramètres, E-mails.",
+    ].join("\n");
+    return {
+      subject: subject || title,
+      htmlContent: renderHtmlLayout({
+        preheader: title,
+        agencyName: "SELECT Agency",
+        badgeLabel: "Alerte",
+        heading: title,
+        bodyHtml,
+        ctaLabel: "Vérifier dans SELECT Agency",
+        ctaUrl: url,
+      }),
+      textContent,
+    };
+  }
+
   // subscription_notice
   const ownerName = str(payload, "owner_name", "Bonjour");
   const noticeTitle = str(payload, "notice_title", "Information sur votre abonnement SELECT Agency");

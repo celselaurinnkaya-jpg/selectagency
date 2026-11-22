@@ -1,6 +1,7 @@
 import "server-only";
 import { allowed } from "@/lib/auth/permissions";
 import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
+import { getClientPortalAccess } from "@/features/client-portal/queries";
 import { CLIENT_SENSITIVE, PARTNER, toPartner } from "@/lib/data/rows";
 import type { ClientType } from "@/lib/domain/types";
 import { dayKey } from "@/lib/format";
@@ -77,7 +78,7 @@ export async function getClientDetail(id: string) {
   // Étapes, pièces et prestations des dossiers du client (pour les soldes et les pièces manquantes),
   // et services qu'il suit.
   const caseIds = data.cases.map((k) => k.id);
-  const [related, services, partner, messageTemplates] = await Promise.all([
+  const [related, services, partner, messageTemplates, portal] = await Promise.all([
     caseIds.length
       ? loadTables(ctx, {
           steps: (q) => q.in("case_id", caseIds),
@@ -88,6 +89,8 @@ export async function getClientDetail(id: string) {
     loadClientServices(ctx, id),
     client.partnerId ? fetchRows(ctx, "partners", PARTNER.list, (q) => q.eq("id", client.partnerId!)).then(([row]) => (row ? toPartner(row) : undefined)) : undefined,
     loadMessageTemplates(ctx),
+    // Espace client (agence : propriétaire, administrateurs, agents).
+    allowed(ctx, "operations.write") ? getClientPortalAccess(ctx, id) : Promise.resolve(undefined),
   ]);
   Object.assign(data, related);
 
@@ -141,6 +144,7 @@ export async function getClientDetail(id: string) {
 
   const cases = data.cases;
   return {
+    portal,
     client,
     agency: data.agency,
     now,

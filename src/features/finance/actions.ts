@@ -180,6 +180,8 @@ export async function voidPaymentAction(_prev: FormState, formData: FormData): P
       : `Paiement annoncé de ${amount} annulé (${payment.methodLabel}, sans reçu) : ${parsed.data.reason}`,
   });
   if (error) return { message: dbMessage(error), values };
+  // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
+  sendQueuedEmailsAfterResponse(ctx);
   refresh();
   return payment.receiptNumber
     ? { ok: true, message: `Reçu ${payment.receiptNumber} annulé. Le montant ne compte plus dans les soldes.` }

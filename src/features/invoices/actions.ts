@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { dbMessage } from "@/lib/data/errors";
+import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { INVOICE_STATUS } from "@/lib/domain/labels";
 import { CURRENCY_OPTIONS, dayKey, formatMoney } from "@/lib/format";
 import type { FormState } from "@/lib/form-state";
@@ -122,6 +123,8 @@ export async function saveInvoiceAction(input: InvoiceInput): Promise<FormState>
     p_event: event,
   });
   if (error) return { message: dbMessage(error) };
+  // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
+  sendQueuedEmailsAfterResponse(ctx);
   const saved = data as { id: string };
   return { ok: true, redirectTo: `/finance/invoices/${saved.id}?ok=${isNew ? "facture-creee" : "facture-modifiee"}` };
 }
@@ -189,6 +192,8 @@ export async function setInvoiceStatusAction(_prev: FormState, formData: FormDat
     p_event: parsed.data.status === "cancelled" ? `Facture {facture} : ${label}. Motif : ${reason}` : `Facture {facture} : ${label}.`,
   });
   if (error) return { message: dbMessage(error) };
+  // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
+  sendQueuedEmailsAfterResponse(ctx);
   refresh();
   return { ok: true, message: `Facture ${label}.` };
 }

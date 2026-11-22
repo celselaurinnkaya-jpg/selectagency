@@ -3102,3 +3102,129 @@ describe("clôture de caisse journalière", () => {
     await expect(one(PAUL, "select public.close_daily_cash($1::date, 'XAF', -1)", [today])).rejects.toThrow(/invalide/);
   });
 });
+
+describe("alertes au propriétaire", () => {
+  const RITA = user(20, "rita@agence-r.test", "Rita Owona");
+  const SAM = user(21, "sam@agence-r.test", "Sam Mbappe");
+  let org: string;
+  let clientId: string;
+  let caseId: string;
+
+  beforeAll(async () => {
+    for (const u of [RITA, SAM]) await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [u.id, u.email]);
+    org = await createOrg(RITA, "Agence R");
+    const rita = await memberId(RITA);
+    const { token } = await one<{ token: string }>(RITA, "insert into public.invitations (organization_id, email, role, invited_by) values ($1, $2, 'agent', $3) returning token", [org, SAM.email, rita]);
+    await one(SAM, "select public.accept_invitation($1)", [token]);
+    clientId = (await createClient(RITA, org, rita, "Alerte")).id;
+    caseId = (await createCase(RITA, org, clientId, rita)).id;
+  });
+
+  const alerts = () =>
+    db.query<{ subject: string; recipient_email: string; title: string }>(
+      "select subject, recipient_email, payload ->> 'alert_title' as title from public.email_outbox where organization_id = $1 and kind = 'owner_alert' order by created_at, subject",
+      [org],
+    ).then((r) => r.rows);
+  const issue = (who: User, discount: number) =>
+    one<{ r: { id: string; number: string } }>(
+      who,
+      "select public.save_invoice(null, $1, $2, 'XAF', current_date, current_date + 30, 'Remise', $3, '', null, true, $4::jsonb, 'Facture {facture}.') as r",
+      [clientId, caseId, discount, JSON.stringify([{ label: "Accompagnement", quantity: 1, unit_amount_minor: 100000, tax_rate: 0 }])],
+    ).then((x) => x.r);
+  const cancel = (who: User, id: string) => one(who, "select public.set_invoice_status($1, 'cancelled', 'Facture {facture} : annulée. Motif : erreur.')", [id]);
+
+  it("prévient le propriétaire de ce que fait l'équipe, pas de ses propres actions", async () => {
+    const bySam = await issue(SAM, 25000);
+    await cancel(SAM, bySam.id);
+    const byRita = await issue(RITA, 50000);
+    await cancel(RITA, byRita.id);
+    await issue(SAM, 10000);
+
+    const list = await alerts();
+    expect(list.map((a) => a.subject).sort()).toEqual([`Facture annulée : ${bySam.number}`, `Remise importante sur la facture ${bySam.number}`].sort());
+    expect(list.every((a) => a.recipient_email === RITA.email)).toBe(true);
+    expect(await rows(SAM, "select id from public.email_outbox where kind = 'owner_alert'")).toEqual([]);
+  });
+
+  it("se désactive dans les réglages, sauf rien d'autre ; la déconnexion WhatsApp est toujours signalée", async () => {
+    await one(RITA, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({ notify_owner_alerts: false })]);
+    const before = (await alerts()).length;
+    await cancel(SAM, (await issue(SAM, 30000)).id);
+    expect((await alerts()).length).toBe(before);
+
+    await one(RITA, "select public.save_email_settings($1, $2::jsonb)", [org, JSON.stringify({})]);
+    expect((await one<{ on: boolean }>(RITA, "select notify_owner_alerts as on from public.email_settings where organization_id = $1", [org])).on).toBe(true);
+    const wa = (await db.query<{ id: string }>("insert into public.wa_accounts (organization_id, waba_id, phone_number_id, display_phone_number) values ($1, 'waba-r', 'phone-r', '+237 690 00 00 01') returning id", [org])).rows[0]!.id;
+    await db.query("update public.wa_accounts set status = 'disconnected' where id = $1", [wa]);
+    expect((await alerts()).some((a) => a.subject === "Ligne WhatsApp déconnectée : +237 690 00 00 01" && a.title.startsWith("La ligne WhatsApp Business"))).toBe(true);
+  });
+});
+
+describe("espace client", () => {
+  const TINA = user(22, "tina@agence-t.test", "Tina Kotto");
+  const AWA = user(23, "awa.cliente@exemple.test", "Awa Cliente");
+  const INTRUS = user(24, "intrus@exemple.test", "Intrus");
+  let org: string;
+  let clientId: string;
+  let caseId: string;
+  let token: string;
+
+  beforeAll(async () => {
+    for (const u of [TINA, AWA, INTRUS]) await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [u.id, u.email]);
+    org = await createOrg(TINA, "Agence T");
+    const tina = await memberId(TINA);
+    clientId = (await createClient(TINA, org, tina, "Diallo")).id;
+    caseId = (await createCase(TINA, org, clientId, tina)).id;
+  });
+
+  it("ouvre l'espace par un lien lié à une adresse, accepté seulement par cette adresse", async () => {
+    await expect(one(BRUNO, "select public.create_client_portal_access($1, $2)", [clientId, AWA.email])).rejects.toThrow(/Client introuvable/);
+    await expect(one(TINA, "select public.create_client_portal_access($1, 'pas-une-adresse')", [clientId])).rejects.toThrow(/Adresse e-mail invalide/);
+    token = (await one<{ t: string }>(TINA, "select public.create_client_portal_access($1, $2) as t", [clientId, AWA.email.toUpperCase()])).t;
+    expect(await rows(null, "select agency_name, email from public.get_client_portal_access($1)", [token])).toEqual([{ agency_name: "Agence T", email: AWA.email }]);
+    await expect(one(INTRUS, "select public.accept_client_portal_access($1)", [token])).rejects.toThrow(/autre adresse e-mail/);
+    await one(AWA, "select public.accept_client_portal_access($1)", [token]);
+    expect((await one<{ p: boolean }>(AWA, "select public.is_portal_client() as p")).p).toBe(true);
+    await expect(one(AWA, "select public.accept_client_portal_access($1)", [token])).rejects.toThrow(/déjà utilisé/);
+  });
+
+  it("montre l'avancement sans montants ni données internes, et rien aux autres", async () => {
+    const portal = (await one<{ p: { agency_name: string; cases: { reference: string; steps: unknown[]; requirements: { label: string }[] }[] }[] }>(AWA, "select public.client_portal() as p")).p;
+    expect(portal).toHaveLength(1);
+    expect(portal[0]!.agency_name).toBe("Agence T");
+    expect(portal[0]!.cases).toHaveLength(1);
+    expect(portal[0]!.cases[0]!.steps.length).toBeGreaterThan(5);
+    expect(portal[0]!.cases[0]!.requirements.length).toBeGreaterThan(0);
+    // Seulement ces informations : ni montants, ni justificatifs, ni notes internes.
+    expect(Object.keys(portal[0]!).sort()).toEqual(["agency_email", "agency_name", "agency_phone", "agency_timezone", "cases", "client_first_name", "organization_id"]);
+    expect(Object.keys(portal[0]!.cases[0]!).sort()).toEqual(["destination_country", "id", "next_appointment", "outcome", "reference", "requirements", "status", "steps", "title"]);
+    expect(Object.keys(portal[0]!.cases[0]!.steps[0] as object).sort()).toEqual(["kind", "label", "status"]);
+    expect(Object.keys(portal[0]!.cases[0]!.requirements[0]!).sort()).toEqual(["comment", "id", "is_required", "label", "status"]);
+    expect((await one<{ p: unknown[] }>(INTRUS, "select public.client_portal() as p")).p).toEqual([]);
+    // Le client ne lit pas directement les tables de l'agence.
+    expect(await rows(AWA, "select id from public.clients")).toEqual([]);
+    expect(await rows(AWA, "select id from public.cases")).toEqual([]);
+  });
+
+  it("dépose une pièce attendue de son dossier, et rien d'autre", async () => {
+    const [req] = await rows<{ id: string; label: string }>(TINA, "select id, label from public.document_requirements where case_id = $1 and status = 'not_received' order by label limit 1", [caseId]);
+    const path = `${org}/${caseId}/${req!.id}/1-passeport.pdf`;
+    await expect(as(INTRUS, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [path]))).rejects.toThrow(/row-level security/);
+    await as(AWA, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [path]));
+    await expect(as(AWA, (tx) => tx.query("insert into storage.objects (bucket_id, name) values ('documents', $1)", [`${org}/${caseId}/autre/2.pdf`]))).rejects.toThrow(/row-level security/);
+    expect(await rows(AWA, "select name from storage.objects where bucket_id = 'documents'")).toEqual([]);
+
+    await expect(one(INTRUS, "select public.portal_add_requirement_file($1, $2, 'passeport.pdf')", [req!.id, path])).rejects.toThrow(/Pièce introuvable/);
+    await expect(one(AWA, "select public.portal_add_requirement_file($1, $2, 'passeport.pdf')", [req!.id, `${org}/x/y/z.pdf`])).rejects.toThrow(/Emplacement du fichier invalide/);
+    await one(AWA, "select public.portal_add_requirement_file($1, $2, 'passeport.pdf')", [req!.id, path]);
+    expect((await one<{ status: string }>(TINA, "select status from public.document_requirements where id = $1", [req!.id])).status).toBe("received");
+    const event = await one<{ text: string }>(TINA, "select text from public.activity_events where case_id = $1 order by at desc limit 1", [caseId]);
+    expect(event.text).toBe(`Document déposé par le client depuis son espace : ${req!.label} (passeport.pdf), à vérifier.`);
+    // Reçue : elle n'est plus attendue, le client ne peut plus y déposer.
+    await expect(one(AWA, "select public.portal_add_requirement_file($1, $2, 'b.pdf')", [req!.id, path])).rejects.toThrow(/plus attendue/);
+
+    // Accès retiré : plus rien.
+    await one(TINA, "select public.revoke_client_portal_access($1)", [clientId]);
+    expect((await one<{ p: unknown[] }>(AWA, "select public.client_portal() as p")).p).toEqual([]);
+  });
+});

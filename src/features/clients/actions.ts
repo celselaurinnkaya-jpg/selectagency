@@ -7,6 +7,7 @@ import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { dbMessage } from "@/lib/data/errors";
+import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { clientToRow } from "@/lib/data/rows";
 import { formValues, type FormState } from "@/lib/form-state";
 import type { Client } from "@/lib/domain/types";
@@ -255,6 +256,8 @@ export async function deleteClientAction(clientId: string): Promise<{ ok: boolea
   const client = deleted?.[0];
   if (!client) return { ok: false, message: "Client introuvable." };
   // L'historique (« Fiche client … supprimée définitivement ») est écrit par la base.
+  // Alerte au propriétaire inscrite par la base (si l'action vient d'un autre membre) : elle part tout de suite.
+  sendQueuedEmailsAfterResponse(ctx);
 
   revalidatePath("/clients");
   revalidatePath(`/clients/${clientId}`);

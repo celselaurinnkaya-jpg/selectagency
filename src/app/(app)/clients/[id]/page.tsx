@@ -36,6 +36,7 @@ import { formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/forma
 import { isMissingRequired } from "@/lib/domain/requirements";
 import { AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { getClientDetail } from "@/features/clients/queries";
+import { ClientPortalAccess } from "@/features/client-portal/ClientPortalForms";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { AddNoteForm, LogExchangeForm } from "@/features/communications/ExchangeForms";
 import { QuickContact, whatsappDigits } from "@/features/communications/QuickContact";
@@ -75,7 +76,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates } = detail;
+  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates, portal } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const isProspect = client.status === "prospect";
@@ -333,6 +334,24 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
               </Card>
             )}
           </div>
+
+          {portal && !isProspect && !client.archivedAt && (
+            <Section title="Espace client">
+              <Card>
+                <ClientPortalAccess
+                  clientId={client.id}
+                  firstName={client.firstName}
+                  defaultEmail={client.email}
+                  hasAccess={portal.hasAccess}
+                  pendingLink={portal.pendingLink}
+                  pendingEmail={portal.email}
+                />
+                <p className="mt-3 text-xs text-slate-500">
+                  Le client y suit l&apos;avancement de ses dossiers et y envoie ses documents. Il ne voit ni les montants, ni les notes internes.
+                </p>
+              </Card>
+            </Section>
+          )}
 
           <Section title="En résumé">
             <Card>

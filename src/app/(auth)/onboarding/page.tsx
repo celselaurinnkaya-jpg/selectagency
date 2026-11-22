@@ -30,14 +30,18 @@ async function Onboarding() {
   const { data: membership } = await user.supabase.from("members").select("id").eq("user_id", user.userId).limit(1).maybeSingle();
   if (membership) redirect("/dashboard");
 
-  const [{ data: invitations }, { data: access }, { data: isPartner }] = await Promise.all([
+  const [{ data: invitations }, { data: access }, { data: isPartner }, { data: isPortalClient }] = await Promise.all([
     user.supabase.rpc("my_invitations"),
     user.supabase.rpc("platform_access"),
     user.supabase.rpc("is_partner"),
+    // Avant la migration 20261122200000, la fonction n'existe pas : la réponse est simplement vide.
+    user.supabase.rpc("is_portal_client"),
   ]);
   const pending = (invitations ?? []) as { token: string; agency_name: string; role: MemberRole; expires_at: string }[];
   // Partenaire d'une agence, sans invitation à rejoindre une équipe : son espace l'attend.
   if (isPartner && pending.length === 0 && access === "none") redirect("/partenaire");
+  // Client d'une agence (espace client), sans autre rôle : son espace l'attend.
+  if (isPortalClient && !isPartner && pending.length === 0 && access === "none") redirect("/espace-client");
 
   return (
     <div className="space-y-6">

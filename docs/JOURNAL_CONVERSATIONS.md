@@ -15,6 +15,44 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 80 — 22 Novembre 2026 (Claude Code) — Points 1 à 4 : publication, coordonnées, région, alertes au propriétaire et espace client
+* **Demande de l'utilisateur** : « fais le 1, 2, 3 et 4 » ; e-mail notifications@myselectagency.com, téléphone et WhatsApp +33 7 51 11 18 04.
+* **1. Publication** :
+  - commit `c61922a` en ligne (Vercel « success ») : clôture de caisse corrigée côté code, écran des dépenses, coordonnées, région ;
+  - `npx supabase db push` refusé à l'assistant par le système de permissions, conformément à la règle : c'est l'utilisateur qui l'exécute.
+* **2. Coordonnées du site** : `CONTACT_DETAILS` dans `src/app/page.tsx` (e-mail, téléphone, WhatsApp, avec liens mailto, tel et wa.me). Adresse et horaires non donnés : non affichés.
+* **3. Région** :
+  - la base Supabase est en Irlande (`eu-west-1`, lu dans supabase/.temp/pooler-url) ;
+  - `vercel.json` : `"regions": ["dub1"]` ;
+  - vérifié en ligne : en-tête `X-Vercel-Id: gru1::dub1::…` sur une route dynamique.
+* **4a. Alertes au propriétaire** (migration `20261122190000_alertes_proprietaire.sql`) :
+  - nouveau type d'e-mail `owner_alert`, au nom de SELECT Agency, avec la même file Brevo et la même revérification avant l'envoi ;
+  - réglage `email_settings.notify_owner_alerts` (activé par défaut) ;
+  - déclencheurs :
+    - paiement annulé ;
+    - facture émise annulée ;
+    - remise d'au moins 20 % ;
+    - fiche client supprimée ;
+    - ligne WhatsApp déconnectée (toujours signalée) ;
+  - pas d'alerte pour les actions du propriétaire lui-même ;
+  - alertes lisibles par le propriétaire seulement ;
+  - envoi immédiat après l'action (`sendQueuedEmailsAfterResponse`) ;
+  - modèle d'e-mail `owner_alert` et interrupteur dans Paramètres → E-mails.
+* **4b. Espace client** (migration `20261122200000_espace_client.sql`) :
+  - table `client_portal_access` (la fiche client n'est pas modifiée) ;
+  - fonctions de création, de retrait et d'acceptation du lien ; `client_portal` pour la lecture ; `portal_add_requirement_file` pour le dépôt ;
+  - règle de dépôt dans le bucket « documents » : seulement les pièces attendues des dossiers en cours du client ;
+  - pages `/acces-client/[token]` et `/espace-client` : étapes, pièces, prochain rendez-vous, envoi des documents ;
+  - section « Espace client » sur la fiche client (créer ou renvoyer le lien, retirer l'accès) ;
+  - redirection après connexion ; route protégée.
+  - Le client ne voit ni montants, ni notes internes, ni justificatifs : vérifié par un test des clés renvoyées.
+* **Vérifications** :
+  - `tsc` : 0 erreur ; ESLint : 0 erreur ;
+  - tests : 284/284 ; tests de la base : 108/108 ;
+  - `next build` : 89 pages.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migrations 20261122180000, 190000, 200000). Le nouveau code lit `email_settings.notify_owner_alerts` : sans la migration, la page des réglages e-mails échouerait.
+* **Non envoyé sur GitHub.**
+
 ### Session 79 — 22 Novembre 2026 (Claude Code) — Vérification du rapport v2, erreur Vercel, clôture de caisse corrigée, écran des dépenses terminé
 * **Demande de l'utilisateur** : vérifier si tout le rapport de re-test est finalisé, et corriger l'erreur de construction Vercel (captures : « Route /finance/cash-closing … uncached or runtime data during prerendering »).
 * **Constat Git** :

@@ -646,7 +646,8 @@ export type EmailOutboxKind =
   | "missing_documents"
   | "case_status_changed"
   | "appointment_reminder"
-  | "subscription_notice";
+  | "subscription_notice"
+  | "owner_alert";
 
 export type EmailOutboxStatus =
   | "queued"
@@ -665,6 +666,8 @@ export interface EmailSettings {
   notifyAppointmentReminder: boolean;
   notifyCaseStatus: boolean;
   notifyMissingDocuments: boolean;
+  /** Alertes au propriétaire (annulations, suppressions, remises importantes, WhatsApp déconnecté). */
+  notifyOwnerAlerts: boolean;
 }
 
 export interface EmailOutboxItem {

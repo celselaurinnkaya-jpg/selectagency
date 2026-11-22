@@ -17,6 +17,7 @@ const emailSettingsSchema = z.object({
   notifyAppointmentReminder: z.boolean(),
   notifyCaseStatus: z.boolean(),
   notifyMissingDocuments: z.boolean(),
+  notifyOwnerAlerts: z.boolean(),
 });
 
 export async function saveEmailSettingsAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -28,6 +29,7 @@ export async function saveEmailSettingsAction(_prev: FormState, formData: FormDa
     notifyAppointmentReminder: formData.get("notifyAppointmentReminder") === "on",
     notifyCaseStatus: formData.get("notifyCaseStatus") === "on",
     notifyMissingDocuments: formData.get("notifyMissingDocuments") === "on",
+    notifyOwnerAlerts: formData.get("notifyOwnerAlerts") === "on",
   });
 
   if (!parsed.success) {
@@ -52,6 +54,7 @@ export async function saveEmailSettingsAction(_prev: FormState, formData: FormDa
       notify_appointment_reminder: parsed.data.notifyAppointmentReminder,
       notify_case_status: parsed.data.notifyCaseStatus,
       notify_missing_documents: parsed.data.notifyMissingDocuments,
+      notify_owner_alerts: parsed.data.notifyOwnerAlerts,
     },
   });
 

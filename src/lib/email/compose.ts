@@ -6,7 +6,7 @@ import { renderTransactionalEmail } from "./templates";
  * E-mails envoyés au nom de SELECT Agency (et non d'une agence) : l'expéditeur affiché est « SELECT Agency »,
  * sans adresse de réponse d'agence. Les questions passent par « Aide et support » dans l'espace agence.
  */
-export const PLATFORM_EMAIL_KINDS: ReadonlySet<EmailOutboxKind> = new Set<EmailOutboxKind>(["agency_welcome", "subscription_notice"]);
+export const PLATFORM_EMAIL_KINDS: ReadonlySet<EmailOutboxKind> = new Set<EmailOutboxKind>(["agency_welcome", "subscription_notice", "owner_alert"]);
 
 /** Étiquette Brevo unique d'une ligne de la file d'envoi : permet de retrouver l'e-mail chez Brevo. */
 export function outboxTag(outboxId: string): string {

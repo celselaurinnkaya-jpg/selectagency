@@ -8,7 +8,7 @@ import { safeNext } from "@/features/auth/redirects";
 // Ce n'est qu'un premier filtre : chaque page et chaque action revérifie la session (src/lib/auth).
 
 const PROTECTED = [
-  "/dashboard", "/prospects", "/clients", "/cases", "/documents", "/services", "/appointments", "/agent-ia", "/tasks", "/finance", "/partners", "/partenaire", "/reports", "/team", "/settings", "/search",
+  "/dashboard", "/prospects", "/clients", "/cases", "/documents", "/services", "/appointments", "/agent-ia", "/tasks", "/finance", "/partners", "/partenaire", "/espace-client", "/reports", "/team", "/settings", "/search",
   "/support", "/onboarding", "/reset-password", "/admin",
 ];
 const GUEST_ONLY = ["/login", "/signup"];

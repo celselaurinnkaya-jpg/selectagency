@@ -618,7 +618,7 @@ export function toMessageTemplate(r: Row): MessageTemplate {
 export const EMAIL_SETTINGS = columns(
   "organization_id", "sender_name", "reply_to_email",
   "notify_payment_confirmed", "notify_appointment_reminder",
-  "notify_case_status", "notify_missing_documents",
+  "notify_case_status", "notify_missing_documents", "notify_owner_alerts",
 );
 
 export function toEmailSettings(r?: Row | null): EmailSettings {
@@ -630,6 +630,8 @@ export function toEmailSettings(r?: Row | null): EmailSettings {
     notifyAppointmentReminder: Boolean(r?.notify_appointment_reminder),
     notifyCaseStatus: Boolean(r?.notify_case_status),
     notifyMissingDocuments: Boolean(r?.notify_missing_documents),
+    // Activées par défaut, même sans ligne de réglages.
+    notifyOwnerAlerts: r?.notify_owner_alerts === undefined || r?.notify_owner_alerts === null ? true : Boolean(r.notify_owner_alerts),
   };
 }
 

@@ -47,6 +47,7 @@ export function EmailSettingsForm({ settings, agencyName, autoLocked = false }: 
   const [saving, startTransition] = useTransition();
   const [senderName, setSenderName] = useState(settings.senderName);
   const [replyToEmail, setReplyToEmail] = useState(settings.replyToEmail);
+  const [ownerAlerts, setOwnerAlerts] = useState(settings.notifyOwnerAlerts);
   const [toggles, setToggles] = useState<Record<ToggleKey, boolean>>({
     notifyPaymentConfirmed: settings.notifyPaymentConfirmed,
     notifyAppointmentReminder: settings.notifyAppointmentReminder && !autoLocked,
@@ -63,6 +64,7 @@ export function EmailSettingsForm({ settings, agencyName, autoLocked = false }: 
     for (const { key } of TOGGLES) {
       if (toggles[key]) data.set(key, "on");
     }
+    if (ownerAlerts) data.set("notifyOwnerAlerts", "on");
     startTransition(async () => {
       setState(await saveEmailSettingsAction(initialFormState, data));
     });
@@ -144,6 +146,25 @@ export function EmailSettingsForm({ settings, agencyName, autoLocked = false }: 
           Les e-mails de compte (confirmation d&apos;adresse, mot de passe) et les alertes d&apos;abonnement SELECT Agency
           partent toujours : ils ne dépendent pas de ces réglages.
         </p>
+      </fieldset>
+
+      <fieldset className="space-y-3 border-t border-border pt-4">
+        <legend className="text-sm font-semibold text-navy-800">Alertes au propriétaire</legend>
+        <label
+          className={cn(
+            "flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm transition",
+            ownerAlerts ? "border-navy-800 bg-navy-50 ring-1 ring-navy-800" : "border-slate-200 bg-white hover:border-navy-200",
+          )}
+        >
+          <input type="checkbox" checked={ownerAlerts} onChange={(event) => setOwnerAlerts(event.target.checked)} className="mt-0.5 size-4 accent-navy-800" />
+          <span>
+            <span className="block font-medium text-slate-900">Prévenir le propriétaire par e-mail</span>
+            <span className="block text-slate-600">
+              Quand un membre de l&apos;équipe annule un paiement ou une facture, émet une facture avec une remise de 20 % ou plus, ou supprime
+              une fiche client ; et quand la ligne WhatsApp Business se déconnecte. Pas d&apos;alerte pour les actions du propriétaire lui-même.
+            </span>
+          </span>
+        </label>
       </fieldset>
 
       <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
