@@ -9,10 +9,7 @@ import { getCashClosingData } from "@/features/finance/cash-closing-queries";
 
 export const metadata: Metadata = { title: "Clôture de caisse" };
 
-export default async function CashClosingPage({ searchParams }: PageProps<"/finance">) {
-  const query = await searchParams;
-  const targetDate = typeof query.date === "string" ? query.date : undefined;
-
+export default function CashClosingPage({ searchParams }: PageProps<"/finance">) {
   return (
     <>
       <PageHeader
@@ -21,13 +18,15 @@ export default async function CashClosingPage({ searchParams }: PageProps<"/fina
       />
       <FinanceTabs />
       <Suspense fallback={<PageSkeleton />}>
-        <CashClosingContent targetDate={targetDate} />
+        <CashClosingContent searchParams={searchParams} />
       </Suspense>
     </>
   );
 }
 
-async function CashClosingContent({ targetDate }: { targetDate?: string }) {
+async function CashClosingContent({ searchParams }: Pick<PageProps<"/finance">, "searchParams">) {
+  const query = await searchParams;
+  const targetDate = typeof query.date === "string" ? query.date : undefined;
   const data = await getCashClosingData(targetDate);
 
   if (!data.canSeeFinance) {

@@ -15,6 +15,15 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 78 — 22 Novembre 2026 (Antigravity) — Correction du prerendering Next.js sur la clôture de caisse
+* **Demande de l'utilisateur** : « règle moi ça » avec capture de l'erreur Vercel : *Route "/finance/cash-closing": Next.js encountered uncached or runtime data during prerendering ('searchParams' accessed outside of <Suspense>)*.
+* **Diagnostic & Solution** :
+  - Dans Next.js 15 App Router, `searchParams` ne doit pas être déballé (`await searchParams`) dans le composant page principal synchrone/prerendered hors `<Suspense>`.
+  - Modification de `src/app/(app)/finance/cash-closing/page.tsx` : `CashClosingPage` délègue `searchParams` au sous-composant `CashClosingContent` enveloppé dans `<Suspense fallback={<PageSkeleton />}>`.
+* **Vérification** :
+  - `next build` ➔ Génération des pages statiques : **87/87 pages générées avec succès**, dont `/finance/cash-closing`.
+* **Statut Git** : Push demandé pour déclencher le nouveau build Vercel.
+
 ### Session 77 — 22 Novembre 2026 (Antigravity) — Plan d'action Rapport v2 : Surbrillance prospects, clôture des relances, menu Nouveau et Clôture de caisse
 * **Demande de l'utilisateur** : « vas y » — Exécution et finalisation pas à pas en suivant le plan.
 * **Réalisations** :
