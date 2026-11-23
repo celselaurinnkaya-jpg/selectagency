@@ -509,6 +509,8 @@ export interface Subscription {
   currentPeriodEnd?: string;
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  /** Agence interne à SELECT (offerte) : accès inchangé, dispensée d'échéance. */
+  isInternal?: boolean;
 }
 
 export type TicketStatus = "open" | "answered" | "resolved";

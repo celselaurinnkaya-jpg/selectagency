@@ -173,11 +173,12 @@ export const SERVICE_CLIENT_STATUS: Record<ServiceClientStatus, LabelSpec> = {
 };
 
 /** Statut d'abonnement tel que l'agence le vit (l'essai terminé est calculé à partir de sa date). */
-export const SUBSCRIPTION_STATUS: Record<SubscriptionStatus | "trial_expired", LabelSpec> = {
+export const SUBSCRIPTION_STATUS: Record<SubscriptionStatus | "trial_expired" | "overdue", LabelSpec> = {
   trialing: { label: "Essai gratuit", tone: "info" },
   trial_expired: { label: "Essai terminé", tone: "danger" },
   active: { label: "Abonnement actif", tone: "success" },
   past_due: { label: "Paiement en retard", tone: "warning" },
+  overdue: { label: "Échéance dépassée : lecture seule", tone: "danger" },
   suspended: { label: "Suspendu", tone: "danger" },
   cancelled: { label: "Résilié", tone: "neutral" },
 };

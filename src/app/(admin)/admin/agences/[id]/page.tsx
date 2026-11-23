@@ -8,13 +8,15 @@ import { Card, EmptyState, Field, Notice, PageHeader, Section, StatCard, StatusB
 import { countryName } from "@/lib/countries";
 import { BILLING_PERIOD, METHOD_KIND, ROLE, TICKET_STATUS } from "@/lib/domain/labels";
 import { dayKey, formatDate, formatMoney } from "@/lib/format";
+import { siteUrl } from "@/lib/env";
 import {
   AdminAgencyWhatsAppForm,
+  InternalAgencyForm,
   SubscriptionForm,
   SubscriptionPaymentForm,
   VoidSubscriptionPaymentForm,
 } from "@/features/admin/AdminForms";
-import { agencyStatus, AUDIT_ACTIONS, CONSOLE_TIMEZONE, formatBytes } from "@/features/admin/display";
+import { agencyStatus, AUDIT_ACTIONS, auditSummary, CONSOLE_TIMEZONE, displayCity, formatBytes } from "@/features/admin/display";
 import { getAgency } from "@/features/admin/queries";
 
 export const metadata: Metadata = { title: "Agence" };
@@ -49,7 +51,7 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
         back={{ href: "/admin/agences", label: "Retour aux agences" }}
         eyebrow={<StatusBadge spec={spec} />}
         title={agency.name}
-        description={`${[agency.city, countryName(agency.countryCode)].filter(Boolean).join(", ")} · devise ${agency.currency} · inscrite le ${formatDate(agency.createdAt, tz)}`}
+        description={`${[displayCity(agency.city), countryName(agency.countryCode)].filter(Boolean).join(", ")} · devise ${agency.currency} · inscrite le ${formatDate(agency.createdAt, tz)}`}
       />
       {attention && (
         <div className="mb-5">
@@ -81,9 +83,16 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
                     organizationId={agency.id}
                     plans={planOptions}
                     current={{ planId: agency.planId, status: agency.status, trialEndsAt: dateInput(agency.trialEndsAt), currentPeriodEnd: dateInput(agency.currentPeriodEnd) }}
+                    isInternal={agency.isInternal}
                   />
                 )}
               </Card>
+              {agency.status && (
+                <Card className="mt-4">
+                  <h3 className="mb-2 font-semibold text-navy-800">{agency.isInternal ? "Agence interne" : "Agence interne ?"}</h3>
+                  <InternalAgencyForm organizationId={agency.id} isInternal={agency.isInternal} />
+                </Card>
+              )}
             </Section>
             <Section title="Enregistrer un paiement d'abonnement">
               <Card>
@@ -122,7 +131,15 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
 
         <Section title="Ligne WhatsApp Business (Cloud API Meta)">
           <Card>
-            <AdminAgencyWhatsAppForm organizationId={agency.id} current={whatsapp} />
+            <AdminAgencyWhatsAppForm
+              organizationId={agency.id}
+              current={whatsapp}
+              webhook={{
+                callbackUrl: `${siteUrl()}/api/webhooks/whatsapp`,
+                verifyTokenConfigured: Boolean(process.env.WHATSAPP_VERIFY_TOKEN?.trim()),
+                appSecretConfigured: Boolean(process.env.WHATSAPP_APP_SECRET?.trim()),
+              }}
+            />
           </Card>
         </Section>
 
@@ -174,7 +191,7 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
 
         <Section title="Journal de cette agence">
           {audit.length === 0 ? (
-            <p className="text-sm text-slate-600">Aucune action de la console sur cette agence.</p>
+            <p className="text-sm text-slate-600">Aucune action ni aucun changement d&apos;abonnement inscrit pour cette agence.</p>
           ) : (
             <ol className="space-y-2">
               {audit.slice(0, 20).map((entry) => (
@@ -184,8 +201,8 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
                     <span className="font-medium text-slate-900">{AUDIT_ACTIONS[entry.action] ?? entry.action}</span>
                     <span className="text-slate-500">
                       {" "}
-                      · {formatDate(entry.at, tz, "dateTime")} · {entry.actorEmail}
-                      {typeof entry.details.reason === "string" && ` · « ${entry.details.reason} »`}
+                      · {formatDate(entry.at, tz, "dateTime")} · {entry.actorEmail || "système"}
+                      {auditSummary(entry.details) && ` · ${auditSummary(entry.details)}`}
                     </span>
                   </span>
                 </li>

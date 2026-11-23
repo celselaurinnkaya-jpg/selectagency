@@ -8,7 +8,7 @@ import { Card, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { TICKET_CATEGORY, TICKET_STATUS } from "@/lib/domain/labels";
 import { formatDate } from "@/lib/format";
 import { setTicketStatusAction } from "@/features/admin/actions";
-import { AdminReplyForm } from "@/features/admin/AdminForms";
+import { AdminReplyForm, TicketCategoryForm } from "@/features/admin/AdminForms";
 import { CONSOLE_TIMEZONE } from "@/features/admin/display";
 import { getTicket } from "@/features/admin/queries";
 
@@ -77,6 +77,12 @@ async function ConsoleTicket({ params }: Pick<PageProps<"/admin/support/[id]">, 
         <Section title="Répondre">
           <Card>
             <AdminReplyForm ticketId={ticket.id} />
+          </Card>
+        </Section>
+        <Section title="Classement">
+          <Card>
+            <TicketCategoryForm ticketId={ticket.id} category={ticket.category} />
+            <p className="mt-2 text-xs text-slate-500">Une demande mal classée (par exemple une erreur signalée comme « Suggestion ») se corrige ici ; le changement est inscrit au journal.</p>
           </Card>
         </Section>
       </div>

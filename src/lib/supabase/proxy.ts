@@ -39,13 +39,19 @@ export async function updateSession(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
 
   if (!signedIn && matches(pathname, PROTECTED)) {
-    return redirectKeepingCookies(request, response, "/login", { next: `${pathname}${search}` });
+    return noStoreForConsole(pathname, redirectKeepingCookies(request, response, "/login", { next: `${pathname}${search}` }));
   }
   if (signedIn && matches(pathname, GUEST_ONLY)) {
     // Déjà connecté : on suit l'adresse de retour (ex. une invitation), sinon le tableau de bord.
     const next = new URL(safeNext(request.nextUrl.searchParams.get("next"), "/dashboard"), request.url);
     return redirectKeepingCookies(request, response, next.pathname, Object.fromEntries(next.searchParams));
   }
+  return noStoreForConsole(pathname, response);
+}
+
+/** Console SELECT : « private, no-store » (aucune copie gardée par un proxy, un réseau ou le navigateur). */
+function noStoreForConsole(pathname: string, response: NextResponse): NextResponse {
+  if (matches(pathname, ["/admin"])) response.headers.set("Cache-Control", "private, no-store, max-age=0");
   return response;
 }
 

@@ -904,7 +904,7 @@ export function toServiceClientStep(r: Row): ServiceClientStep {
 // Abonnement et support -------------------------------------------------------------------------
 
 export const SUBSCRIPTION = columns(
-  "organization_id", "plan_id", "status", "trial_ends_at", "current_period_end", "stripe_customer_id", "stripe_subscription_id",
+  "organization_id", "plan_id", "status", "trial_ends_at", "current_period_end", "stripe_customer_id", "stripe_subscription_id", "is_internal",
 );
 
 export const PLAN = columns(
@@ -946,6 +946,7 @@ export function toSubscription(r: Row, plan?: Plan): Subscription {
     currentPeriodEnd: optIso(r.current_period_end),
     stripeCustomerId: optStr(r.stripe_customer_id),
     stripeSubscriptionId: optStr(r.stripe_subscription_id),
+    isInternal: r.is_internal === true,
   };
 }
 

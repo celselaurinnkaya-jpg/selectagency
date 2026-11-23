@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Clock } from "lucide-react";
 import { cn } from "cn";
 import { can } from "@/lib/auth/permissions";
-import { daysLeft, effectiveStatus } from "@/lib/domain/subscription";
+import { daysLeft, effectiveStatus, graceEndsAt } from "@/lib/domain/subscription";
 import { formatDate } from "@/lib/format";
 import { getShell } from "@/features/operations/queries";
 
@@ -39,8 +39,18 @@ export async function SubscriptionBanner() {
   } else if (status === "past_due") {
     message = (
       <>
-        <strong>Paiement de l&apos;abonnement en retard.</strong> L&apos;agence fonctionne normalement pour le moment ; réglez l&apos;échéance pour
-        éviter une suspension.
+        <strong>Paiement de l&apos;abonnement en retard.</strong> L&apos;agence fonctionne normalement pour le moment ; réglez l&apos;échéance
+        {subscription.currentPeriodEnd && !subscription.isInternal
+          ? ` avant le ${formatDate(graceEndsAt(subscription.currentPeriodEnd), agency.timezone)}, sinon elle passera en lecture seule.`
+          : " pour éviter une suspension."}
+      </>
+    );
+  } else if (status === "overdue") {
+    severe = true;
+    message = (
+      <>
+        <strong>Échéance de l&apos;abonnement dépassée :</strong> l&apos;agence est en lecture seule. Vos données restent consultables ; réglez
+        l&apos;abonnement pour enregistrer à nouveau.
       </>
     );
   } else if (status === "suspended" || status === "cancelled") {

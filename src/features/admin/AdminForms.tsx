@@ -2,13 +2,13 @@
 
 import { useState, useActionState } from "react";
 import { useRouter } from "next/navigation";
-import { Smartphone, Plug, ShieldCheck, Trash2, CheckCircle2, Copy, Check, Info } from "lucide-react";
+import { Smartphone, Plug, ShieldCheck, Trash2, CheckCircle2, Copy, Check, Info, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { describedBy, FormField, FormMessage, selectClass } from "@/components/shared/form";
-import { BILLING_PERIOD, METHOD_KIND, SUBSCRIPTION_STATUS } from "@/lib/domain/labels";
-import type { BillingPeriod, PaymentMethodKind, SubscriptionStatus } from "@/lib/domain/types";
+import { BILLING_PERIOD, METHOD_KIND, SUBSCRIPTION_STATUS, TICKET_CATEGORY } from "@/lib/domain/labels";
+import type { BillingPeriod, PaymentMethodKind, SubscriptionStatus, TicketCategory } from "@/lib/domain/types";
 import { CURRENCY_OPTIONS } from "@/lib/format";
 import { initialFormState } from "@/lib/form-state";
 import {
@@ -17,6 +17,8 @@ import {
   recordSubscriptionPaymentAction,
   replyTicketAction,
   savePlanAction,
+  setAgencyInternalAction,
+  setTicketCategoryAction,
   updateSubscriptionAction,
   voidSubscriptionPaymentAction,
 } from "./actions";
@@ -115,17 +117,21 @@ export function SubscriptionForm({
   organizationId,
   plans,
   current,
+  isInternal = false,
 }: {
   organizationId: string;
   plans: { value: string; label: string }[];
   current: { planId?: string; status: SubscriptionStatus; trialEndsAt?: string; currentPeriodEnd?: string };
+  /** Agence interne : formule et échéance facultatives (la base le revérifie). */
+  isInternal?: boolean;
 }) {
   const [state, action, pending] = useActionState(updateSubscriptionAction, initialFormState);
   const e = state.fieldErrors ?? {};
   const v = state.ok ? {} : (state.values ?? {});
   return (
-    <form action={action} className="space-y-3" noValidate>
+    <form action={action} className="space-y-3">
       <input type="hidden" name="organizationId" value={organizationId} />
+      {isInternal && <input type="hidden" name="isInternal" value="1" />}
       <div className="grid gap-3 sm:grid-cols-2">
         <FormField id="sub-status" label="Statut" required error={e.status}>
           <select id="sub-status" name="status" defaultValue={v.status ?? current.status} className={selectClass}>
@@ -149,16 +155,29 @@ export function SubscriptionForm({
         <FormField id="sub-trial" label="Fin de l'essai" error={e.trialEndsAt}>
           <Input id="sub-trial" name="trialEndsAt" type="date" defaultValue={v.trialEndsAt ?? current.trialEndsAt} {...describedBy("sub-trial", e.trialEndsAt)} />
         </FormField>
-        <FormField id="sub-period" label="Échéance de l'abonnement" error={e.currentPeriodEnd} hint="Vide = sans échéance">
+        <FormField
+          id="sub-period"
+          label="Échéance de l'abonnement"
+          error={e.currentPeriodEnd}
+          hint={isInternal ? "Agence interne : facultative (vide = sans échéance)" : "Obligatoire pour « Abonnement actif » et « Paiement en retard »"}
+        >
           <Input id="sub-period" name="currentPeriodEnd" type="date" defaultValue={v.currentPeriodEnd ?? current.currentPeriodEnd} {...describedBy("sub-period", e.currentPeriodEnd, "hint")} />
         </FormField>
       </div>
       <FormField id="sub-reason" label="Motif" required error={e.reason} hint="Conservé dans le journal de la console.">
-        <Input id="sub-reason" name="reason" defaultValue={v.reason} placeholder="Ex. : prolongation d'essai accordée, impayé depuis 15 jours" {...describedBy("sub-reason", e.reason, "hint")} />
+        <Input
+          id="sub-reason"
+          name="reason"
+          required
+          minLength={3}
+          defaultValue={v.reason}
+          placeholder="Ex. : prolongation d'essai accordée, impayé depuis 15 jours"
+          {...describedBy("sub-reason", e.reason, "hint")}
+        />
       </FormField>
       <p className="text-xs text-slate-500">
-        « Suspendu », « Résilié » ou un essai dont la date est passée mettent l&apos;agence en lecture seule : ses données restent consultables, son
-        accès au support aussi.
+        « Suspendu », « Résilié », un essai dont la date est passée ou une échéance dépassée depuis plus de 7 jours mettent l&apos;agence en lecture
+        seule : ses données restent consultables, son accès au support aussi.
       </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
@@ -187,11 +206,11 @@ export function SubscriptionPaymentForm({
   const e = state.fieldErrors ?? {};
   const v = state.ok ? {} : (state.values ?? {});
   return (
-    <form action={action} className="space-y-3" noValidate>
+    <form action={action} className="space-y-3">
       <input type="hidden" name="organizationId" value={organizationId} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <FormField id="subpay-amount" label="Montant reçu" required error={e.amount}>
-          <Input id="subpay-amount" name="amount" inputMode="decimal" defaultValue={v.amount} className="tabular-nums" {...describedBy("subpay-amount", e.amount)} />
+          <Input id="subpay-amount" name="amount" inputMode="decimal" required defaultValue={v.amount} className="tabular-nums" {...describedBy("subpay-amount", e.amount)} />
         </FormField>
         <FormField id="subpay-currency" label="Devise" required error={e.currency}>
           <select id="subpay-currency" name="currency" defaultValue={v.currency ?? defaultCurrency} className={selectClass}>
@@ -215,7 +234,7 @@ export function SubscriptionPaymentForm({
           <Input id="subpay-reference" name="reference" defaultValue={v.reference} />
         </FormField>
         <FormField id="subpay-date" label="Date du paiement" required error={e.paidDate}>
-          <Input id="subpay-date" name="paidDate" type="date" defaultValue={v.paidDate ?? today} max={today} />
+          <Input id="subpay-date" name="paidDate" type="date" required defaultValue={v.paidDate ?? today} max={today} />
         </FormField>
         <FormField id="subpay-plan" label="Formule payée" error={e.planId}>
           <select id="subpay-plan" name="planId" defaultValue={v.planId ?? defaultPlanId ?? ""} className={selectClass}>
@@ -250,7 +269,7 @@ export function VoidSubscriptionPaymentForm({ paymentId }: { paymentId: string }
       <form action={action} className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
         <input type="hidden" name="paymentId" value={paymentId} />
         <FormField id={`void-${id}`} label="Motif" required className="min-w-0 flex-1">
-          <Input id={`void-${id}`} name="reason" placeholder="Ex. : montant saisi deux fois" />
+          <Input id={`void-${id}`} name="reason" required minLength={3} placeholder="Ex. : montant saisi deux fois" />
         </FormField>
         <Button type="submit" size="sm" variant="destructive" disabled={pending} className="h-10">
           {pending ? "Annulation…" : "Confirmer l'annulation"}
@@ -260,6 +279,65 @@ export function VoidSubscriptionPaymentForm({ paymentId }: { paymentId: string }
         <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
       </div>
     </details>
+  );
+}
+
+/**
+ * Agence interne (équipe SELECT, offerte) : l'accès ne change pas ; l'agence sort des indicateurs (revenu, abonnements
+ * actifs, essais) et n'a pas besoin d'échéance. Motif obligatoire, inscrit au journal.
+ */
+export function InternalAgencyForm({ organizationId, isInternal }: { organizationId: string; isInternal: boolean }) {
+  const [state, action, pending] = useActionState(setAgencyInternalAction, initialFormState);
+  const e = state.fieldErrors ?? {};
+  return (
+    <form action={action} className="space-y-3">
+      <input type="hidden" name="organizationId" value={organizationId} />
+      <input type="hidden" name="internal" value={isInternal ? "0" : "1"} />
+      <p className="text-sm text-slate-600">
+        {isInternal
+          ? "Agence interne : son accès ne dépend d'aucune échéance et elle n'est pas comptée dans les indicateurs (revenu, abonnements, essais)."
+          : "Pour une agence de l'équipe SELECT (test, usage interne, offerte) : son accès ne change pas, elle sort des indicateurs et n'a plus besoin d'échéance."}
+      </p>
+      <FormField id="internal-reason" label="Motif" required error={e.reason} hint="Conservé dans le journal de la console.">
+        <Input
+          id="internal-reason"
+          name="reason"
+          required
+          minLength={3}
+          placeholder={isInternal ? "Ex. : l'agence devient cliente payante" : "Ex. : agence de test de l'équipe SELECT"}
+          {...describedBy("internal-reason", e.reason, "hint")}
+        />
+      </FormField>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
+        <Button type="submit" variant="outline" disabled={pending} className="sm:ml-auto">
+          {pending ? "Enregistrement…" : isInternal ? "Repasser en agence cliente" : "Marquer comme agence interne"}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/** Corriger la catégorie d'une demande de support (inscrit au journal). */
+export function TicketCategoryForm({ ticketId, category }: { ticketId: string; category: TicketCategory }) {
+  const [state, action, pending] = useActionState(setTicketCategoryAction, initialFormState);
+  return (
+    <form action={action} className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      <input type="hidden" name="ticketId" value={ticketId} />
+      <FormField id="ticket-category" label="Catégorie" className="min-w-0 flex-1">
+        <select id="ticket-category" name="category" defaultValue={category} className={selectClass}>
+          {(Object.keys(TICKET_CATEGORY) as TicketCategory[]).map((c) => (
+            <option key={c} value={c}>
+              {TICKET_CATEGORY[c]}
+            </option>
+          ))}
+        </select>
+      </FormField>
+      <Button type="submit" variant="outline" disabled={pending} className="h-11">
+        {pending ? "Enregistrement…" : "Corriger la catégorie"}
+      </Button>
+      <FormMessage message={state.message} tone={state.ok ? "success" : "error"} />
+    </form>
   );
 }
 
@@ -289,30 +367,27 @@ export function AdminReplyForm({ ticketId }: { ticketId: string }) {
 export function AdminAgencyWhatsAppForm({
   organizationId,
   current,
+  webhook,
 }: {
   organizationId: string;
   current?: AgencyWhatsAppDetail | null;
+  /** Lu sur le serveur : adresse publique du webhook et variables d'environnement présentes (jamais leur valeur). */
+  webhook: { callbackUrl: string; verifyTokenConfigured: boolean; appSecretConfigured: boolean };
 }) {
   const [state, action, pending] = useActionState(configureAgencyWhatsAppAction, initialFormState);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [disconnectError, setDisconnectError] = useState<string | null>(null);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
-  const [copiedToken, setCopiedToken] = useState(false);
   const router = useRouter();
 
   const isConnected = current?.id && current?.status === "connected";
   const e = state.fieldErrors ?? {};
   const v = state.ok ? {} : (state.values ?? {});
 
-  const handleCopy = (text: string, isToken: boolean) => {
+  const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
-    if (isToken) {
-      setCopiedToken(true);
-      setTimeout(() => setCopiedToken(false), 2000);
-    } else {
-      setCopiedWebhook(true);
-      setTimeout(() => setCopiedWebhook(false), 2000);
-    }
+    setCopiedWebhook(true);
+    setTimeout(() => setCopiedWebhook(false), 2000);
   };
 
   const handleDisconnect = async () => {
@@ -337,9 +412,10 @@ export function AdminAgencyWhatsAppForm({
     }
   };
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://app.select-agency.com";
-  const webhookUrl = `${origin}/api/webhooks/whatsapp`;
-  const verifyToken = "select_agency_wa_token_2026";
+  const missing = [
+    !webhook.verifyTokenConfigured && "WHATSAPP_VERIFY_TOKEN (jeton de vérification)",
+    !webhook.appSecretConfigured && "WHATSAPP_APP_SECRET (signature des messages reçus)",
+  ].filter(Boolean) as string[];
 
   return (
     <div className="space-y-6">
@@ -516,16 +592,26 @@ export function AdminAgencyWhatsAppForm({
           À configurer une seule fois dans l&apos;application Meta Developers dans la section <strong>WhatsApp &gt; Configuration &gt; Webhooks</strong> :
         </p>
 
+        {missing.length > 0 && (
+          <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs text-red-900">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Variable(s) absente(s) sur le serveur : {missing.join(", ")}. Sans elles, Meta ne peut pas valider le webhook et aucun message
+              WhatsApp n&apos;arrive à l&apos;agent IA. Ajoutez-les dans Vercel (Settings &gt; Environment Variables), puis redéployez.
+            </span>
+          </p>
+        )}
+
         <div className="grid gap-3 sm:grid-cols-2 text-xs">
           <div>
             <span className="block font-medium text-slate-600 mb-1">URL de rappel (Callback URL) :</span>
             <div className="flex items-center gap-1.5">
-              <Input readOnly value={webhookUrl} className="h-8 text-xs font-mono bg-white" />
+              <Input readOnly value={webhook.callbackUrl} aria-label="URL de rappel" className="h-8 text-xs font-mono bg-white" />
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => handleCopy(webhookUrl, false)}
+                onClick={() => handleCopy(webhook.callbackUrl)}
                 className="h-8 w-8 p-0 shrink-0 cursor-pointer"
                 title="Copier l'URL"
               >
@@ -536,19 +622,11 @@ export function AdminAgencyWhatsAppForm({
 
           <div>
             <span className="block font-medium text-slate-600 mb-1">Jeton de vérification (Verify Token) :</span>
-            <div className="flex items-center gap-1.5">
-              <Input readOnly value={verifyToken} className="h-8 text-xs font-mono bg-white" />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => handleCopy(verifyToken, true)}
-                className="h-8 w-8 p-0 shrink-0 cursor-pointer"
-                title="Copier le token"
-              >
-                {copiedToken ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
-              </Button>
-            </div>
+            <p className={`rounded-md border bg-white px-2.5 py-2 ${webhook.verifyTokenConfigured ? "border-slate-200 text-slate-700" : "border-red-200 text-red-800"}`}>
+              {webhook.verifyTokenConfigured
+                ? "Configuré sur le serveur. Pour Meta, copiez la valeur de WHATSAPP_VERIFY_TOKEN depuis Vercel (elle n'est jamais affichée ici)."
+                : "Non configuré : WHATSAPP_VERIFY_TOKEN manque sur le serveur."}
+            </p>
           </div>
         </div>
 

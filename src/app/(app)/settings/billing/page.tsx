@@ -74,7 +74,7 @@ async function Billing({ searchParams }: { searchParams: PageProps<"/settings/bi
               : "L'équipe SELECT n'a pas encore fixé cette date : écrivez au support."
           }
           icon={CalendarClock}
-          tone={status === "trial_expired" || status === "suspended" ? "danger" : "navy"}
+          tone={status === "trial_expired" || status === "suspended" || status === "overdue" ? "danger" : "navy"}
         />
         <StatCard
           label="Places utilisées"
@@ -182,7 +182,13 @@ async function Billing({ searchParams }: { searchParams: PageProps<"/settings/bi
                       {p.periodEnd && ` · abonnement jusqu'au ${formatDate(p.periodEnd, tz)}`}
                     </span>
                   </span>
-                  {p.status === "voided" && <StatusBadge spec={{ label: "Annulé", tone: "neutral" }} />}
+                  {p.status === "voided" ? (
+                    <StatusBadge spec={{ label: "Annulé", tone: "neutral" }} />
+                  ) : (
+                    <Link href={`/settings/billing/recu/${p.id}`} className="inline-flex min-h-10 items-center text-sm font-medium text-navy-800 underline">
+                      Reçu (imprimer ou PDF)
+                    </Link>
+                  )}
                 </Card>
               </li>
             ))}

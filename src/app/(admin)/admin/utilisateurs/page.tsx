@@ -1,7 +1,10 @@
 import { Suspense } from "react";
+import Form from "next/form";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Users } from "lucide-react";
+import { Download, Search, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, Notice, PageHeader, StatusBadge } from "@/components/shared/ui";
@@ -31,7 +34,19 @@ const MATCHES: Record<FilterKey, (u: PlatformUser) => boolean> = {
 export default function UsersPage({ searchParams }: PageProps<"/admin/utilisateurs">) {
   return (
     <>
-      <PageHeader title="Utilisateurs" description="Les comptes inscrits sur SELECT Agency, leur agence et leur dernière connexion." />
+      <PageHeader
+        title="Utilisateurs"
+        description="Les comptes inscrits sur SELECT Agency, leur agence et leur dernière connexion."
+        actions={
+          <Button asChild variant="outline">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- téléchargement d'un fichier CSV (route), pas une page */}
+            <a href="/admin/export/utilisateurs" download>
+              <Download aria-hidden />
+              Exporter (CSV)
+            </a>
+          </Button>
+        }
+      />
       <Suspense fallback={<PageSkeleton />}>
         <UserList searchParams={searchParams} />
       </Suspense>
@@ -40,15 +55,38 @@ export default function UsersPage({ searchParams }: PageProps<"/admin/utilisateu
 }
 
 async function UserList({ searchParams }: Pick<PageProps<"/admin/utilisateurs">, "searchParams">) {
-  const [{ filtre }, users] = await Promise.all([searchParams, listUsers()]);
+  const [{ filtre, q }, users] = await Promise.all([searchParams, listUsers()]);
   const filter: FilterKey = FILTERS.some((f) => f.key === filtre) ? (filtre as FilterKey) : "tous";
-  const rows = users.filter(MATCHES[filter]);
+  const query = typeof q === "string" ? q.trim().toLowerCase() : "";
+  // Recherche par e-mail ou par agence ; les plus récents d'abord.
+  const searched = (query ? users.filter((u) => `${u.email} ${u.organizationName ?? ""}`.toLowerCase().includes(query)) : users).toSorted((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
+  const rows = searched.filter(MATCHES[filter]);
+  const href = (key: FilterKey) => {
+    const search = new URLSearchParams();
+    if (key !== "tous") search.set("filtre", key);
+    if (query) search.set("q", query);
+    const text = search.toString();
+    return `/admin/utilisateurs${text ? `?${text}` : ""}`;
+  };
   return (
     <div className="space-y-4">
+      <Form action="/admin/utilisateurs" className="flex gap-2">
+        {filter !== "tous" && <input type="hidden" name="filtre" value={filter} />}
+        <label htmlFor="utilisateurs-q" className="sr-only">
+          Rechercher un compte
+        </label>
+        <Input id="utilisateurs-q" name="q" type="search" defaultValue={query} placeholder="E-mail ou agence" className="flex-1" />
+        <Button type="submit">
+          <Search aria-hidden />
+          Rechercher
+        </Button>
+      </Form>
       <Pills
         label="Filtrer les comptes"
         active={filter}
-        items={FILTERS.map((f) => ({ key: f.key, label: f.label, href: f.key === "tous" ? "/admin/utilisateurs" : `/admin/utilisateurs?filtre=${f.key}`, count: users.filter(MATCHES[f.key]).length }))}
+        items={FILTERS.map((f) => ({ key: f.key, label: f.label, href: href(f.key), count: searched.filter(MATCHES[f.key]).length }))}
       />
       {rows.length === 0 ? (
         <EmptyState icon={Users} title="Aucun compte dans cette liste" />

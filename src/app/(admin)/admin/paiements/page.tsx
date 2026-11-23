@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Download } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Wallet } from "lucide-react";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Card, EmptyState, PageHeader, Section, StatCard, StatusBadge } from "@/components/shared/ui";
@@ -17,6 +19,15 @@ export default function SubscriptionPaymentsPage() {
       <PageHeader
         title="Paiements des abonnements"
         description="Les sommes reçues par SELECT de la part des agences. Un paiement s'enregistre depuis la fiche de l'agence concernée."
+        actions={
+          <Button asChild variant="outline">
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- téléchargement d'un fichier CSV (route), pas une page */}
+            <a href="/admin/export/paiements" download>
+              <Download aria-hidden />
+              Exporter (CSV)
+            </a>
+          </Button>
+        }
       />
       <Suspense fallback={<PageSkeleton />}>
         <Payments />

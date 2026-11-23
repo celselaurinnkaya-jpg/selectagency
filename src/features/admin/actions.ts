@@ -103,6 +103,7 @@ const subscriptionSchema = z.object({
   trialEndsAt: optionalDate,
   currentPeriodEnd: optionalDate,
   reason: z.string().trim().min(3, "Indiquez le motif : il est conservé dans le journal.").max(300),
+  isInternal: z.literal("1").optional(),
 });
 
 export async function updateSubscriptionAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -116,7 +117,7 @@ export async function updateSubscriptionAction(_prev: FormState, formData: FormD
     return { message: "Certains champs sont à corriger.", fieldErrors: { trialEndsAt: ["Indiquez la fin de l'essai."] }, values };
   }
   // Rapport de re-test du 22/11 : un abonnement « actif » affichait une prochaine échéance « — ».
-  if ((input.status === "active" || input.status === "past_due") && !input.currentPeriodEnd) {
+  if ((input.status === "active" || input.status === "past_due") && !input.currentPeriodEnd && input.isInternal !== "1") {
     return { message: "Certains champs sont à corriger.", fieldErrors: { currentPeriodEnd: ["Indiquez la date de la prochaine échéance."] }, values };
   }
 
@@ -205,6 +206,49 @@ export async function replyTicketAction(_prev: FormState, formData: FormData): P
   if (error) return { message: dbMessage(error), values };
   refresh();
   return { ok: true, message: "Réponse publiée : l'agence la voit dans sa demande." };
+}
+
+/** Agence interne (équipe SELECT) ou cliente : accès inchangé, motif inscrit au journal. */
+export async function setAgencyInternalAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const values = formValues(formData);
+  const parsed = z
+    .object({
+      organizationId: z.uuid(),
+      internal: z.enum(["0", "1"]),
+      reason: z.string().trim().min(3, "Indiquez le motif : il est conservé dans le journal.").max(300),
+    })
+    .safeParse(values);
+  if (!parsed.success) return { message: "Certains champs sont à corriger.", fieldErrors: z.flattenError(parsed.error).fieldErrors, values };
+  const user = await platformAdminForAction();
+  if (!user) return { message: CONSOLE_FORBIDDEN, values };
+  const internal = parsed.data.internal === "1";
+  const { error } = await user.supabase.rpc("platform_set_agency_internal", {
+    p_org: parsed.data.organizationId,
+    p_internal: internal,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return { message: dbMessage(error), values };
+  refresh();
+  return {
+    ok: true,
+    message: internal
+      ? "Agence marquée interne : son accès ne change pas, elle sort des indicateurs."
+      : "Agence redevenue cliente : fixez sa formule et son échéance.",
+  };
+}
+
+/** Corriger la catégorie d'une demande de support (inscrit au journal). */
+export async function setTicketCategoryAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = z
+    .object({ ticketId: z.uuid(), category: z.enum(["question", "problem", "billing", "account", "suggestion"]) })
+    .safeParse(formValues(formData));
+  if (!parsed.success) return { message: "Catégorie inconnue." };
+  const user = await platformAdminForAction();
+  if (!user) return { message: CONSOLE_FORBIDDEN };
+  const { error } = await user.supabase.rpc("platform_set_ticket_category", { p_ticket_id: parsed.data.ticketId, p_category: parsed.data.category });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: "Catégorie corrigée." };
 }
 
 export async function setDemoRequestStatusAction(formData: FormData): Promise<void> {

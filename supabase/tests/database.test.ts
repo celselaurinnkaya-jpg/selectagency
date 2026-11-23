@@ -604,8 +604,13 @@ describe("abonnements et console SELECT", () => {
     await db.query("insert into private.platform_admins (user_id) values ($1)", [GRACE.id]);
   });
 
-  const setSubscription = (status: string, trialEnds: string | null = null, plan: string | null = null) =>
-    one(GRACE_MFA, "select public.platform_update_subscription($1, $2, $3, $4, null, 'Test de la console')", [orgH, plan, status, trialEnds]);
+  // Une agence cliente « active » a toujours une formule et une échéance : PRO et 30 jours par défaut.
+  const setSubscription = async (status: string, trialEnds: string | null = null, plan: string | null = null) => {
+    const paying = status === "active" || status === "past_due";
+    const planId = plan ?? (paying ? (await one<{ id: string }>(GRACE_MFA, "select id from public.platform_plans() where name = 'PRO'")).id : null);
+    const periodEnd = paying ? new Date(Date.now() + 30 * 86400_000).toISOString() : null;
+    return one(GRACE_MFA, "select public.platform_update_subscription($1, $2, $3, $4, $5, 'Test de la console')", [orgH, planId, status, trialEnds, periodEnd]);
+  };
 
   it("ouvre un essai de 30 jours à la création d'une agence réelle", async () => {
     const sub = await one<{ status: string; days: number }>(HUGO, "select status, round(extract(epoch from trial_ends_at - now()) / 86400)::int as days from public.subscriptions");
@@ -647,7 +652,7 @@ describe("abonnements et console SELECT", () => {
     expect((await one<{ status: string }>(HUGO, "select status from public.subscriptions")).status).toBe("active");
     expect((await createClient(HUGO, orgH, hugo, "Abena")).reference).toMatch(/^CLI-/);
     const actions = (await rows<{ action: string }>(GRACE_MFA, "select action from public.platform_audit($1)", [orgH])).map((r) => r.action);
-    expect(actions).toEqual(["subscription_payment.recorded", "subscription.updated"]);
+    expect(actions).toEqual(["subscription_payment.recorded", "subscription.updated", "subscription.created"]);
   });
 
   it("passe l'agence en lecture seule à la fin de l'essai", async () => {
@@ -821,6 +826,63 @@ describe("abonnements et console SELECT", () => {
     await one(HUGO, "select public.save_email_settings($1, $2::jsonb)", [orgH, JSON.stringify({ notify_appointment_reminder: true })]);
     await one(HUGO, "select public.set_client_partner($1, $2)", [client.id, trialPartner]);
     expect(await queueEmail("appointment_reminder:formule:2", "appointment_reminder")).toBe(1);
+  });
+
+  it("corrige la catégorie d'une demande de support, réservé à la console", async () => {
+    const [ticket] = await rows<{ id: string }>(GRACE_MFA, "select id from public.platform_tickets(null, $1)", [orgH]);
+    await expect(one(HUGO, "select public.platform_set_ticket_category($1, 'billing')", [ticket!.id])).rejects.toThrow(/équipe SELECT/);
+    await expect(one(GRACE_MFA, "select public.platform_set_ticket_category($1, 'magie')", [ticket!.id])).rejects.toThrow(/Catégorie inconnue/);
+    await one(GRACE_MFA, "select public.platform_set_ticket_category($1, 'problem')", [ticket!.id]);
+    expect((await one<{ category: string }>(HUGO, "select category from public.support_tickets where id = $1", [ticket!.id])).category).toBe("problem");
+    expect((await one<{ action: string }>(GRACE_MFA, "select action from public.platform_audit($1) limit 1", [orgH])).action).toBe("support.category_changed");
+  });
+
+  it("agence interne, échéance obligatoire, délai de grâce, revenu mensuel et journal de tout changement", async () => {
+    const hugo = await memberId(HUGO);
+    const pro = (await one<{ id: string }>(GRACE_MFA, "select id from public.platform_plans() where name = 'PRO'")).id;
+    type Overview = { agencies: number; internal_agencies: number; mrr: { currency: string; amount_minor: number }[] };
+    const overview = () => one<{ o: Overview }>(GRACE_MFA, "select public.platform_overview() as o").then((r) => r.o);
+    const xaf = (o: Overview) => o.mrr.find((m) => m.currency === "XAF")?.amount_minor ?? 0;
+    const writable = () => db.query<{ w: boolean }>("select private.org_can_write($1) as w", [orgH]).then((r) => r.rows[0]!.w);
+    const setEnd = (days: number) =>
+      one(GRACE_MFA, "select public.platform_update_subscription($1, $2, 'active', null, now() + make_interval(days => $3::int), 'Échéance de test')", [orgH, pro, days]);
+
+    // Agence cliente : « actif » sans échéance refusé par la base.
+    await expect(one(GRACE_MFA, "select public.platform_update_subscription($1, $2, 'active', null, null, 'Sans échéance')", [orgH, pro])).rejects.toThrow(/formule et une échéance/);
+
+    // Revenu mensuel : PRO (30 000 XAF par mois) compté tant que l'agence est cliente.
+    await setEnd(30);
+    const before = await overview();
+    expect(xaf(before)).toBeGreaterThanOrEqual(30000);
+
+    // Agence interne : réservé à la console, motif obligatoire ; sortie des indicateurs, accès inchangé, sans échéance.
+    await expect(one(HUGO, "select public.platform_set_agency_internal($1, true, 'Agence de test')", [orgH])).rejects.toThrow(/équipe SELECT/);
+    await expect(one(GRACE_MFA, "select public.platform_set_agency_internal($1, true, '')", [orgH])).rejects.toThrow(/motif/);
+    await one(GRACE_MFA, "select public.platform_set_agency_internal($1, true, 'Agence de test de SELECT')", [orgH]);
+    const after = await overview();
+    expect(after.agencies).toBe(before.agencies - 1);
+    expect(after.internal_agencies).toBe(before.internal_agencies + 1);
+    expect(xaf(after)).toBe(xaf(before) - 30000);
+    await one(GRACE_MFA, "select public.platform_update_subscription($1, $2, 'active', null, null, 'Interne, sans échéance')", [orgH, pro]);
+    expect((await createClient(HUGO, orgH, hugo, "Interne")).reference).toMatch(/^CLI-/);
+    await expect(one(GRACE_MFA, "select public.platform_set_agency_internal($1, true, 'Encore')", [orgH])).rejects.toThrow(/déjà interne/);
+    await one(GRACE_MFA, "select public.platform_set_agency_internal($1, false, 'Redevient cliente')", [orgH]);
+
+    // Échéance dépassée : 7 jours de grâce, puis lecture seule ; une agence interne n'est pas concernée.
+    await setEnd(-3);
+    expect(await writable()).toBe(true);
+    await setEnd(-8);
+    expect(await writable()).toBe(false);
+    await one(GRACE_MFA, "select public.platform_set_agency_internal($1, true, 'Retour en interne')", [orgH]);
+    expect(await writable()).toBe(true);
+
+    // Changement fait hors de la console (base de données) : inscrit au journal avec son origine, sans doublon
+    // pour les actions de la console (qui écrivent déjà leur ligne avec le motif).
+    await db.query("update public.subscriptions set status = 'suspended' where organization_id = $1", [orgH]);
+    const journal = await rows<{ action: string; details: { source?: string; before?: { status: string }; after?: { status: string } } }>(
+      GRACE_MFA, "select action, details from public.platform_audit($1) limit 3", [orgH]);
+    expect(journal.map((j) => j.action)).toEqual(["subscription.changed", "subscription.internal_on", "subscription.updated"]);
+    expect(journal[0]!.details).toMatchObject({ source: "database", before: { status: "active" }, after: { status: "suspended" } });
   });
 });
 

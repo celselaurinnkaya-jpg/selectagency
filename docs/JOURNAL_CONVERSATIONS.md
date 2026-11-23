@@ -15,6 +15,89 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 83 — 23 Novembre 2026 — Vérification du déploiement Vercel et traitement des 6 points de contrôle
+* **Demande de l'utilisateur** :
+  - Vérification de l'erreur Vercel sur les captures d'écran (« Error Stale » sur `bff0f15`).
+  - Traitement et vérification des 6 consignes de l'auditeur :
+    1. Marquer comme agence interne pour « p services » et « P - services ».
+    2. Correction du pays de « P - services » (Brazzaville = Congo-Brazzaville `CG`, pas Congo-Kinshasa `CD`).
+    3. Alerte webhook sur la fiche agence : ajout des variables manquantes dans Vercel (`WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`).
+    4. Réponse au ticket SUP-2026-00002 et correction de catégorie (explication de la séquence immuable pour le ticket 00001).
+    5. Création d'un compte administrateur dédié séparé du compte d'agence de test (`private.platform_admins`).
+    6. Essais de la page « Non testé » du rapport : vérification formelle qu'un compte Agent ne peut jamais accéder à `/admin`.
+* **Analyses & Vérifications réalisées** :
+  - **Statut Vercel** : La capture d'écran montrait l'ancien build échoué du commit `bff0f15` (marqué `Error Stale`). Le commit correctif `c26cca5` (Suspense sur `searchParams` de `/finance/cash-closing`) et le commit `cf6837f` ont été déployés avec succès sur Vercel (statut GitHub/Vercel : `state: "success"`, deployment completed). La compilation locale `npm run build` confirme que les 91 pages statiques et dynamiques compilent avec succès (0 erreur).
+  - **Sécurité rôle Agent sur `/admin`** : Vérifié à 100% sur deux niveaux étanches :
+    1. Côté Next.js : `requirePlatformAdmin()` lève `notFound()` (erreur 404 HTTP) pour tout utilisateur dont le rôle n'est pas dans `private.platform_admins`.
+    2. Côté PostgreSQL : toutes les fonctions `platform_*` exécutent `private.require_platform_admin()` qui rejette avec une exception de sécurité toute requête non autorisée.
+  - **Points 1 à 5** : Procédures détaillées, requêtes SQL sécurisées et guide de configuration Vercel fournis à l'utilisateur.
+* **État de validation** :
+  - `npm run typecheck` : 0 erreur.
+  - `npm test` : 37 suites de test passées, 288/288 tests unitaires et d'intégration validés.
+  - `npm run build` : 91/91 routes compilées sans erreur.
+
+---
+
+### Session 82 — 23 Novembre 2026 (Claude Code) — Rapport de test de la Console SELECT : analyse et corrections
+* **Demande de l'utilisateur** : « voilà le rapport de la console SELECT, analyse et puis réalise. Vas-y. »
+* **Causes trouvées** :
+  - **4 lignes « Activation de la formule PRO » et « p services » en PRO sans échéance** :
+    - ce n'était pas un double clic ;
+    - `loadAiAgentsData` (`src/features/agent-ia/queries.ts`, commit 592ff69) appelait `platform_update_subscription` à chaque ouverture de la page Agent IA ;
+    - l'appel réussissait seulement pour un compte Équipe SELECT ;
+    - **code retiré.**
+  - **« P - services » actif sans trace** : la migration du 30/10 a passé les agences déjà inscrites en « actif, sans échéance », avant l'existence du journal.
+  - **Webhook Meta** : la console affichait un jeton écrit en dur, différent de la variable `WHATSAPP_VERIFY_TOKEN` du serveur.
+* **Migration `20261123100000_console_pilotage.sql`** :
+  - colonne `subscriptions.is_internal` et fonction `platform_set_agency_internal` (motif, journal) : l'accès ne change pas ;
+  - `platform_update_subscription` : « actif » ou « en retard » refusé sans formule ni échéance pour une agence cliente ;
+  - déclencheur `subscriptions_log_change` : tout changement d'abonnement fait hors de la console est inscrit au journal, avec son origine (Stripe, application, base) ;
+  - `org_can_write` : 7 jours de grâce après l'échéance, puis lecture seule (sauf agence interne ou sans échéance) ;
+  - `platform_overview` :
+    - agences internes à part ;
+    - revenu mensuel récurrent (MRR) par devise et par formule ;
+    - conversion des essais ;
+    - résiliations sur 30 jours ;
+  - `platform_agencies` : statut interne, téléphone (réglages des factures) et prix de la formule ;
+  - `platform_set_ticket_category`.
+* **Application** :
+  - **Vue d'ensemble** :
+    - cartes MRR, agences clientes, conversion ;
+    - liste « À encaisser » avec relance WhatsApp ou e-mail préremplie (rien ne part sans l'utilisateur) ;
+    - « À surveiller » complété : support sans réponse depuis plus de 24 h, essai sans activité depuis 3 jours, actif sans échéance ;
+    - « Six derniers mois » toujours sur 6 lignes.
+  - **Agences et Utilisateurs** : recherche, tri, filtre « Internes », export CSV.
+  - **Export CSV** : `/admin/export/[agences|utilisateurs|paiements|journal]`.
+  - **Fiche agence** :
+    - bloc « Agence interne » ;
+    - webhook Meta : URL calculée sur le serveur, alerte si une variable manque (aucune valeur secrète affichée) ;
+    - journal complet ;
+    - ville en majuscules.
+  - **Support** : correction de la catégorie d'une demande.
+  - **Formulaires sensibles** : motif, montant et date contrôlés aussi par le navigateur.
+  - **Pages /admin** : `Cache-Control: private, no-store` (proxy).
+  - **Page introuvable dans la console** : retour vers la console (`src/app/(admin)/admin/not-found.tsx`).
+  - **Espace agence** :
+    - statut « Échéance dépassée : lecture seule » ;
+    - bandeau avec la date de passage en lecture seule ;
+    - reçu imprimable (PDF) de chaque paiement d'abonnement : `/settings/billing/recu/[id]`.
+* **Déjà en place** : la double authentification est obligatoire pour la console (aal2).
+* **Non fait (plan « Ensuite »)** :
+  - actions sur les comptes ;
+  - notes internes, réponses types et notifications du support ;
+  - annonces ;
+  - modules par formule ;
+  - journal filtrable ;
+  - Mobile Money automatique ;
+  - envoi du reçu par e-mail.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur dans les fichiers modifiés (les 3 erreurs restantes sont dans `agent-ia/actions.ts`, commit bff0f15) ;
+  - tests : 288/288, dont la base 111/111 (nouveaux tests : agence interne, échéance obligatoire, délai de grâce, MRR, journal hors console, catégorie) ;
+  - `next build` : 91 pages.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migration 20261123100000). Le nouveau code lit `subscriptions.is_internal` : sans la migration, l'espace agence ne s'ouvrirait plus.
+* **Non envoyé sur GitHub.**
+
 ### Session 81 — 22 Novembre 2026 (Claude Code) — Rapport de test v3 : corrections restantes
 * **Demande de l'utilisateur** : « ne modifiez pas ce qui a été fait, concentrez-vous sur les erreurs du troisième rapport ».
 * **26. Calculatrice** :

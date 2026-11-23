@@ -39,6 +39,13 @@ export interface AgencyRow {
   storageBytes: number;
   lastActivityAt?: string;
   openTickets: number;
+  /** Agence interne à SELECT : accès inchangé, hors indicateurs, sans échéance. */
+  isInternal: boolean;
+  /** Téléphone de l'agence (réglages des factures), pour une relance par WhatsApp. */
+  phone?: string;
+  planPriceMinor?: number;
+  planCurrency?: string;
+  planBillingPeriod?: BillingPeriod;
 }
 
 const toAgencyRow = (r: Row): AgencyRow => ({
@@ -63,6 +70,11 @@ const toAgencyRow = (r: Row): AgencyRow => ({
   storageBytes: Number(r.storage_bytes ?? 0),
   lastActivityAt: iso(r.last_activity_at),
   openTickets: Number(r.open_tickets ?? 0),
+  isInternal: Boolean(r.is_internal),
+  phone: text(r.phone),
+  planPriceMinor: r.plan_price_minor === null || r.plan_price_minor === undefined ? undefined : Number(r.plan_price_minor),
+  planCurrency: text(r.plan_currency),
+  planBillingPeriod: text(r.plan_billing_period) as BillingPeriod | undefined,
 });
 
 export interface Overview {
@@ -87,6 +99,13 @@ export interface Overview {
   openTickets: number;
   signups: { month: string; count: number }[];
   revenue: { month: string; currency: string; amountMinor: number }[];
+  internalAgencies: number;
+  /** Revenu mensuel récurrent, par devise (agences clientes actives ou en retard, prix ramené au mois). */
+  mrr: { currency: string; amountMinor: number; subscriptions: number }[];
+  mrrByPlan: { plan: string; currency: string; amountMinor: number; subscriptions: number }[];
+  trialsFinished: number;
+  trialsConverted: number;
+  churnedLast30Days: number;
 }
 
 export async function getOverview(): Promise<Overview> {
@@ -114,6 +133,17 @@ export async function getOverview(): Promise<Overview> {
     openTickets: n("open_tickets"),
     signups: ((o.signups ?? []) as Row[]).map((r) => ({ month: String(r.month), count: Number(r.count) })),
     revenue: ((o.revenue ?? []) as Row[]).map((r) => ({ month: String(r.month), currency: String(r.currency), amountMinor: Number(r.amount_minor) })),
+    internalAgencies: n("internal_agencies"),
+    mrr: ((o.mrr ?? []) as Row[]).map((r) => ({ currency: String(r.currency), amountMinor: Number(r.amount_minor), subscriptions: Number(r.subscriptions) })),
+    mrrByPlan: ((o.mrr_by_plan ?? []) as Row[]).map((r) => ({
+      plan: String(r.plan),
+      currency: String(r.currency),
+      amountMinor: Number(r.amount_minor),
+      subscriptions: Number(r.subscriptions),
+    })),
+    trialsFinished: n("trials_finished"),
+    trialsConverted: n("trials_converted"),
+    churnedLast30Days: n("churned_last_30_days"),
   };
 }
 

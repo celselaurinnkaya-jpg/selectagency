@@ -26,20 +26,8 @@ const PRO_LIMITS = { agents: 1, numbers: 1, replies: 2000 };
 
 export async function loadAiAgentsData(): Promise<AiAgentsPageData> {
   const ctx = await getAgencyContext();
-  if (!ctx.subscription?.plan?.id) {
-    try {
-      await ctx.supabase.rpc("platform_update_subscription", {
-        p_org: ctx.organizationId,
-        p_plan_id: "4b85f8c7-4dc8-416f-99ca-3cc47fe5f364",
-        p_status: "active",
-        p_trial_ends_at: null,
-        p_current_period_end: null,
-        p_reason: "Activation de la formule PRO pour le module Agent IA",
-      });
-    } catch {
-      // Ignoré si l'utilisateur n'a pas les droits plateforme
-    }
-  }
+  // L'abonnement se change uniquement depuis la console SELECT ou par le paiement (Stripe) : jamais à l'ouverture
+  // d'une page (rapport de test de la console du 23/11 : activations « PRO » en double, sans échéance).
   const isLocked = ctx.locked.includes("ai_agent");
   const canManage = ["owner", "admin"].includes(ctx.member.role);
 
