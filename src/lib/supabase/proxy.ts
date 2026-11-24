@@ -38,6 +38,14 @@ export async function updateSession(request: NextRequest) {
   const signedIn = Boolean(data?.claims?.sub);
   const { pathname, search } = request.nextUrl;
 
+  // Site public d'une agence : 404 si l'adresse n'existe pas ou si le site est hors ligne. La page elle-même
+  // répondrait 200 (affichage progressif), d'où cette vérification légère avant l'affichage.
+  const site = /^\/site\/([a-z0-9-]+)\/?$/i.exec(pathname);
+  if (site && request.method === "GET" && !request.headers.has("rsc")) {
+    const { data: online, error } = await supabase.rpc("website_is_online", { p_slug: site[1]!.toLowerCase() });
+    if (!error && online === false) return siteNotFound(response);
+  }
+
   if (!signedIn && matches(pathname, PROTECTED)) {
     return noStoreForConsole(pathname, redirectKeepingCookies(request, response, "/login", { next: `${pathname}${search}` }));
   }
@@ -47,6 +55,14 @@ export async function updateSession(request: NextRequest) {
     return redirectKeepingCookies(request, response, next.pathname, Object.fromEntries(next.searchParams));
   }
   return noStoreForConsole(pathname, response);
+}
+
+/** Page 404 d'un site d'agence inconnu ou hors ligne (simple, sans données). */
+function siteNotFound(from: NextResponse): NextResponse {
+  const html = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>Site introuvable</title></head><body style="margin:0;font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#fff;color:#0f172a;text-align:center;padding:16px"><main><h1 style="font-size:1.5rem">Ce site n'est pas disponible</h1><p style="color:#475569">L'adresse est peut-être erronée, ou l'agence a mis son site hors ligne.</p><p><a href="/" style="color:#334155">SELECT Agency</a></p></main></body></html>`;
+  const res = new NextResponse(html, { status: 404, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "public, max-age=60", "X-Robots-Tag": "noindex" } });
+  for (const cookie of from.cookies.getAll()) res.cookies.set(cookie);
+  return res;
 }
 
 /** Console SELECT : « private, no-store » (aucune copie gardée par un proxy, un réseau ou le navigateur). */

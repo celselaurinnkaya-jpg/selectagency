@@ -57,7 +57,8 @@ RÈGLES ABSOLUES
 - « testimonials » : seulement des avis cités mot pour mot dans la description, avec le nom indiqué. Sinon, laisse la liste vide et mets "visible" à false.
 - Une section sans information dans la description : liste vide et "visible" à false (sauf « steps », « why » et « faq » que tu peux rédiger de façon générale, sans promesse ni chiffre).
 - Coordonnées (contact.phone, contact.whatsapp, contact.email, contact.address, contact.hours) : recopie-les seulement si elles figurent dans la description ou les informations connues, sinon chaîne vide.
-- Français clair, phrases courtes, ton chaleureux et professionnel. Pas d'emoji. Pas de majuscules partout.
+- Français correct, avec TOUS les accents (é, è, ê, à, ç, ô…), même si la description est écrite sans accents : corrige l'orthographe.
+- Phrases courtes, ton chaleureux et professionnel. Pas d'emoji. Pas de majuscules partout.
 - hero.ctaLabel : un appel à l'action court (par exemple « Demander un devis »).
 - seoDescription : une phrase de 160 caractères au plus qui résume l'agence.
 
@@ -121,18 +122,27 @@ export function guardAiContent(raw: unknown, brief: string, agency: AgencyFacts,
   const source = `${brief}\n${agency.name} ${agency.phone ?? ""} ${agency.email ?? ""} ${agency.address ?? ""} ${agency.services.map((s) => `${s.name} ${s.description}`).join(" ")}`;
   const sourceFolded = fold(source);
   const sourceDigits = digits(source);
-  const inSource = (v: string) => v === "" || sourceFolded.includes(fold(v));
-  const phoneInSource = (v: string) => v === "" || (digits(v).length >= 6 && sourceDigits.includes(digits(v).slice(-8)));
+  const inSource = (v: string) => sourceFolded.includes(fold(v));
+  const phoneInSource = (v: string) => digits(v).length >= 6 && sourceDigits.includes(digits(v).slice(-8));
+  // Adresse ou horaires reformulés par l'IA : acceptés si tous leurs mots significatifs viennent de la description.
+  const wordsInSource = (v: string) => {
+    const words = fold(v).split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+    return words.length > 0 && words.every((w) => sourceFolded.includes(w));
+  };
   const clean = (v: string) => stripUnbackedClaims(stripUnbackedAmounts(v, source), source);
+  // Un contact déjà rempli n'est jamais vidé : il est remplacé seulement par une valeur venue de la description.
+  const contactField = (aiValue: string, currentValue: string, accept: (v: string) => boolean) =>
+    aiValue.trim() && accept(aiValue) ? aiValue : currentValue;
 
   const contact = {
     ...ai.contact,
-    text: clean(ai.contact.text),
-    phone: phoneInSource(ai.contact.phone) ? ai.contact.phone : current.contact.phone,
-    whatsapp: phoneInSource(ai.contact.whatsapp) ? ai.contact.whatsapp : current.contact.whatsapp,
-    email: inSource(ai.contact.email) ? ai.contact.email : current.contact.email,
-    address: inSource(ai.contact.address) ? ai.contact.address : current.contact.address,
-    hours: inSource(ai.contact.hours) ? ai.contact.hours : current.contact.hours,
+    title: ai.contact.title || current.contact.title,
+    text: clean(ai.contact.text) || current.contact.text,
+    phone: contactField(ai.contact.phone, current.contact.phone, phoneInSource),
+    whatsapp: contactField(ai.contact.whatsapp, current.contact.whatsapp, phoneInSource),
+    email: contactField(ai.contact.email, current.contact.email, inSource),
+    address: contactField(ai.contact.address, current.contact.address, (v) => inSource(v) || wordsInSource(v)),
+    hours: contactField(ai.contact.hours, current.contact.hours, (v) => inSource(v) || wordsInSource(v)),
   };
   // Un avis n'est gardé que s'il figure dans la description (au moins ses 40 premiers caractères).
   const testimonials = ai.testimonials.items.filter((t) => t.text.length > 0 && sourceFolded.includes(fold(t.text.slice(0, 40))));
@@ -169,7 +179,7 @@ export async function generateSiteContent(brief: string, agency: AgencyFacts, cu
       const response = await client.models.generateContent({
         model,
         contents: prompt(brief, agency),
-        config: { responseMimeType: "application/json", responseJsonSchema: RESPONSE_SCHEMA, temperature: 0.4 },
+        config: { responseMimeType: "application/json", responseJsonSchema: RESPONSE_SCHEMA, temperature: 0.3 },
       });
       const body = response.text?.trim();
       if (!body) continue;

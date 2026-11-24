@@ -1,3 +1,4 @@
+import { parsePhoneNumberFromString, type CountryCode } from "libphonenumber-js";
 import { z } from "zod";
 
 // Site web de l'agence : modèles de page, contenu et règles communes à l'éditeur, à l'IA et à la page publique.
@@ -251,6 +252,105 @@ export function defaultContent(template: TemplateKey, agency: AgencyFacts): Site
       .map((s) => s.name.toLowerCase())
       .join(", ")}.`.slice(0, 160),
   });
+}
+
+/** Adresse pendant la saisie : accents retirés (« é » → « e »), espaces et signes → un seul tiret. */
+export function cleanSlugInput(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/, "")
+    .slice(0, 48);
+}
+
+/** Adresse enregistrée : comme pendant la saisie, sans tiret au début ni à la fin. */
+export function finalizeSlug(value: string): string {
+  return cleanSlugInput(value).replace(/-+$/g, "");
+}
+
+/**
+ * Numéro affiché sur le site, au format international (« 069141360 » au Congo → « +242 06 914 13 60 »).
+ * Un numéro qu'on ne sait pas lire est gardé tel quel.
+ */
+export function internationalPhone(raw: string, countryCode: string): string {
+  const value = raw.trim();
+  if (!value) return "";
+  const parsed = parsePhoneNumberFromString(value, /^[A-Z]{2}$/.test(countryCode) ? (countryCode as CountryCode) : undefined);
+  return parsed?.isValid() ? parsed.formatInternational() : value;
+}
+
+/** Lien WhatsApp (wa.me) : indicatif du pays de l'agence ajouté si le numéro n'en a pas. */
+export function whatsappHref(raw: string, countryCode: string): string | undefined {
+  const value = raw.trim();
+  if (!value) return undefined;
+  const parsed = parsePhoneNumberFromString(value, /^[A-Z]{2}$/.test(countryCode) ? (countryCode as CountryCode) : undefined);
+  if (parsed?.isValid()) return `https://wa.me/${parsed.number.replace(/\D/g, "")}`;
+  // Sans pays connu : seulement un numéro déjà international (+…).
+  const digits = value.replace(/\D/g, "");
+  return value.startsWith("+") && digits.length >= 8 ? `https://wa.me/${digits}` : undefined;
+}
+
+/** Numéros du contact au format international, avec le pays de l'agence. */
+export function withInternationalPhones(content: SiteContent, countryCode: string): SiteContent {
+  return {
+    ...content,
+    contact: {
+      ...content.contact,
+      phone: internationalPhone(content.contact.phone, countryCode),
+      whatsapp: internationalPhone(content.contact.whatsapp, countryCode),
+    },
+  };
+}
+
+/** Titre de l'onglet et de Google : 60 caractères au plus (le slogan seulement s'il tient). */
+export function pageTitle(content: SiteContent): string {
+  const name = content.agencyName.trim() || "Agence";
+  const withTagline = content.tagline ? `${name} · ${content.tagline}` : name;
+  if (withTagline.length <= 60) return withTagline;
+  return name.length <= 60 ? name : `${name.slice(0, 59).trimEnd()}…`;
+}
+
+/** « Projet » de la fiche prospect, d'après le service choisi dans le formulaire du site. */
+export function serviceMotive(service: string): string | undefined {
+  const s = service.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+  if (!s.trim()) return undefined;
+  if (/etud|campus|admission|universit|ecole|bourse|inscription|stage/.test(s)) return "study_abroad";
+  if (/regroupement|installation|immigration|residence/.test(s)) return "family_reunion";
+  if (/affaire|business|mission|professionnel|salon|seminaire/.test(s)) return "business_travel";
+  if (/administrati|demarche|legalisation|traduction|apostille|passeport|document/.test(s)) return "administrative";
+  if (/visa|touris|visite|famil/.test(s)) return "tourist_visa";
+  if (/billet|vol|avion|sejour|hotel|heberg|voyage|circuit|croisiere|vacance|reservation/.test(s)) return "custom_trip";
+  return "other";
+}
+
+/** Textes d'exemple des modèles : à remplacer avant de publier. */
+const EXAMPLE_TEXTS = [
+  "Présentez ici",
+  "Présentez une destination",
+  "Présentez une autre destination",
+  "Et une troisième",
+  "Destination 1",
+  "Destination 2",
+  "Destination 3",
+];
+
+/**
+ * Liste de vérification avant publication. « blocking » : la publication est refusée ; « warnings » : la personne
+ * confirme qu'elle publie quand même (texte d'exemple restant, e-mail absent, numéro sans indicatif…).
+ */
+export function publicationChecks(content: SiteContent): { blocking: string[]; warnings: string[] } {
+  const warnings: string[] = [];
+  const texts = JSON.stringify({ ...content, logoUrl: "", heroImageUrl: "" });
+  const examples = EXAMPLE_TEXTS.filter((t) => texts.includes(t));
+  if (examples.length) warnings.push(`du texte d'exemple reste à remplacer (« ${examples[0]} »…)`);
+  if (!content.contact.email) warnings.push("aucune adresse e-mail de contact");
+  const local = [content.contact.phone, content.contact.whatsapp].filter((p) => p && !p.trim().startsWith("+"));
+  if (local.length) warnings.push(`numéro sans indicatif du pays (${local[0]}) : le bouton WhatsApp risque de ne pas fonctionner`);
+  if (!content.contact.address) warnings.push("aucune adresse de l'agence");
+  if (content.services.visible && content.services.items.length === 0) warnings.push("la section « Services » est vide");
+  return { blocking: missingForPublication(content), warnings };
 }
 
 /** Le contenu est-il assez rempli pour être publié ? Renvoie ce qui manque (liste vide si tout va bien). */

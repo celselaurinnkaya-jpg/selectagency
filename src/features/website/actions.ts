@@ -10,7 +10,7 @@ import { AiUnavailableError } from "@/lib/ai/runner";
 import { createSystemClient } from "@/lib/supabase/system";
 import { toE164 } from "@/features/clients/phone";
 import { generateSiteContent } from "./ai";
-import { missingForPublication, normalizeContent, SLUG_PATTERN, type SiteContent } from "./content";
+import { finalizeSlug, missingForPublication, normalizeContent, serviceMotive, SLUG_PATTERN, withInternationalPhones, type SiteContent } from "./content";
 import { agencyFacts, getPublicSite, loadWebsiteRow, siteCacheTag } from "./queries";
 
 // Actions du site web : enregistrer le brouillon, le faire rédiger par l'IA, publier, mettre hors ligne,
@@ -19,13 +19,15 @@ import { agencyFacts, getPublicSite, loadWebsiteRow, siteCacheTag } from "./quer
 export interface WebsiteActionResult extends FormState {
   content?: SiteContent;
   url?: string;
+  /** Adresse enregistrée (après retrait des accents et des tirets en trop). */
+  slug?: string;
 }
 
+// Adresse : accents retirés et tirets en trop supprimés avant la vérification (« Test Claude é! » → « test-claude-e »).
 const slugSchema = z
   .string()
-  .trim()
-  .toLowerCase()
-  .regex(SLUG_PATTERN, "Adresse invalide : de 3 à 48 caractères, lettres minuscules, chiffres et tirets (pas au début ni à la fin).");
+  .transform((v) => finalizeSlug(v))
+  .pipe(z.string().regex(SLUG_PATTERN, "Adresse invalide : de 3 à 48 caractères, lettres minuscules, chiffres et tirets."));
 
 async function editorContext() {
   const ctx = await getAgencyContext();
@@ -44,13 +46,14 @@ export async function saveWebsiteAction(input: { slug: string; brief: string; co
   const slug = slugSchema.safeParse(input.slug);
   if (!slug.success) return { message: slug.error.issues[0]?.message ?? "Adresse invalide.", fieldErrors: { slug: [slug.error.issues[0]?.message ?? ""] } };
   const brief = String(input.brief ?? "").slice(0, 6000);
-  const content = normalizeContent(input.content);
+  // Numéros au format international (indicatif du pays de l'agence) : le bouton WhatsApp du site fonctionne toujours.
+  const content = withInternationalPhones(normalizeContent(input.content), ctx.agency.countryCode);
   const before = await loadWebsiteRow(ctx);
   const { error: dbError } = await ctx.supabase.rpc("save_agency_website", { p_org: ctx.organizationId, p_slug: slug.data, p_brief: brief, p_draft: content });
   if (dbError) return { message: dbMessage(dbError), fieldErrors: /adresse/i.test(dbError.message) ? { slug: [dbMessage(dbError)] } : undefined };
   // Adresse changée alors que le site est en ligne : l'ancienne adresse ne doit plus servir la page.
   if (before?.isOnline && before.slug !== slug.data) refreshPublic(before.slug);
-  return { ok: true, message: "Brouillon enregistré. Il sera visible en ligne à la prochaine publication.", content };
+  return { ok: true, message: "Brouillon enregistré. Il sera visible en ligne à la prochaine publication.", content, slug: slug.data };
 }
 
 export async function generateWebsiteAction(input: { slug: string; brief: string; content: unknown }): Promise<WebsiteActionResult> {
@@ -69,10 +72,11 @@ export async function generateWebsiteAction(input: { slug: string; brief: string
   const { error: limitError } = await ctx.supabase.rpc("note_website_generation", { p_org: ctx.organizationId });
   if (limitError) return { message: dbMessage(limitError) };
   try {
-    const content = await generateSiteContent(brief, await agencyFacts(ctx), normalizeContent(input.content));
+    const generated = await generateSiteContent(brief, await agencyFacts(ctx), normalizeContent(input.content));
+    const content = withInternationalPhones(generated, ctx.agency.countryCode);
     const { error: dbError } = await ctx.supabase.rpc("save_agency_website", {
       p_org: ctx.organizationId,
-      p_slug: String(input.slug).trim().toLowerCase(),
+      p_slug: saved.slug ?? finalizeSlug(String(input.slug)),
       p_brief: brief,
       p_draft: content,
     });
@@ -137,7 +141,12 @@ const leadSchema = z.object({
   slug: z.string().trim().toLowerCase().regex(SLUG_PATTERN),
   firstName: z.string().trim().min(1, "Indiquez votre prénom.").max(80),
   lastName: z.string().trim().min(1, "Indiquez votre nom.").max(80),
-  phone: z.string().trim().min(6, "Indiquez votre numéro de téléphone ou WhatsApp.").max(40),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Indiquez votre numéro de téléphone ou WhatsApp.")
+    .min(6, "Numéro trop court : indiquez le numéro complet, avec l'indicatif du pays si vous êtes à l'étranger.")
+    .max(40, "Numéro trop long."),
   email: z.union([z.literal(""), z.email("Adresse e-mail invalide.")]).optional(),
   service: z.string().trim().max(120).optional(),
   destination: z.string().trim().max(120).optional(),
@@ -167,6 +176,8 @@ export async function submitWebsiteLeadAction(_prev: FormState, formData: FormDa
     p_service: input.service ?? "",
     p_destination: input.destination ?? "",
     p_message: input.message ?? "",
+    // « Projet » de la fiche prospect, d'après le service choisi.
+    p_service_motive: serviceMotive(input.service ?? "") ?? null,
   });
   if (error) return { message: dbMessage(error), values };
   return { ok: true, message: `Merci ! Votre demande a bien été reçue par ${site.content.agencyName} : un conseiller vous recontacte rapidement.` };

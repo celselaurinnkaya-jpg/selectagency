@@ -1,15 +1,17 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { Check, Copy, ExternalLink, Globe, ImagePlus, Plus, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Globe, ImagePlus, Plus, Sparkles, Trash2, Undo2, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { FormField, FormMessage } from "@/components/shared/form";
 import { Card, Notice, Section, StatusBadge } from "@/components/shared/ui";
 import {
+  cleanSlugInput,
   contrastRatio,
   defaultContent,
+  publicationChecks,
   readableOn,
   SECTION_LABELS,
   TEMPLATES,
@@ -46,6 +48,37 @@ const LIST_FIELDS: Record<ListKey, { fields: Field[]; max: number; empty: Record
 
 const LIST_ORDER: ListKey[] = ["services", "destinations", "steps", "why", "testimonials", "faq"];
 
+const MAX_UPLOAD = 3 * 1024 * 1024;
+const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
+
+/**
+ * Photo prise au téléphone (souvent 3 à 5 Mo) : réduite dans le navigateur avant l'envoi (1 920 px pour la photo
+ * d'accueil, 600 px pour le logo), ce qui évite l'échec de l'envoi et accélère le site sur les connexions lentes.
+ */
+async function prepareImage(file: File, kind: "logo" | "hero"): Promise<File> {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error("Format non accepté : choisissez une image JPEG, PNG ou WebP.");
+  const max = kind === "logo" ? 600 : 1920;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    if (file.size > MAX_UPLOAD) throw new Error(`Photo trop lourde (${megabytes(file.size)}) : 3 Mo au plus.`);
+    return file;
+  }
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  if (scale === 1 && file.size <= 1024 * 1024) return file;
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  // Logo PNG : transparence gardée ; photo : JPEG.
+  const type = kind === "logo" && file.type === "image/png" ? "image/png" : "image/jpeg";
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, 0.85));
+  if (!blob) throw new Error("La photo n'a pas pu être préparée : essayez une autre image.");
+  if (blob.size > MAX_UPLOAD) throw new Error(`Photo trop lourde, même réduite (${megabytes(blob.size)}) : 3 Mo au plus.`);
+  return new File([blob], `${kind}.${type === "image/png" ? "png" : "jpg"}`, { type });
+}
+
 export function WebsiteEditor({
   initial,
   siteBase,
@@ -67,6 +100,9 @@ export function WebsiteEditor({
   const [busy, setBusy] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const [copied, setCopied] = useState(false);
+  // Texte d'avant la dernière rédaction par l'IA : « Annuler la rédaction » le remet.
+  const [beforeAi, setBeforeAi] = useState<SiteContent | null>(null);
+  const checks = publicationChecks(content);
 
   // Modifications non enregistrées : le navigateur prévient avant de quitter la page.
   useEffect(() => {
@@ -82,32 +118,60 @@ export function WebsiteEditor({
   };
   const set = <K extends keyof SiteContent>(key: K, value: SiteContent[K]) => update({ ...content, [key]: value });
 
+  // Une erreur (réseau, envoi refusé…) s'affiche en message : la page ne plante plus.
   const run = (label: string, task: () => Promise<WebsiteActionResult>, after?: (r: WebsiteActionResult) => void) => {
     setBusy(label);
     startTransition(async () => {
-      const r = await task();
-      setResult(r);
-      if (r.ok) after?.(r);
-      setBusy(null);
+      try {
+        const r = await task();
+        setResult(r);
+        if (r.ok) after?.(r);
+      } catch (error) {
+        setResult({ message: error instanceof Error && error.message ? error.message : "L'opération n'a pas abouti. Vérifiez votre connexion puis réessayez." });
+      } finally {
+        setBusy(null);
+      }
     });
+  };
+
+  const applySaved = (r: WebsiteActionResult) => {
+    if (r.content) setContent(r.content);
+    if (r.slug) setSlug(r.slug);
+    setDirty(false);
+    if (isOnline) setPendingPublish(true);
   };
 
   const save = (after?: () => void) =>
     run("save", () => saveWebsiteAction({ slug, brief, content }), (r) => {
-      if (r.content) setContent(r.content);
-      setDirty(false);
-      if (isOnline) setPendingPublish(true);
+      applySaved(r);
       after?.();
     });
 
-  const generate = () =>
+  const generate = () => {
+    const previous = content;
     run("ai", () => generateWebsiteAction({ slug, brief, content }), (r) => {
-      if (r.content) setContent(r.content);
-      setDirty(false);
-      if (isOnline) setPendingPublish(true);
+      applySaved(r);
+      setBeforeAi(previous);
     });
+  };
 
-  const publish = () =>
+  const undoAi = () => {
+    if (!beforeAi) return;
+    const previous = beforeAi;
+    run("undo", () => saveWebsiteAction({ slug, brief, content: previous }), (r) => {
+      applySaved(r);
+      setBeforeAi(null);
+      setResult({ ok: true, message: "Rédaction annulée : le texte précédent est revenu (brouillon enregistré)." });
+    });
+  };
+
+  const publish = () => {
+    // Liste de vérification : ce qui manque bloque ; le reste demande une confirmation.
+    if (checks.blocking.length) {
+      setResult({ message: `Avant de publier, ajoutez ${checks.blocking.join(", ")}.` });
+      return;
+    }
+    if (checks.warnings.length && !confirm(`Avant de publier, vérifiez :\n\n- ${checks.warnings.join("\n- ")}\n\nPublier quand même ?`)) return;
     run(
       "publish",
       async () => {
@@ -123,6 +187,7 @@ export function WebsiteEditor({
         setPendingPublish(false);
       },
     );
+  };
 
   const unpublish = () => {
     if (!confirm("Mettre le site hors ligne ? Les visiteurs ne le verront plus ; le brouillon est conservé.")) return;
@@ -146,10 +211,13 @@ export function WebsiteEditor({
 
   const upload = (kind: "logo" | "hero", file: File | undefined) => {
     if (!file) return;
-    const data = new FormData();
-    data.set("kind", kind);
-    data.set("file", file);
-    run(kind, () => uploadWebsiteImageAction(data), (r) => {
+    run(kind, async () => {
+      const prepared = await prepareImage(file, kind);
+      const data = new FormData();
+      data.set("kind", kind);
+      data.set("file", prepared);
+      return uploadWebsiteImageAction(data);
+    }, (r) => {
       if (!r.url) return;
       const next = kind === "logo" ? { ...content, logoUrl: r.url } : { ...content, heroImageUrl: r.url };
       setContent(next);
@@ -222,6 +290,19 @@ export function WebsiteEditor({
         {!dirty && isOnline && pendingPublish && (
           <p className="text-sm text-orange-800">Le brouillon contient des modifications pas encore en ligne : cliquez sur « Mettre à jour le site en ligne ».</p>
         )}
+        {(checks.blocking.length > 0 || checks.warnings.length > 0) && (
+          <div className="rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950">
+            <p className="font-medium">À vérifier avant de publier :</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              {checks.blocking.map((c) => (
+                <li key={c}>il manque {c}</li>
+              ))}
+              {checks.warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <FormMessage message={result.message} tone={result.ok ? "success" : "error"} />
       </Card>
 
@@ -293,6 +374,12 @@ export function WebsiteEditor({
               <Wand2 aria-hidden />
               Repartir du texte d&apos;exemple du modèle
             </Button>
+            {beforeAi && (
+              <Button type="button" variant="ghost" disabled={!!busy} onClick={undoAi}>
+                <Undo2 aria-hidden />
+                {busy === "undo" ? "Annulation…" : "Annuler la rédaction de l'IA"}
+              </Button>
+            )}
           </div>
         </Card>
       </Section>
@@ -537,7 +624,7 @@ export function WebsiteEditor({
                 value={slug}
                 maxLength={48}
                 onChange={(e) => {
-                  setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"));
+                  setSlug(cleanSlugInput(e.target.value));
                   setDirty(true);
                 }}
                 className="sm:max-w-xs"

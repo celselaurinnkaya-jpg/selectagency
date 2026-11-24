@@ -12,7 +12,8 @@ export default function AppError({ error, reset }: { error: Error & { digest?: s
       </span>
       <h1 className="mt-3 text-xl font-semibold text-navy-800">Cette page n&apos;a pas pu s&apos;afficher</h1>
       <p className="mt-2 text-sm text-slate-600">
-        Vérifiez votre connexion puis réessayez. Si le problème continue, transmettez la référence ci-dessous.
+        Vérifiez votre connexion puis réessayez.
+        {error.digest ? " Si le problème continue, transmettez la référence ci-dessous à l'équipe SELECT." : " Si le problème continue, écrivez à l'équipe SELECT (Aide et support) en décrivant ce que vous faisiez."}
       </p>
       {error.digest && <p className="mt-2 font-mono text-xs text-slate-500">Référence : {error.digest}</p>}
       <Button className="mt-4" onClick={reset}>

@@ -82,6 +82,7 @@ export async function getWebsiteEditor() {
     hasUnpublishedChanges: Boolean(row?.draft && row.published && JSON.stringify(row.draft) !== JSON.stringify(row.published)),
     publicUrl: publicSiteUrl(slug),
     siteBase: `${siteUrl()}/site/`,
+    countryCode: ctx.agency.countryCode,
     facts,
   };
 }

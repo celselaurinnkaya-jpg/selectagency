@@ -15,6 +15,55 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 85 — 23 Novembre 2026 (Claude Code) — Rapport de test « Option Site web » : corrections
+* **Demande de l'utilisateur** : rapport de test de l'option Site web (« voilà le rapport »).
+* **Les 3 bugs prioritaires** :
+  - **Photo de plus de 3 Mo** :
+    - la photo est réduite dans le navigateur avant l'envoi (1 920 px pour la photo, 600 px pour le logo) ;
+    - un message clair s'affiche (« Photo trop lourde (x Mo) : 3 Mo au plus ») ;
+    - toute erreur de l'éditeur devient un message, la page ne plante plus ;
+    - la page d'erreur ne promet plus une référence absente.
+  - **Numéro sans indicatif** :
+    - à l'enregistrement, les numéros passent au format international avec le pays de l'agence (« 069141360 » → « +242 06 914 1360 ») ;
+    - le lien WhatsApp du site ajoute aussi l'indicatif (`whatsappHref`).
+  - **L'IA vidait l'e-mail et gardait une adresse périmée** :
+    - un contact rempli n'est plus jamais vidé ;
+    - une nouvelle adresse ou de nouveaux horaires venus de la description sont acceptés (tous leurs mots figurent dans la description).
+* **Autres corrections** :
+  - français avec accents exigé dans la consigne, température 0,3 ;
+  - bouton « Annuler la rédaction de l'IA » (remet le texte précédent et l'enregistre) ;
+  - liste de vérification avant publication :
+    - texte d'exemple restant ;
+    - e-mail ou adresse manquants ;
+    - numéro sans indicatif ;
+    - services vides ;
+    - ce qui est bloquant arrête la publication, le reste demande une confirmation ;
+  - formulaire du site : le service choisi et la case d'accord restent après une erreur ; « Numéro trop court » pour « 12 » ;
+  - titre de la page : 60 caractères au plus ;
+  - adresse du site : accents convertis (« é » → « e »), tirets en trop retirés ;
+  - le service choisi remplit le « Projet » du prospect (`service_motive`) ;
+  - site inconnu ou hors ligne : vraie réponse 404 (proxy et `website_is_online`) ;
+  - `robots.txt`, `sitemap.xml` (sites en ligne, mis à jour chaque heure) et données structurées « TravelAgency ».
+* **Migration `20261123140000_site_web_corrections.sql`** :
+  - `website_submit_lead` avec le projet ;
+  - `website_is_online` ;
+  - `public_website_slugs`.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : aucune nouvelle erreur ;
+  - tests : 301/301, dont la base 115/115 ;
+  - `next build` : 96 pages ;
+  - robots.txt et sitemap.xml contrôlés en local.
+* **Pour plus tard (premier mois)** :
+  - historique des versions ;
+  - notification immédiate des demandes ;
+  - statistiques du site.
+* **À faire par l'utilisateur** :
+  - `npx supabase db push` (migration 20261123140000) AVANT la publication : le formulaire envoie désormais le projet du prospect ;
+  - corriger l'adresse de l'agence d'essai ;
+  - supprimer le prospect « TEST CLAUDE Site web » (CLI-2026-00005) et sa relance.
+* **Non envoyé sur GitHub.**
+
 ### Session 84 — 23 Novembre 2026 (Claude Code) — Site web de l'agence : modèles prêts à publier, rédaction par l'IA (phase 1)
 * **Demande de l'utilisateur** :
   - s'inspirer de ce qui existe déjà, en faisant simple ;
@@ -60,7 +109,7 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
   - tests : 298/298, dont la base 115/115 (4 nouveaux tests du site) et 6 tests unitaires des modèles et des garde-fous de l'IA ;
   - `next build` : 94 pages ;
   - les 3 modèles affichés par le serveur de développement (page d'essai temporaire, supprimée ensuite).
-* **Essai local demandé par l'utilisateur** : \`/site-web\` ajouté aux pages protégées du proxy (oubli vu pendant l'essai) ; migration 20261123120000 poussée par l'utilisateur ; envoi sur GitHub et Vercel demandé (« envoyée sur GitHub, puis vercel »).
+* **Essai local demandé par l'utilisateur** : `/site-web` ajouté aux pages protégées du proxy (oubli vu pendant l'essai) ; migration 20261123120000 poussée par l'utilisateur ; envoi sur GitHub et Vercel demandé (« envoyée sur GitHub, puis vercel »).
 * **Phase 2 possible** :
   - nom de domaine propre à l'agence ;
   - plusieurs pages ;

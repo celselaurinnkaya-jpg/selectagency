@@ -1,5 +1,5 @@
 import { Check, Clock, Mail, MapPin, MessageCircle, Phone, Quote } from "lucide-react";
-import { readableOn, type SectionKey, type SiteContent, type TemplateKey } from "./content";
+import { readableOn, whatsappHref, type SectionKey, type SiteContent, type TemplateKey } from "./content";
 import { SiteLeadForm } from "./SiteLeadForm";
 
 // Page du site de l'agence, à ses couleurs. Trois mises en page (modèles) pour le même contenu.
@@ -10,11 +10,6 @@ const ORDER: Record<TemplateKey, SectionKey[]> = {
   horizon: ["services", "about", "why", "steps", "destinations", "testimonials", "faq"],
   campus: ["steps", "services", "why", "about", "destinations", "testimonials", "faq"],
   evasion: ["destinations", "services", "about", "why", "steps", "testimonials", "faq"],
-};
-
-const waLink = (phone: string) => {
-  const digits = phone.replace(/\D/g, "");
-  return digits.length >= 8 ? `https://wa.me/${digits}` : undefined;
 };
 
 function SectionTitle({ children, light = false }: { children: React.ReactNode; light?: boolean }) {
@@ -211,8 +206,19 @@ function Section({ c, k }: { c: SiteContent; k: SectionKey }) {
   );
 }
 
-export function SiteRenderer({ content: c, slug, preview = false }: { content: SiteContent; slug: string; preview?: boolean }) {
-  const whatsapp = waLink(c.contact.whatsapp || c.contact.phone);
+export function SiteRenderer({
+  content: c,
+  slug,
+  countryCode,
+  preview = false,
+}: {
+  content: SiteContent;
+  slug: string;
+  /** Pays de l'agence : indicatif ajouté aux numéros saisis sans lui (lien WhatsApp). */
+  countryCode: string;
+  preview?: boolean;
+}) {
+  const whatsapp = whatsappHref(c.contact.whatsapp || c.contact.phone, countryCode);
   const style = {
     "--p": c.colors.primary,
     "--on-p": readableOn(c.colors.primary),

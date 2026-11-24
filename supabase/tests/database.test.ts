@@ -3369,15 +3369,19 @@ describe("site web de l'agence", () => {
 
   it("transforme une demande du formulaire en prospect avec une tâche de rappel, sans doublon ni abus", async () => {
     const submit = (phone: string, first = "Inès", message = "Je veux étudier à Lyon") =>
-      one(null, "select public.website_submit_lead('agence-u', $1, 'Ngo', $2, 'ines@exemple.test', 'Études en France', 'France', $3)", [first, phone, message]);
+      one(null, "select public.website_submit_lead('agence-u', $1, 'Ngo', $2, 'ines@exemple.test', 'Études en France', 'France', $3, 'study_abroad')", [first, phone, message]);
     await expect(submit("690000111")).rejects.toThrow(/téléphone invalide/);
     await expect(one(null, "select public.website_submit_lead('inconnue', 'A', 'B', '+237690000111', null, null, null, null)")).rejects.toThrow(/pas disponible/);
+    // Adresse en ligne ou non (réponse 404), et plan du site : seulement les sites en ligne.
+    expect((await one<{ ok: boolean }>(null, "select public.website_is_online('agence-u') as ok")).ok).toBe(true);
+    expect((await one<{ ok: boolean }>(null, "select public.website_is_online('inconnue') as ok")).ok).toBe(false);
+    expect((await rows<{ slug: string }>(null, "select slug from public.public_website_slugs()")).map((r) => r.slug)).toContain("agence-u");
     await submit("+237690000111");
-    const [prospect] = await rows<{ id: string; status: string; source: string; first_name: string; notes: string; assigned: boolean }>(
+    const [prospect] = await rows<{ id: string; status: string; source: string; first_name: string; notes: string; assigned: boolean; service_motive: string }>(
       UGO,
-      "select c.id, c.status, c.source, c.first_name, c.notes, c.assigned_to = m.id as assigned from public.clients c join public.members m on m.user_id = auth.uid() where c.phone_e164 = '+237690000111'",
+      "select c.id, c.status, c.source, c.first_name, c.notes, c.service_motive, c.assigned_to = m.id as assigned from public.clients c join public.members m on m.user_id = auth.uid() where c.phone_e164 = '+237690000111'",
     );
-    expect(prospect).toMatchObject({ status: "prospect", source: "website", first_name: "Inès", assigned: true });
+    expect(prospect).toMatchObject({ status: "prospect", source: "website", first_name: "Inès", assigned: true, service_motive: "study_abroad" });
     expect(prospect!.notes).toContain("Service souhaité : Études en France");
     expect(await rows(UGO, "select title, priority, status from public.tasks where client_id = $1", [prospect!.id])).toEqual([
       { title: "Rappeler Inès Ngo (demande du site web)", priority: "high", status: "todo" },
@@ -3392,9 +3396,11 @@ describe("site web de l'agence", () => {
   it("limite la rédaction par l'IA à 20 par jour et ferme le site hors formule", async () => {
     for (let i = 0; i < 20; i += 1) await one(UGO, "select public.note_website_generation($1)", [org]);
     await expect(one(UGO, "select public.note_website_generation($1)", [org])).rejects.toThrow(/20 rédactions/);
-    // Essai terminé : agence en lecture seule, site hors ligne.
+    // Essai terminé : agence en lecture seule, site hors ligne (et absent du plan du site).
     await db.query("update public.subscriptions set status = 'trialing', trial_ends_at = now() - interval '1 day' where organization_id = $1", [org]);
     expect(await site("agence-u")).toBeNull();
+    expect((await one<{ ok: boolean }>(null, "select public.website_is_online('agence-u') as ok")).ok).toBe(false);
+    expect((await rows<{ slug: string }>(null, "select slug from public.public_website_slugs()")).map((r) => r.slug)).not.toContain("agence-u");
     await expect(save(UGO, "agence-u")).rejects.toThrow(/propriétaire et les administrateurs/);
   });
 });

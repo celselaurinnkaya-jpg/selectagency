@@ -75,7 +75,7 @@ export function SiteLeadForm({
         {services.length > 0 && (
           <label className="block text-sm font-medium text-slate-700">
             Service souhaité
-            <select name="service" defaultValue={v.service ?? ""} className={field}>
+            <select key={`service-${v.service ?? ""}`} name="service" defaultValue={v.service ?? ""} className={field}>
               <option value="">Choisir…</option>
               {services.map((s) => (
                 <option key={s} value={s}>
@@ -97,7 +97,14 @@ export function SiteLeadForm({
         {error("message")}
       </label>
       <label className="flex items-start gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="consent" required className="mt-1 size-4 accent-[var(--p)]" />
+        <input
+          key={`consent-${v.consent ?? ""}`}
+          type="checkbox"
+          name="consent"
+          required
+          defaultChecked={v.consent === "on"}
+          className="mt-1 size-4 accent-[var(--p)]"
+        />
         <span>
           J&apos;accepte que {agencyName} utilise ces informations pour me recontacter au sujet de ma demande. *
           {error("consent")}

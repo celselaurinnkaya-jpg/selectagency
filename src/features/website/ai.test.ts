@@ -47,4 +47,19 @@ describe("rédaction du site par l'IA : garde-fous", () => {
     expect(result.contact.email).toBe("");
     expect(result.testimonials.items.map((t) => t.name)).toEqual(["Marie K."]);
   });
+
+  it("ne vide jamais un contact rempli et accepte une nouvelle adresse donnée dans la description (rapport du 23/11)", () => {
+    const current = { ...defaultContent("horizon", AGENCY), contact: { ...defaultContent("horizon", AGENCY).contact, email: "agence@exemple.test", address: "R. Antônio Fernandes Pinheiro, 815" } };
+    const brief = "Notre agence est située avenue de la Paix à Brazzaville. Ouvert du lundi au samedi de 8 h à 18 h.";
+    const result = guardAiContent(
+      { contact: { title: "", text: "", phone: "", whatsapp: "", email: "", address: "Avenue de la Paix, Brazzaville", hours: "Du lundi au samedi, de 8 h à 18 h" } },
+      brief,
+      AGENCY,
+      current,
+    );
+    expect(result.contact.email).toBe("agence@exemple.test");
+    expect(result.contact.address).toBe("Avenue de la Paix, Brazzaville");
+    expect(result.contact.hours).toBe("Du lundi au samedi, de 8 h à 18 h");
+    expect(result.contact.phone).toBe("+237 6 99 00 00 00");
+  });
 });

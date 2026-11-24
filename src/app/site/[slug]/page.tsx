@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { siteUrl } from "@/lib/env";
+import { pageTitle } from "@/features/website/content";
 import { SiteRenderer } from "@/features/website/SiteRenderer";
 import { getPublicSite } from "@/features/website/queries";
 
@@ -16,7 +17,7 @@ export async function generateMetadata({ params }: PageProps<"/site/[slug]">): P
   const c = site.content;
   const description = c.seoDescription || c.hero.subtitle || undefined;
   return {
-    title: { absolute: c.tagline ? `${c.agencyName} · ${c.tagline}` : c.agencyName },
+    title: { absolute: pageTitle(c) },
     description,
     alternates: { canonical: `${siteUrl()}/site/${site.slug}` },
     openGraph: {
@@ -42,5 +43,26 @@ async function PublicSite({ params }: Pick<PageProps<"/site/[slug]">, "params">)
   const { slug } = await params;
   const site = await getPublicSite(slug);
   if (!site) notFound();
-  return <SiteRenderer content={site.content} slug={site.slug} />;
+  const c = site.content;
+  const url = `${siteUrl()}/site/${site.slug}`;
+  // Données structurées lues par Google (fiche « agence de voyages ») : seulement ce que l'agence a publié.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "TravelAgency",
+    name: c.agencyName,
+    url,
+    description: c.seoDescription || c.hero.subtitle || undefined,
+    telephone: c.contact.phone || undefined,
+    email: c.contact.email || undefined,
+    address: c.contact.address ? { "@type": "PostalAddress", streetAddress: c.contact.address, addressCountry: site.countryCode } : undefined,
+    logo: c.logoUrl || undefined,
+    image: c.heroImageUrl ? absolute(c.heroImageUrl) : undefined,
+    openingHours: c.contact.hours || undefined,
+  };
+  return (
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
+      <SiteRenderer content={c} slug={site.slug} countryCode={site.countryCode} />
+    </>
+  );
 }
