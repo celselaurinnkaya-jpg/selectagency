@@ -774,9 +774,9 @@ describe("abonnements et console SELECT", () => {
     const plans = await rows<{ id: string; name: string; tier: string; price_minor: number; max_members: number | null; stripe_price_id: string }>(
       GRACE_MFA, "select id, name, tier, price_minor, max_members, stripe_price_id from public.platform_plans() where tier is not null order by price_minor");
     expect(plans.map(({ name, tier, price_minor, max_members, stripe_price_id }) => ({ name, tier, price_minor, max_members, stripe_price_id }))).toEqual([
-      { name: "STARTER", tier: "starter", price_minor: 7500, max_members: 2, stripe_price_id: null },
-      { name: "PRO", tier: "pro", price_minor: 10500, max_members: 5, stripe_price_id: null },
-      { name: "BUSINESS", tier: "business", price_minor: 15500, max_members: null, stripe_price_id: null },
+      { name: "STARTER", tier: "starter", price_minor: 7500, max_members: 2, stripe_price_id: "price_1UfK8CDENw1uRDfuKK7w6sSu" },
+      { name: "PRO", tier: "pro", price_minor: 10500, max_members: 5, stripe_price_id: "price_1UfK8EDENw1uRDfuaru9ces4" },
+      { name: "BUSINESS", tier: "business", price_minor: 15500, max_members: null, stripe_price_id: "price_1UfK8FDENw1uRDfuEiHL6FXS" },
     ]);
     const [starter, pro] = plans;
     const hugo = await memberId(HUGO);

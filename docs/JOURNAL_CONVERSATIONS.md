@@ -15,6 +15,23 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 88 — 24 Novembre 2026 (Claude Code) — Nouveaux tarifs Stripe : paiement par carte rétabli
+* **Remarque de l'utilisateur** : « il n'y a plus les liens de paiement de Stripe ». C'était l'effet attendu : les anciens tarifs avaient été détachés (session 87).
+* **Accord explicite de l'utilisateur** pour créer les tarifs dans le compte Stripe RÉEL.
+* **Tarifs créés dans Stripe** :
+  - mensuels, en FCFA, sous les produits existants ;
+  - script sans affichage de la clé, avec clé d'idempotence ;
+  - STARTER 7 500 → `price_1UfK8CDENw1uRDfuKK7w6sSu` ;
+  - PRO 10 500 → `price_1UfK8EDENw1uRDfuaru9ces4` ;
+  - BUSINESS 15 500 → `price_1UfK8FDENw1uRDfuEiHL6FXS` ;
+  - les anciens tarifs restent dans Stripe, inutilisés.
+* **Migration `20261124130000_tarifs_stripe.sql`** :
+  - relie chaque formule à son nouveau tarif, seulement si le prix correspond ;
+  - trace « Tarif Stripe de la formule modifié » dans le journal de la console.
+* **Tests** : base 116/116 (tarifs attendus mis à jour) ; essai à blanc du `db push` : seule cette migration à appliquer.
+* **À faire par l'utilisateur** : `npx supabase db push`. Le bouton « Payer par carte » revient dès que la migration est appliquée (donnée de la base, sans redéploiement).
+* **Non envoyé sur GitHub.**
+
 ### Session 87 — 24 Novembre 2026 (Claude Code) — Nouveaux prix des formules, avec l'équivalent en dollars
 * **Demande de l'utilisateur** :
   - STARTER 7 500 FCFA, PRO 10 500 FCFA et BUSINESS 15 500 FCFA par mois ;
