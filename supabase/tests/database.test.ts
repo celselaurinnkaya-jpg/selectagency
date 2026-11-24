@@ -774,9 +774,9 @@ describe("abonnements et console SELECT", () => {
     const plans = await rows<{ id: string; name: string; tier: string; price_minor: number; max_members: number | null; stripe_price_id: string }>(
       GRACE_MFA, "select id, name, tier, price_minor, max_members, stripe_price_id from public.platform_plans() where tier is not null order by price_minor");
     expect(plans.map(({ name, tier, price_minor, max_members, stripe_price_id }) => ({ name, tier, price_minor, max_members, stripe_price_id }))).toEqual([
-      { name: "STARTER", tier: "starter", price_minor: 15000, max_members: 2, stripe_price_id: "price_1UYv0TDENw1uRDfuKP8XJlwx" },
-      { name: "PRO", tier: "pro", price_minor: 30000, max_members: 5, stripe_price_id: "price_1UYv0UDENw1uRDfueQEZIlf8" },
-      { name: "BUSINESS", tier: "business", price_minor: 60000, max_members: null, stripe_price_id: "price_1UYv0VDENw1uRDfujuyBG7nb" },
+      { name: "STARTER", tier: "starter", price_minor: 7500, max_members: 2, stripe_price_id: null },
+      { name: "PRO", tier: "pro", price_minor: 10500, max_members: 5, stripe_price_id: null },
+      { name: "BUSINESS", tier: "business", price_minor: 15500, max_members: null, stripe_price_id: null },
     ]);
     const [starter, pro] = plans;
     const hugo = await memberId(HUGO);
@@ -850,10 +850,12 @@ describe("abonnements et console SELECT", () => {
     // Agence cliente : « actif » sans échéance refusé par la base.
     await expect(one(GRACE_MFA, "select public.platform_update_subscription($1, $2, 'active', null, null, 'Sans échéance')", [orgH, pro])).rejects.toThrow(/formule et une échéance/);
 
-    // Revenu mensuel : PRO (30 000 XAF par mois) compté tant que l'agence est cliente.
+    // Revenu mensuel : PRO (10 500 XAF par mois) compté tant que l'agence est cliente.
     await setEnd(30);
     const before = await overview();
-    expect(xaf(before)).toBeGreaterThanOrEqual(30000);
+    const proPrice = (await one<{ p: number }>(GRACE_MFA, "select price_minor::int as p from public.platform_plans() where name = 'PRO'")).p;
+    expect(proPrice).toBe(10500);
+    expect(xaf(before)).toBeGreaterThanOrEqual(proPrice);
 
     // Agence interne : réservé à la console, motif obligatoire ; sortie des indicateurs, accès inchangé, sans échéance.
     await expect(one(HUGO, "select public.platform_set_agency_internal($1, true, 'Agence de test')", [orgH])).rejects.toThrow(/équipe SELECT/);
@@ -862,7 +864,7 @@ describe("abonnements et console SELECT", () => {
     const after = await overview();
     expect(after.agencies).toBe(before.agencies - 1);
     expect(after.internal_agencies).toBe(before.internal_agencies + 1);
-    expect(xaf(after)).toBe(xaf(before) - 30000);
+    expect(xaf(after)).toBe(xaf(before) - proPrice);
     await one(GRACE_MFA, "select public.platform_update_subscription($1, $2, 'active', null, null, 'Interne, sans échéance')", [orgH, pro]);
     expect((await createClient(HUGO, orgH, hugo, "Interne")).reference).toMatch(/^CLI-/);
     await expect(one(GRACE_MFA, "select public.platform_set_agency_internal($1, true, 'Encore')", [orgH])).rejects.toThrow(/déjà interne/);

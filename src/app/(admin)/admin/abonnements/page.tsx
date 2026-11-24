@@ -8,6 +8,7 @@ import { formatDate, formatMoney, minorUnits } from "@/lib/format";
 import { PlanForm } from "@/features/admin/AdminForms";
 import { agencyStatus, CONSOLE_TIMEZONE } from "@/features/admin/display";
 import { listAgencies, listPlans } from "@/features/admin/queries";
+import { UsdEquivalent } from "@/features/billing/usd";
 
 export const metadata: Metadata = { title: "Formules et abonnements" };
 
@@ -51,7 +52,8 @@ async function Plans() {
               <Card className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-semibold text-navy-800">
-                    {plan.name} · <span className="tabular-nums">{formatMoney(plan.priceMinor, plan.currency)}</span> {BILLING_PERIOD[plan.billingPeriod].per}
+                    {plan.name} · <span className="tabular-nums">{formatMoney(plan.priceMinor, plan.currency)}</span> {BILLING_PERIOD[plan.billingPeriod].per}{" "}
+                    <UsdEquivalent amountMinor={plan.priceMinor} currency={plan.currency} className="text-sm font-normal text-slate-500" />
                   </p>
                   <span className="flex flex-wrap gap-1.5">
                     <StatusBadge spec={plan.isActive ? { label: "Proposée", tone: "success" } : { label: "Retirée de l'offre", tone: "neutral" }} />

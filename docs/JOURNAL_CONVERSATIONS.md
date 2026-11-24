@@ -15,6 +15,28 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 87 — 24 Novembre 2026 (Claude Code) — Nouveaux prix des formules, avec l'équivalent en dollars
+* **Demande de l'utilisateur** :
+  - STARTER 7 500 FCFA, PRO 10 500 FCFA et BUSINESS 15 500 FCFA par mois ;
+  - montant écrit en dollars américains : choix « FCFA + équivalent en $ ».
+* **Migration `20261124120000_nouveaux_prix.sql`** :
+  - nouveaux prix pour les formules STARTER, PRO et BUSINESS (FCFA, mensuel) ;
+  - **anciens tarifs Stripe détachés** : Stripe est en mode réel, et un montant Stripe ne se modifie pas. Ainsi, aucune carte n'est débitée de l'ancien prix. Le bouton « Payer par carte » disparaît jusqu'à l'enregistrement des nouveaux tarifs Stripe dans la console (vérifiés par la console) ;
+  - trace « Formule modifiée » dans le journal de la console.
+* **Équivalent en dollars** (`src/features/billing/usd.tsx`) :
+  - « ≈ 12,51 $US », au taux du jour de la BCE (1 € = 655,957 FCFA ; dollar selon le cours du jour) ;
+  - affiché sur le site public (réponse « Combien coûte SELECT Agency ? », mise à jour chaque heure), sur la page Abonnement de l'agence et dans la console (formules, choix de la formule d'une agence) ;
+  - la facturation reste en FCFA.
+* **Tests** :
+  - tests de la base mis à jour pour les nouveaux prix : prix de PRO lu dans la base pour le revenu mensuel, tarifs Stripe vides ;
+  - 302/302 ;
+  - `next build` : 96 pages ;
+  - page d'accueil compilée : « STARTER à 7 500 FCFA (≈ 12,51 $US) ».
+* **À faire par l'utilisateur** :
+  - `npx supabase db push` (migration 20261124120000), puis publication ;
+  - créer les 3 nouveaux tarifs dans Stripe (ou me le demander), puis les enregistrer dans la console.
+* **Non envoyé sur GitHub.**
+
 ### Session 86 — 24 Novembre 2026 (Claude Code) — Facture émise : bouton « Corriger la facture »
 * **Remarque de l'utilisateur** : « quand la facture a été enregistrée, il n'y a plus moyen de modifier ».
 * **Analyse** : ce n'est pas un bug. Le verrouillage des factures émises avait été demandé (commit 7ca7271) ; un brouillon garde « Modifier ».

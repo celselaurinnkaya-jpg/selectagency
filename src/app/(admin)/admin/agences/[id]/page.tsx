@@ -18,6 +18,8 @@ import {
 } from "@/features/admin/AdminForms";
 import { agencyStatus, AUDIT_ACTIONS, auditSummary, CONSOLE_TIMEZONE, displayCity, formatBytes } from "@/features/admin/display";
 import { getAgency } from "@/features/admin/queries";
+import { usdApprox } from "@/features/billing/usd";
+import { getEuroRates } from "@/features/finance/exchange-rates";
 
 export const metadata: Metadata = { title: "Agence" };
 
@@ -33,7 +35,7 @@ const dateInput = (iso?: string) => (iso ? dayKey(iso, CONSOLE_TIMEZONE) : undef
 
 async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, "params">) {
   const { id } = await params;
-  const detail = await getAgency(id);
+  const [detail, rates] = await Promise.all([getAgency(id), getEuroRates()]);
   if (!detail) notFound();
   const { agency, plans, members, payments, tickets, audit, whatsapp } = detail;
   const now = new Date();
@@ -41,7 +43,7 @@ async function ConsoleAgency({ params }: Pick<PageProps<"/admin/agences/[id]">, 
   const tz = CONSOLE_TIMEZONE;
   const planOptions = plans.map((p) => ({
     value: p.id,
-    label: `${p.name} — ${formatMoney(p.priceMinor, p.currency)} ${BILLING_PERIOD[p.billingPeriod].per}${p.isActive ? "" : " (retirée)"}`,
+    label: `${p.name} — ${formatMoney(p.priceMinor, p.currency)} ${BILLING_PERIOD[p.billingPeriod].per}${usdApprox(p.priceMinor, p.currency, rates) ? ` (${usdApprox(p.priceMinor, p.currency, rates)})` : ""}${p.isActive ? "" : " (retirée)"}`,
   }));
   const team = members.filter((m) => !m.removedAt);
 

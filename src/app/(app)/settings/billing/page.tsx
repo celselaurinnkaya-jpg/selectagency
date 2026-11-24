@@ -10,6 +10,7 @@ import { BILLING_PERIOD, METHOD_KIND, SUBSCRIPTION_STATUS } from "@/lib/domain/l
 import { daysLeft, effectiveStatus } from "@/lib/domain/subscription";
 import { formatDate, formatMoney } from "@/lib/format";
 import { getBilling } from "@/features/billing/queries";
+import { UsdEquivalent } from "@/features/billing/usd";
 import { CardCheckoutButton, CardPortalButton } from "@/features/billing/StripeButtons";
 import { SettingsNav } from "@/features/settings/SettingsNav";
 import { isStripeConfigured } from "@/lib/stripe/server";
@@ -133,6 +134,7 @@ async function Billing({ searchParams }: { searchParams: PageProps<"/settings/bi
                     </div>
                     <p className="text-xl font-semibold tabular-nums text-slate-900">
                       {formatMoney(plan.priceMinor, plan.currency)} <span className="text-sm font-normal text-slate-500">{BILLING_PERIOD[plan.billingPeriod].per}</span>
+                      <UsdEquivalent amountMinor={plan.priceMinor} currency={plan.currency} className="block text-sm font-normal text-slate-500" />
                     </p>
                     {plan.tier ? (
                       <ul className="space-y-1.5 text-sm text-slate-700">
