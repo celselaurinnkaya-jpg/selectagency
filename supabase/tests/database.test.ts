@@ -1059,6 +1059,52 @@ describe("factures", () => {
     // Le numéro d'un brouillon supprimé n'est jamais réutilisé.
     expect((await save(KARL)).number).toBe(`FAC-${YEAR}-00004`);
   });
+
+  it("corrige une facture émise : annulée avec le motif, montant retiré du dossier, nouveau brouillon avec les mêmes lignes", async () => {
+    const issued = await save(LINA, { issue: true, discount: 15000 });
+    expect(issued.status).toBe("issued");
+    const charge = await one<{ id: string }>(LINA, "select public.add_invoice_to_charges($1, 'agency_fee') as id", [issued.id]);
+    const correct = (who: User, id: string, reason = "Quantité erronée sur la première ligne") =>
+      one<{ r: { id: string; number: string; status: string } }>(who, "select public.correct_invoice($1, $2) as r", [id, reason]).then((x) => x.r);
+
+    // Droits et motif.
+    await expect(correct(NOAH, issued.id)).rejects.toThrow(/droit de la modifier/);
+    await expect(correct(BRUNO, issued.id)).rejects.toThrow(/introuvable/);
+    await expect(correct(LINA, issued.id, "abc")).rejects.toThrow(/motif de la correction/);
+
+    const fresh = await correct(LINA, issued.id);
+    expect(fresh.status).toBe("draft");
+    expect(fresh.number).not.toBe(issued.number);
+    // L'ancienne : annulée, avec le motif dans l'historique ; son montant ne pèse plus sur le dossier.
+    expect((await one<{ status: string }>(KARL, "select status from public.invoices where id = $1", [issued.id])).status).toBe("cancelled");
+    expect(await rows(KARL, "select id from public.charges where id = $1", [charge.id])).toEqual([]);
+    const texts = (await rows<{ text: string }>(KARL, "select text from public.activity_events where case_id = $1 order by at desc, id desc limit 3", [caseId])).map((e) => e.text);
+    expect(texts).toContain(`Facture ${issued.number} annulée pour correction. Motif : Quantité erronée sur la première ligne`);
+    expect(texts).toContain(`Facture ${fresh.number} préparée en brouillon pour corriger la facture ${issued.number}.`);
+    // La nouvelle : mêmes lignes, même remise, mention du remplacement, modifiable.
+    const lines = (id: string) => rows(KARL, "select label, quantity, unit_amount_minor, tax_rate::float as tax_rate from public.invoice_items where invoice_id = $1 order by position", [id]);
+    expect(await lines(fresh.id)).toEqual(await lines(issued.id));
+    const copy = await one<{ discount_minor: number; notes: string; case_id: string; total_minor: number }>(KARL, "select discount_minor, notes, case_id, total_minor from public.invoices where id = $1", [fresh.id]);
+    const original = await one<{ total_minor: number }>(KARL, "select total_minor from public.invoices where id = $1", [issued.id]);
+    expect(copy).toMatchObject({ discount_minor: 15000, case_id: caseId, total_minor: original.total_minor });
+    expect(copy.notes).toBe(`Remplace la facture ${issued.number} (annulée).`);
+    expect((await save(LINA, { id: fresh.id, items: [ITEMS[1]] })).status).toBe("draft");
+
+    // Déjà annulée, brouillon : refusés avec un message clair.
+    await expect(correct(LINA, issued.id)).rejects.toThrow(/déjà annulée/);
+    await expect(correct(LINA, fresh.id)).rejects.toThrow(/brouillon se modifie directement/);
+
+    // Paiement déjà réparti sur le montant de la facture : la correction est refusée (rien n'est annulé).
+    const paidOne = await save(LINA, { issue: true });
+    const paidCharge = await one<{ id: string }>(LINA, "select public.add_invoice_to_charges($1, 'agency_fee') as id", [paidOne.id]);
+    await one(
+      LINA,
+      "select public.record_payment($1, 25000, 'cash', 'Espèces', '', 'Paul', now(), $2::jsonb, 'Paiement (reçu {recu}).') as r",
+      [caseId, JSON.stringify([{ charge_id: paidCharge.id, amount_minor: 25000 }])],
+    );
+    await expect(correct(LINA, paidOne.id)).rejects.toThrow(/paiement est déjà enregistré/);
+    expect((await one<{ status: string }>(KARL, "select status from public.invoices where id = $1", [paidOne.id])).status).toBe("issued");
+  });
 });
 
 describe("services", () => {

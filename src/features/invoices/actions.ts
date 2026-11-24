@@ -232,6 +232,32 @@ export async function setInvoiceStatusAction(_prev: FormState, formData: FormDat
   };
 }
 
+/**
+ * Corriger une facture émise (demande de l'utilisateur du 24/11/2026) : la base annule la facture avec le motif,
+ * retire son montant du reste à payer du dossier s'il n'est pas encore réglé, et crée un brouillon avec les mêmes
+ * lignes. Renvoie l'adresse de ce brouillon, ouvert pour modification (chargement complet de la page).
+ */
+export async function correctInvoiceAction(invoiceId: string, reason: string): Promise<FormState> {
+  const parsed = z
+    .object({
+      invoiceId: z.uuid(),
+      reason: z.string().trim().min(5, "Indiquez le motif de la correction (5 caractères au moins).").max(300, "Motif trop long (300 caractères au plus)."),
+    })
+    .safeParse({ invoiceId, reason });
+  if (!parsed.success) {
+    const fieldErrors = z.flattenError(parsed.error).fieldErrors;
+    return { message: Object.values(fieldErrors).flat()[0] ?? "Facture introuvable.", fieldErrors };
+  }
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "finance.write")) return { message: forbiddenMessage(ctx, "finance.write") };
+  const { data, error } = await ctx.supabase.rpc("correct_invoice", { p_invoice_id: parsed.data.invoiceId, p_reason: parsed.data.reason });
+  if (error) return { message: dbMessage(error) };
+  // Alerte au propriétaire inscrite par la base pour l'annulation (si l'action vient d'un autre membre).
+  sendQueuedEmailsAfterResponse(ctx);
+  const created = data as { id: string };
+  return { ok: true, redirectTo: `/finance/invoices/${created.id}/edit` };
+}
+
 /** Comme l'enregistrement : renvoie l'adresse de la liste, que la page charge entièrement. */
 export async function deleteInvoiceAction(id: string): Promise<FormState> {
   const invoiceId = z.uuid().safeParse(id);

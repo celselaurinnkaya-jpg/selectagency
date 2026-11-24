@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
-import { Download, MessageCircle, Pencil, Printer, Trash2 } from "lucide-react";
+import { Download, FilePenLine, MessageCircle, Pencil, Printer, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { describedBy, FormField, FormMessage } from "@/components/shared/form";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,7 +10,7 @@ import type { InvoiceStatus } from "@/lib/domain/types";
 import { EmailDocumentButton } from "@/features/printables/EmailDocumentButton";
 import { initialFormState } from "@/lib/form-state";
 import { formatMoney } from "@/lib/format";
-import { deleteInvoiceAction, logInvoiceSharedAction, markInvoicePaidAction, setInvoiceStatusAction } from "./actions";
+import { correctInvoiceAction, deleteInvoiceAction, logInvoiceSharedAction, markInvoicePaidAction, setInvoiceStatusAction } from "./actions";
 
 // « Payée » a son propre formulaire (propriétaire, avec les paiements qui règlent la facture), comme
 // l'annulation (motif obligatoire). « Remettre à payer » est réservé au propriétaire.
@@ -73,6 +73,11 @@ export function InvoiceToolbar({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [cancelState, cancelAction, cancelPending] = useActionState(setInvoiceStatusAction, initialFormState);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  // « Corriger » : annule la facture émise avec un motif et ouvre un nouveau brouillon avec les mêmes lignes.
+  const [confirmCorrect, setConfirmCorrect] = useState(false);
+  const [correctReason, setCorrectReason] = useState("");
+  const [correctError, setCorrectError] = useState<string>();
+  const [correcting, startCorrect] = useTransition();
   const [sharing, setSharing] = useState(false);
   const [note, setNote] = useState<{ text: string; tone: "success" | "error" } | null>(null);
   const pdfUrl = `/finance/invoices/${invoiceId}/pdf`;
@@ -201,13 +206,70 @@ export function InvoiceToolbar({
                 {n.label}
               </Button>
             ))}
-            {status === "issued" && !confirmCancel && (
+            {status === "issued" && !confirmCorrect && !confirmCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setConfirmCorrect(true);
+                  setConfirmCancel(false);
+                }}
+              >
+                <FilePenLine aria-hidden />
+                Corriger la facture
+              </Button>
+            )}
+            {status === "issued" && !confirmCancel && !confirmCorrect && (
               <Button type="button" variant="outline" size="sm" onClick={() => setConfirmCancel(true)}>
                 Annuler la facture
               </Button>
             )}
           </div>
           <FormMessage message={statusState.message} tone={statusState.ok ? "success" : "error"} />
+        </form>
+      )}
+
+      {canWrite && status === "issued" && confirmCorrect && (
+        <form
+          className="space-y-2 rounded-xl border border-navy-200 bg-navy-50 p-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setCorrectError(undefined);
+            startCorrect(async () => {
+              const result = await correctInvoiceAction(invoiceId, correctReason);
+              // Le nouveau brouillon s'ouvre pour modification (chargement complet, comme après un enregistrement).
+              if (result.ok && result.redirectTo) window.location.assign(result.redirectTo);
+              else setCorrectError(result.message);
+            });
+          }}
+        >
+          <FormField id="correct-reason" label="Ce qu'il faut corriger" required>
+            <Textarea
+              id="correct-reason"
+              rows={2}
+              required
+              minLength={5}
+              maxLength={300}
+              value={correctReason}
+              onChange={(event) => setCorrectReason(event.target.value)}
+              placeholder="Ex. : quantité erronée, mauvais client, remise oubliée."
+            />
+          </FormField>
+          <p className="text-xs text-navy-900">
+            La facture <strong>{number}</strong> sera annulée : elle reste visible avec son numéro, et le motif est noté dans l&apos;historique du
+            client. Un nouveau brouillon s&apos;ouvre avec les mêmes lignes : modifiez-le, puis émettez-le sous un nouveau numéro. Si le montant de
+            cette facture est dans le reste à payer du dossier, il en est retiré.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" variant="accent" size="sm" disabled={correcting}>
+              {correcting ? "Préparation du brouillon…" : "Annuler et corriger"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setConfirmCorrect(false)}>
+              Garder la facture
+            </Button>
+          </div>
+          <FormMessage message={correctError} />
         </form>
       )}
 
@@ -244,12 +306,15 @@ export function InvoiceToolbar({
       )}
 
       {status === "issued" && canWrite && (
-        <p className="text-xs text-slate-500">Facture émise : elle ne se modifie plus. En cas d&apos;erreur, annulez-la avec un motif, puis créez une nouvelle facture.</p>
+        <p className="text-xs text-slate-500">
+          Facture émise : elle ne se modifie plus directement. En cas d&apos;erreur, cliquez sur « Corriger la facture » : elle est annulée et un
+          brouillon identique s&apos;ouvre, à modifier puis émettre.
+        </p>
       )}
       {status === "paid" && canWrite && (
         <p className="text-xs text-slate-500">
-          Une facture payée est verrouillée. Si elle a été marquée payée par erreur, la propriétaire peut la remettre « à payer ». Pour corriger son
-          contenu, annulez-la avec un motif et créez-en une nouvelle.
+          Une facture payée est verrouillée. Si elle a été marquée payée par erreur, la propriétaire peut la remettre « à payer » : le bouton
+          « Corriger la facture » apparaît alors.
         </p>
       )}
     </div>

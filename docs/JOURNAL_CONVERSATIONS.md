@@ -15,6 +15,30 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 86 — 24 Novembre 2026 (Claude Code) — Facture émise : bouton « Corriger la facture »
+* **Remarque de l'utilisateur** : « quand la facture a été enregistrée, il n'y a plus moyen de modifier ».
+* **Analyse** : ce n'est pas un bug. Le verrouillage des factures émises avait été demandé (commit 7ca7271) ; un brouillon garde « Modifier ».
+* **Choix de l'utilisateur** : un bouton « Corriger » plutôt que retirer le verrouillage.
+* **Migration `20261124100000_correction_facture.sql`** : fonction `correct_invoice(facture, motif)`, qui en une seule fois :
+  - retire le montant de la facture du reste à payer du dossier, s'il y était et qu'aucun paiement n'y est réparti (sinon : refus avec explication) ;
+  - annule la facture (« annulée pour correction », motif dans l'historique, alerte au propriétaire comme toute annulation) ;
+  - crée un brouillon :
+    - mêmes lignes, même remise, mêmes conditions ;
+    - daté du jour de l'agence ;
+    - note « Remplace la facture FAC-… (annulée) » ;
+    - nouveau numéro.
+  - Facture payée : le propriétaire la remet d'abord « à payer ».
+* **Application** :
+  - bouton « Corriger la facture » sur une facture émise ;
+  - un motif est demandé, puis le nouveau brouillon s'ouvre directement dans l'éditeur.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur dans les fichiers modifiés ;
+  - tests : 302/302, dont la base 116/116 (nouveau test de la correction) ;
+  - `next build` : 96 pages.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migration 20261124100000).
+* **Non envoyé sur GitHub.**
+
 ### Session 85 — 23 Novembre 2026 (Claude Code) — Rapport de test « Option Site web » : corrections
 * **Demande de l'utilisateur** : rapport de test de l'option Site web (« voilà le rapport »).
 * **Les 3 bugs prioritaires** :
