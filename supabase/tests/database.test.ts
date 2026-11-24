@@ -3318,3 +3318,83 @@ describe("espace client", () => {
     expect((await one<{ p: unknown[] }>(AWA, "select public.client_portal() as p")).p).toEqual([]);
   });
 });
+
+describe("site web de l'agence", () => {
+  const UGO = user(25, "ugo@agence-u.test", "Ugo Mveng");
+  const VERA = user(26, "vera@agence-u.test", "Vera Abega");
+  let org: string;
+  const draft = { template: "horizon", agencyName: "Agence U", hero: { title: "Partez étudier en France" } };
+
+  beforeAll(async () => {
+    for (const u of [UGO, VERA]) await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [u.id, u.email]);
+    org = await createOrg(UGO, "Agence U");
+    const ugo = await memberId(UGO);
+    const token = (await one<{ token: string }>(UGO, "insert into public.invitations (organization_id, email, role, invited_by) values ($1, $2, 'agent', $3) returning token", [org, VERA.email, ugo])).token;
+    await one(VERA, "select public.accept_invitation($1)", [token]);
+  });
+
+  const save = (who: User, slug: string, content: unknown = draft) =>
+    one(who, "select public.save_agency_website($1, $2, 'Agence d''études à Douala', $3::jsonb)", [org, slug, JSON.stringify(content)]);
+  const site = (slug: string) => one<{ s: { slug: string; content: { agencyName: string }; country_code: string } | null }>(null, "select public.public_agency_website($1) as s", [slug]).then((r) => r.s);
+
+  it("enregistre le brouillon, réservé au propriétaire et aux administrateurs, à une adresse libre et valide", async () => {
+    await expect(save(VERA, "agence-u")).rejects.toThrow(/propriétaire et les administrateurs/);
+    await expect(save(UGO, "Agence U !")).rejects.toThrow(/Adresse du site invalide/);
+    await expect(save(UGO, "admin")).rejects.toThrow(/réservée/);
+    await save(UGO, "agence-u");
+    expect(await rows(VERA, "select slug, is_online from public.agency_websites")).toEqual([{ slug: "agence-u", is_online: false }]);
+    // Aucune écriture directe, aucune lecture par une autre agence ni par un visiteur.
+    expect(await rows(UGO, "update public.agency_websites set is_online = true returning slug")).toEqual([]);
+    expect(await rows(ALICE, "select slug from public.agency_websites")).toEqual([]);
+    await expect(rows(null, "select slug from public.agency_websites")).rejects.toThrow(/permission denied/);
+    // Une adresse prise par une autre agence est refusée.
+    const other = await one<{ id: string }>(ALICE, "select organization_id as id from public.members where user_id = auth.uid() limit 1");
+    await expect(
+      one(ALICE, "select public.save_agency_website($1, 'agence-u', '', '{}'::jsonb)", [other.id]),
+    ).rejects.toThrow(/déjà prise/);
+  });
+
+  it("met en ligne seulement à la publication ; une modification attend la publication suivante", async () => {
+    expect(await site("agence-u")).toBeNull();
+    expect((await one<{ s: string }>(UGO, "select public.publish_agency_website($1) as s", [org])).s).toBe("agence-u");
+    expect(await site("AGENCE-U")).toMatchObject({ slug: "agence-u", content: { agencyName: "Agence U" }, country_code: "CM" });
+    await save(UGO, "agence-u", { ...draft, agencyName: "Agence U modifiée" });
+    expect((await site("agence-u"))!.content.agencyName).toBe("Agence U");
+    await one(UGO, "select public.publish_agency_website($1)", [org]);
+    expect((await site("agence-u"))!.content.agencyName).toBe("Agence U modifiée");
+    await one(UGO, "select public.unpublish_agency_website($1)", [org]);
+    expect(await site("agence-u")).toBeNull();
+    await one(UGO, "select public.publish_agency_website($1)", [org]);
+  });
+
+  it("transforme une demande du formulaire en prospect avec une tâche de rappel, sans doublon ni abus", async () => {
+    const submit = (phone: string, first = "Inès", message = "Je veux étudier à Lyon") =>
+      one(null, "select public.website_submit_lead('agence-u', $1, 'Ngo', $2, 'ines@exemple.test', 'Études en France', 'France', $3)", [first, phone, message]);
+    await expect(submit("690000111")).rejects.toThrow(/téléphone invalide/);
+    await expect(one(null, "select public.website_submit_lead('inconnue', 'A', 'B', '+237690000111', null, null, null, null)")).rejects.toThrow(/pas disponible/);
+    await submit("+237690000111");
+    const [prospect] = await rows<{ id: string; status: string; source: string; first_name: string; notes: string; assigned: boolean }>(
+      UGO,
+      "select c.id, c.status, c.source, c.first_name, c.notes, c.assigned_to = m.id as assigned from public.clients c join public.members m on m.user_id = auth.uid() where c.phone_e164 = '+237690000111'",
+    );
+    expect(prospect).toMatchObject({ status: "prospect", source: "website", first_name: "Inès", assigned: true });
+    expect(prospect!.notes).toContain("Service souhaité : Études en France");
+    expect(await rows(UGO, "select title, priority, status from public.tasks where client_id = $1", [prospect!.id])).toEqual([
+      { title: "Rappeler Inès Ngo (demande du site web)", priority: "high", status: "todo" },
+    ]);
+    // Même numéro : pas de nouvelle fiche, la demande s'ajoute à la fiche existante ; au-delà de 3 par jour, refus.
+    await submit("+237690000111", "Inès", "Je confirme");
+    expect((await rows(UGO, "select id from public.clients where phone_e164 = '+237690000111'")).length).toBe(1);
+    await submit("+237690000111");
+    await expect(submit("+237690000111")).rejects.toThrow(/déjà été reçue/);
+  });
+
+  it("limite la rédaction par l'IA à 20 par jour et ferme le site hors formule", async () => {
+    for (let i = 0; i < 20; i += 1) await one(UGO, "select public.note_website_generation($1)", [org]);
+    await expect(one(UGO, "select public.note_website_generation($1)", [org])).rejects.toThrow(/20 rédactions/);
+    // Essai terminé : agence en lecture seule, site hors ligne.
+    await db.query("update public.subscriptions set status = 'trialing', trial_ends_at = now() - interval '1 day' where organization_id = $1", [org]);
+    expect(await site("agence-u")).toBeNull();
+    await expect(save(UGO, "agence-u")).rejects.toThrow(/propriétaire et les administrateurs/);
+  });
+});

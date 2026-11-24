@@ -9,7 +9,7 @@ import { safeNext } from "@/features/auth/redirects";
 
 const PROTECTED = [
   "/dashboard", "/prospects", "/clients", "/cases", "/documents", "/services", "/appointments", "/agent-ia", "/tasks", "/finance", "/partners", "/partenaire", "/espace-client", "/reports", "/team", "/settings", "/search",
-  "/support", "/onboarding", "/reset-password", "/admin",
+  "/support", "/onboarding", "/reset-password", "/admin", "/apercu-site", "/site-web",
 ];
 const GUEST_ONLY = ["/login", "/signup"];
 

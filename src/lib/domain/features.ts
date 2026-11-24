@@ -4,9 +4,9 @@ import type { PlanTier, Subscription } from "./types";
 // (supabase/migrations/20261106110000_formules.sql) : l'écran grise les options non incluses, mais c'est la
 // base qui refuse d'y créer des données.
 
-export type Feature = "invoices" | "services" | "partners" | "auto_emails" | "custom_workflows" | "reports" | "ai_agent";
+export type Feature = "invoices" | "services" | "partners" | "auto_emails" | "custom_workflows" | "reports" | "ai_agent" | "website";
 
-export const FEATURES: readonly Feature[] = ["invoices", "services", "partners", "auto_emails", "custom_workflows", "reports", "ai_agent"];
+export const FEATURES: readonly Feature[] = ["invoices", "services", "partners", "auto_emails", "custom_workflows", "reports", "ai_agent", "website"];
 
 export const FEATURE_LABEL: Record<Feature, string> = {
   invoices: "Factures",
@@ -16,6 +16,7 @@ export const FEATURE_LABEL: Record<Feature, string> = {
   custom_workflows: "Modèles d'étapes personnalisés",
   reports: "Rapports et exports",
   ai_agent: "L'Agent IA",
+  website: "Le site web de l'agence",
 };
 
 /**
@@ -39,6 +40,7 @@ export const NAV_FEATURE: Record<string, Feature> = {
   "/partners": "partners",
   "/reports": "reports",
   "/agent-ia": "ai_agent",
+  "/site-web": "website",
 };
 
 /** Ce que comprend chaque formule, pour la page Abonnement et l'accueil. */
@@ -59,6 +61,7 @@ export const TIER_INCLUDES: Record<PlanTier, string[]> = {
     "Modèles d'étapes personnalisés",
     "Rapports et exports",
     "Agent IA (1 numéro, 1 agent, 2 000 réponses/mois)",
+    "Site web de l'agence, rédigé par l'IA",
   ],
   business: [
     "Tout PRO",

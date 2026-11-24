@@ -15,6 +15,61 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 84 — 23 Novembre 2026 (Claude Code) — Site web de l'agence : modèles prêts à publier, rédaction par l'IA (phase 1)
+* **Demande de l'utilisateur** :
+  - s'inspirer de ce qui existe déjà, en faisant simple ;
+  - des modèles de pages prêts à publier ;
+  - une description de l'agence à partir de laquelle l'IA crée tout le site, que l'agence peut ensuite modifier.
+* **Idées reprises du marché** :
+  - générateurs de sites par IA (Durable, B12, Base44, Readdy) : une description donne un site complet, publié sur une adresse gratuite, que l'on modifie ensuite ;
+  - logiciels pour agences de voyage : les formulaires du site arrivent directement dans le logiciel, comme des prospects.
+* **Migration `20261123120000_site_web.sql`** :
+  - nouvelle option `website` (PRO et BUSINESS, ouverte pendant l'essai) dans `org_has_feature` et `feature_label` ;
+  - table `agency_websites` :
+    - adresse unique ;
+    - description donnée à l'IA ;
+    - brouillon `draft` et version en ligne `published` ;
+    - compteur de rédactions par l'IA ;
+  - fonctions :
+    - `save_agency_website`, `publish_agency_website`, `unpublish_agency_website` (propriétaire et administrateurs seulement) ;
+    - `note_website_generation` (20 rédactions par jour au plus) ;
+    - `public_agency_website` : lecture publique, seulement si le site est en ligne, l'option incluse et l'agence pas en lecture seule ;
+    - `website_submit_lead` : le formulaire crée un prospect (origine « Site web ») et une tâche « Rappeler » pour le propriétaire. Pas de doublon pour un numéro connu ; au plus 3 demandes par numéro et 100 par site, par jour ;
+  - bucket public `website-assets` (logo et photo, 3 Mo), écrit seulement dans le dossier de l'agence.
+* **Application** :
+  - menu « Site web », à côté de l'Agent IA ;
+  - page `/site-web` :
+    - 1. modèle (Horizon, Campus, Évasion) ;
+    - 2. description pour l'IA (Gemini) ;
+    - 3. contenu section par section ;
+    - 4. logo, photo et couleurs (avertissement si le contraste est faible) ;
+    - 5. adresse ;
+    - puis enregistrer, aperçu, publier, mettre hors ligne ;
+  - aperçu du brouillon : `/apercu-site` ;
+  - site public : `/site/<adresse>`, en cache, vidé à chaque publication ;
+  - page publique : couleurs de l'agence avec texte toujours lisible, bouton WhatsApp, formulaire avec accord du visiteur et piège à robots ;
+  - mention « Site réalisé avec SELECT Agency ».
+* **Garde-fous de l'IA** : elle n'utilise que la description et la fiche de l'agence. Sont retirés de sa réponse :
+  - les montants absents de la description ;
+  - les promesses (« garanti », « 100 % », « taux de réussite ») ;
+  - les coordonnées inventées ;
+  - les avis qui ne figurent pas dans la description.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : aucune nouvelle erreur ;
+  - tests : 298/298, dont la base 115/115 (4 nouveaux tests du site) et 6 tests unitaires des modèles et des garde-fous de l'IA ;
+  - `next build` : 94 pages ;
+  - les 3 modèles affichés par le serveur de développement (page d'essai temporaire, supprimée ensuite).
+* **Essai local demandé par l'utilisateur** : \`/site-web\` ajouté aux pages protégées du proxy (oubli vu pendant l'essai) ; migration 20261123120000 poussée par l'utilisateur ; envoi sur GitHub et Vercel demandé (« envoyée sur GitHub, puis vercel »).
+* **Phase 2 possible** :
+  - nom de domaine propre à l'agence ;
+  - plusieurs pages ;
+  - devis en ligne ;
+  - statistiques de visites ;
+  - e-mail au propriétaire à chaque demande.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migration 20261123120000).
+* **Non envoyé sur GitHub.**
+
 ### Session 83 — 23 Novembre 2026 — Vérification du déploiement Vercel et traitement des 6 points de contrôle
 * **Demande de l'utilisateur** :
   - Vérification de l'erreur Vercel sur les captures d'écran (« Error Stale » sur `bff0f15`).

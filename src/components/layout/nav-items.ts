@@ -5,6 +5,7 @@ import {
   CalendarDays,
   FileText,
   FolderKanban,
+  Globe,
   Handshake,
   LayoutDashboard,
   LifeBuoy,
@@ -40,9 +41,10 @@ export const NAV_MAIN: NavItem[] = [
   { label: "Rapports", href: "/reports", icon: BarChart3, match: ["/reports"] },
 ];
 
-/** Option à part, affichée seule entre « Rapports » et « Équipe », séparée par un espace. */
+/** Options à part, affichées entre « Rapports » et « Équipe », séparées par un espace. */
 export const NAV_SPECIAL: NavItem[] = [
   { label: "Agent IA", href: "/agent-ia/agents", icon: Bot, match: ["/agent-ia"] },
+  { label: "Site web", href: "/site-web", icon: Globe, match: ["/site-web"] },
 ];
 
 export const NAV_ADMIN: NavItem[] = [
