@@ -3,6 +3,8 @@ import type { PaymentMethodKind } from "@/lib/domain/types";
 export interface CashClosing {
   id: string;
   organizationId: string;
+  /** Bureau de la caisse (vide : toute l'agence). */
+  bureauId?: string;
   closingDate: string;
   currency: string;
   closedBy: string;

@@ -51,6 +51,7 @@ export const TIER_INCLUDES: Record<PlanTier, string[]> = {
     "Rendez-vous et tâches",
     "Paiements, reçus et devis",
     "Envoi des documents par e-mail",
+    "1 bureau",
   ],
   pro: [
     "Tout STARTER",
@@ -62,10 +63,12 @@ export const TIER_INCLUDES: Record<PlanTier, string[]> = {
     "Rapports et exports",
     "Agent IA (1 numéro, 1 agent, 2 000 réponses/mois)",
     "Site web de l'agence, rédigé par l'IA",
+    "Jusqu'à 3 bureaux (villes, points de vente)",
   ],
   business: [
     "Tout PRO",
     "Agent IA étendu (1 numéro, 3 agents, 10 000 réponses/mois)",
+    "Bureaux sans limite",
     "Support prioritaire",
     "Nouvelles options en premier",
   ],

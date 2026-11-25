@@ -21,6 +21,7 @@ import {
 import type { Client } from "@/lib/domain/types";
 import { saveClientAction } from "./actions";
 import { phoneExample } from "./phone";
+import { BureauChoice, type BureauOption } from "@/features/bureaux/BureauChoice";
 
 interface Option {
   frequent?: boolean;
@@ -40,6 +41,10 @@ interface ClientFormProps {
   partnersLocked?: boolean;
   /** Campagnes déjà saisies (suggestions). */
   campaigns?: string[];
+  /** Bureaux de l'agence (vide : agence sans bureaux, pas de champ). */
+  bureaux?: BureauOption[];
+  /** Bureau proposé pour une nouvelle fiche (celui du conseiller). */
+  defaultBureauId?: string;
 }
 
 /**
@@ -52,7 +57,18 @@ export function ClientForm(props: ClientFormProps) {
   return <ClientFormFields key={bfcacheId} {...props} />;
 }
 
-function ClientFormFields({ countries, members, defaultCountry, defaultMemberId, client, partnerCode, partnersLocked = false, campaigns = [] }: ClientFormProps) {
+function ClientFormFields({
+  countries,
+  members,
+  defaultCountry,
+  defaultMemberId,
+  client,
+  partnerCode,
+  partnersLocked = false,
+  campaigns = [],
+  bureaux = [],
+  defaultBureauId,
+}: ClientFormProps) {
   // En cas de succès, saveClientAction redirige elle-même vers la fiche (rien à rejouer ici).
   const [state, action, pending] = useActionState(saveClientAction, initialFormState);
   const v = state.values ?? {};
@@ -436,6 +452,15 @@ function ClientFormFields({ countries, members, defaultCountry, defaultMemberId,
           <Textarea id="notes" name="notes" rows={3} defaultValue={v.notes ?? client?.notes} {...describedBy("notes", undefined, "hint")} />
         </FormField>
       </fieldset>
+
+      {/* 4. BUREAU DU CLIENT : obligatoire dès que l'agence a des bureaux. */}
+      <BureauChoice
+        key={`bureau-${v.bureauId ?? ""}`}
+        options={bureaux}
+        defaultValue={v.bureauId ?? client?.bureauId ?? defaultBureauId}
+        error={e.bureauId?.[0]}
+        subject={client?.status === "prospect" ? "prospect" : "client"}
+      />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button asChild variant="outline">

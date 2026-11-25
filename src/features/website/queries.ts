@@ -83,14 +83,29 @@ export async function getWebsiteEditor() {
     publicUrl: publicSiteUrl(slug),
     siteBase: `${siteUrl()}/site/`,
     countryCode: ctx.agency.countryCode,
+    bureaux: await ctx.supabase
+      .from("bureaux")
+      .select("id, name, city")
+      .eq("organization_id", ctx.organizationId)
+      .is("archived_at", null)
+      .order("name")
+      .then(({ data }) => (data ?? []).map((b) => ({ id: String(b.id), name: String(b.name), city: String(b.city ?? "") }))),
     facts,
   };
+}
+
+/** Bureau proposé au visiteur dans le formulaire du site (nom et ville seulement). */
+export interface SiteBureau {
+  id: string;
+  name: string;
+  city: string;
 }
 
 export interface PublicSite {
   slug: string;
   content: SiteContent;
   countryCode: string;
+  bureaux: SiteBureau[];
 }
 
 /** Site publié, pour les visiteurs (sans compte). En cache, vidé à chaque publication. */
@@ -102,6 +117,6 @@ export async function getPublicSite(slug: string): Promise<PublicSite | null> {
   const { data, error } = await createSystemClient().rpc("public_agency_website", { p_slug: slug });
   if (error) throw new Error(`Lecture du site impossible : ${error.message}`);
   if (!data) return null;
-  const site = data as { slug: string; content: unknown; country_code: string };
-  return { slug: site.slug, content: normalizeContent(site.content), countryCode: site.country_code };
+  const site = data as { slug: string; content: unknown; country_code: string; bureaux?: SiteBureau[] };
+  return { slug: site.slug, content: normalizeContent(site.content), countryCode: site.country_code, bureaux: site.bureaux ?? [] };
 }

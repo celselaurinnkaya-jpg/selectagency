@@ -8,6 +8,7 @@ import { getShell, getTeam } from "@/features/operations/queries";
 import { getAgencyContext } from "@/lib/auth/context";
 import { loadCampaigns } from "@/features/communications/queries";
 import { ClientForm } from "@/features/clients/ClientForm";
+import { bureauOptions, defaultBureauFor } from "@/features/bureaux/display";
 
 export const metadata: Metadata = { title: "Nouveau client" };
 
@@ -27,9 +28,11 @@ export default function NewClientPage() {
 }
 
 async function Form() {
-  const [{ agency, members, currentMemberId }, { locked }, campaigns] = await Promise.all([getTeam(), getShell(), getAgencyContext().then(loadCampaigns)]);
+  const [{ agency, members, currentMemberId, bureaux }, { locked }, campaigns] = await Promise.all([getTeam(), getShell(), getAgencyContext().then(loadCampaigns)]);
   return (
     <ClientForm
+      bureaux={bureauOptions(bureaux, undefined, { restrictByBureau: agency.restrictByBureau, member: members.find(({ member }) => member.id === currentMemberId)?.member })}
+      defaultBureauId={defaultBureauFor(members.find(({ member }) => member.id === currentMemberId)?.member, bureaux)}
       campaigns={campaigns}
       partnersLocked={locked.includes("partners")}
       defaultCountry={agency.countryCode}

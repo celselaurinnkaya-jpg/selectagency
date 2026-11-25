@@ -1,4 +1,6 @@
 import "server-only";
+import { matchesBureau, parseBureauParam } from "@/features/bureaux/display";
+import { bureauById } from "@/features/bureaux/display";
 import { allowed } from "@/lib/auth/permissions";
 import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
 import { getClientPortalAccess } from "@/features/client-portal/queries";
@@ -13,6 +15,8 @@ export interface ClientFilters {
   q?: string;
   type?: ClientType;
   country?: string;
+  /** Paramètre « ?bureau= » brut (vérifié ici). */
+  bureau?: string;
 }
 
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
@@ -24,8 +28,10 @@ export async function listClients(filters: ClientFilters) {
 
   // Les prospects ont leur propre page : la liste des clients ne montre que les clients.
   const clients = data.clients.filter((c) => c.status !== "prospect");
+  const bureau = parseBureauParam(filters.bureau, data.bureaux);
   const rows = clients
     .filter((c) => !c.archivedAt)
+    .filter((c) => matchesBureau(bureau, c.bureauId))
     .filter((c) => !filters.type || c.clientType === filters.type)
     .filter((c) => !filters.country || c.residenceCountry === filters.country)
     .filter((c) => {
@@ -51,6 +57,8 @@ export async function listClients(filters: ClientFilters) {
   return {
     rows,
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau,
     now,
     canWrite: allowed(ctx, "operations.write"),
     canDelete: allowed(ctx, "client.delete"),
@@ -146,6 +154,8 @@ export async function getClientDetail(id: string) {
   return {
     portal,
     client,
+    bureau: bureauById(data.bureaux, client.bureauId),
+    agencyHasBureaux: data.bureaux.some((b) => !b.archived),
     agency: data.agency,
     now,
     advisor: data.members.find((m) => m.id === client.assignedTo),

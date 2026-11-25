@@ -47,8 +47,20 @@ const CONFIRMATIONS: Record<string, string> = {
 };
 
 async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "searchParams">) {
-  const { periode, ok } = await searchParams;
-  const [d, clock] = await Promise.all([getDashboard(typeof periode === "string" ? periode : undefined), getMyClock()]);
+  const { periode, ok, bureau } = await searchParams;
+  const [d, clock] = await Promise.all([
+    getDashboard(typeof periode === "string" ? periode : undefined, typeof bureau === "string" ? bureau : undefined),
+    getMyClock(),
+  ]);
+  const dashHref = (p: { periode?: string; bureau?: string | null }) => {
+    const search = new URLSearchParams();
+    const per = p.periode ?? d.period.key;
+    if (per !== "mois") search.set("periode", per);
+    const b = p.bureau === undefined ? d.bureau : p.bureau ?? undefined;
+    if (b) search.set("bureau", b);
+    const text = search.toString();
+    return `/dashboard${text ? `?${text}` : ""}`;
+  };
   const tz = d.agency.timezone;
   const confirmation = typeof ok === "string" ? CONFIRMATIONS[ok] : undefined;
 
@@ -152,11 +164,19 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
       </Section>
 
       <Section title="Activité de l'agence">
-        <Pills
-          label="Période"
-          active={d.period.key}
-          items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: p.key === "mois" ? "/dashboard" : `/dashboard?periode=${p.key}` }))}
-        />
+        <Pills label="Période" active={d.period.key} items={PERIOD_OPTIONS.map((p) => ({ key: p.key, label: p.label, href: dashHref({ periode: p.key }) }))} />
+        {d.bureaux.some((b) => !b.archived) && (
+          <Pills
+            label="Bureau"
+            active={d.bureau ?? "tous-bureaux"}
+            items={[
+              { key: "tous-bureaux", label: "Tous les bureaux", href: dashHref({ bureau: null }) },
+              ...d.bureaux
+                .filter((b) => !b.archived)
+                .map((b) => ({ key: b.id, label: d.myBureauIds.includes(b.id) ? `${b.code} (mon bureau)` : b.code, href: dashHref({ bureau: b.id }) })),
+            ]}
+          />
+        )}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard label="Clients" value={d.kpis.clients} hint={d.kpis.prospects ? `+ ${d.kpis.prospects} prospect(s) à suivre` : "Fiches actives"} icon={Users} href={d.kpis.prospects ? "/prospects" : "/clients"} />
           <StatCard label="Dossiers actifs" value={d.kpis.activeCases} hint="En cours de traitement" icon={FolderKanban} href="/cases" />

@@ -10,6 +10,7 @@ import { getShell, getTeam } from "@/features/operations/queries";
 import { getAgencyContext } from "@/lib/auth/context";
 import { loadCampaigns } from "@/features/communications/queries";
 import { ClientForm } from "@/features/clients/ClientForm";
+import { bureauOptions } from "@/features/bureaux/display";
 
 export const metadata: Metadata = { title: "Modifier la fiche client" };
 
@@ -32,7 +33,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
   }
 
   const { client } = detail;
-  const { agency, members, currentMemberId } = team;
+  const { agency, members, currentMemberId, bureaux } = team;
 
   const isProspect = client.status === "prospect";
 
@@ -46,6 +47,7 @@ async function EditForm({ params }: { params: Promise<{ id: string }> }) {
       />
       <ClientForm
         client={client}
+        bureaux={bureauOptions(bureaux, client.bureauId, { restrictByBureau: agency.restrictByBureau, member: members.find(({ member }) => member.id === currentMemberId)?.member })}
         partnerCode={detail.partner?.code}
         partnersLocked={locked.includes("partners")}
         campaigns={campaigns}

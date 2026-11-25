@@ -12,6 +12,7 @@ import { CLIENT_SOURCE, SERVICE_MOTIVES } from "@/lib/domain/labels";
 import type { ClientSource } from "@/lib/domain/types";
 import { initialFormState, type FormState } from "@/lib/form-state";
 import { convertProspectAction, saveProspectAction, scheduleFollowUpAction } from "./actions";
+import { BureauChoice, type BureauOption } from "@/features/bureaux/BureauChoice";
 import { phoneExample } from "@/features/clients/phone";
 
 // Formulaires des prospects. Champs contrôlés envoyés par onSubmit (React 19 vide un formulaire
@@ -46,12 +47,17 @@ export function ProspectForm({
   today,
   campaigns = [],
   partnersLocked = false,
+  bureaux = [],
+  defaultBureauId,
 }: {
   countries: Option[];
   members: Option[];
   defaultCountry: string;
   defaultMemberId: string;
   today: string;
+  /** Bureaux de l'agence (vide : pas de champ). */
+  bureaux?: BureauOption[];
+  defaultBureauId?: string;
   /** Campagnes déjà saisies (suggestions). */
   campaigns?: string[];
   /** Formule STARTER : pas de partenaire (option PRO). */
@@ -73,6 +79,7 @@ export function ProspectForm({
   const [campaign, setCampaign] = useState("");
   const [motive, setMotive] = useState("");
   const [assignedTo, setAssignedTo] = useState(defaultMemberId);
+  const [bureauId, setBureauId] = useState(defaultBureauId ?? "");
   const [followUp, setFollowUp] = useState(addDays(today, 1));
   const [notes, setNotes] = useState("");
   const [partnerCode, setPartnerCode] = useState("");
@@ -83,6 +90,7 @@ export function ProspectForm({
       const result = await saveProspectAction({
         firstName, lastName, phone, whatsapp, email, residenceCountry: country, city, source: source as ClientSource,
         sourceDetail, campaign, serviceMotive: motive, assignedTo, notes, followUpDate: followUp, partnerCode, confirmDuplicate,
+        bureauId: bureaux.length > 0 ? bureauId : undefined,
       });
       // Chargement complet de la fiche : Next garde parfois l'ancienne page en mémoire.
       if (result.redirectTo) {
@@ -245,6 +253,8 @@ export function ProspectForm({
           <Textarea id="p-notes" rows={3} maxLength={2000} value={notes} onChange={(ev) => setNotes(ev.target.value)} {...describedBy("p-notes", undefined, "hint")} />
         </FormField>
       </fieldset>
+
+      <BureauChoice options={bureaux} value={bureauId} onChange={setBureauId} error={e.bureauId?.[0]} subject="prospect" />
 
       <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button asChild variant="outline">

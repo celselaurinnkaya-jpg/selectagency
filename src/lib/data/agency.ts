@@ -6,17 +6,20 @@ import {
   APPOINTMENT,
   CASE,
   CHARGE,
+  BUREAU,
   CLIENT,
   COMMUNICATION,
   EVENT,
   EXPENSE,
   MEMBER,
+  MEMBER_BUREAU,
   PAYMENT,
   REQUIREMENT,
   STEP,
   TASK,
   toAllocation,
   toAppointment,
+  toBureau,
   toCase,
   toCharge,
   toClient,
@@ -39,7 +42,7 @@ import {
 // Limite connue : les listes complètes sont chargées puis filtrées côté serveur. C'est adapté à une
 // agence de quelques milliers de clients ; au-delà, il faudra paginer et calculer en SQL (vues).
 
-export type AgencyTable = Exclude<keyof AgencyData, "agency" | "currentMemberId" | "members">;
+export type AgencyTable = Exclude<keyof AgencyData, "agency" | "currentMemberId" | "members" | "bureaux">;
 
 // Type d'une lecture en cours de construction (lignes non typées, converties ensuite par rows.ts).
 const selectQuery = (ctx: AgencyContext, table: string, columns: string) => ctx.supabase.from(table).select(columns as "*");
@@ -112,7 +115,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return parts;
 }
 
-const EMPTY: Omit<AgencyData, "agency" | "currentMemberId" | "members"> = {
+const EMPTY: Omit<AgencyData, "agency" | "currentMemberId" | "members" | "bureaux"> = {
   clients: [],
   cases: [],
   steps: [],
@@ -126,7 +129,7 @@ const EMPTY: Omit<AgencyData, "agency" | "currentMemberId" | "members"> = {
   communications: [],
 };
 
-export async function loadTables(ctx: AgencyContext, plan: TablePlan): Promise<Partial<Omit<AgencyData, "agency" | "currentMemberId" | "members">>> {
+export async function loadTables(ctx: AgencyContext, plan: TablePlan): Promise<Partial<Omit<AgencyData, "agency" | "currentMemberId" | "members" | "bureaux">>> {
   const entries = await Promise.all(
     (Object.entries(plan) as [AgencyTable, true | Filter][]).map(async ([key, spec]) => {
       const filter = spec === true ? undefined : spec;
@@ -142,14 +145,24 @@ export async function loadTables(ctx: AgencyContext, plan: TablePlan): Promise<P
 /** Lecture à la requête : la session (cookies) rend la page dynamique, sous un <Suspense>. */
 export async function readAgency(plan: TablePlan): Promise<{ data: AgencyData; now: Date; ctx: AgencyContext }> {
   const ctx = await getAgencyContext();
-  const [memberRows, tables] = await Promise.all([fetchRows(ctx, "members", MEMBER.list), loadTables(ctx, plan)]);
+  const [memberRows, bureauRows, memberBureauRows, tables] = await Promise.all([
+    fetchRows(ctx, "members", MEMBER.list),
+    fetchRows(ctx, "bureaux", BUREAU.list, undefined, ["name", "id"]),
+    fetchRows(ctx, "member_bureaux", MEMBER_BUREAU.list, undefined, ["member_id", "bureau_id"]),
+    loadTables(ctx, plan),
+  ]);
+  const bureauIdsOf = new Map<string, string[]>();
+  for (const r of memberBureauRows) bureauIdsOf.set(String(r.member_id), [...(bureauIdsOf.get(String(r.member_id)) ?? []), String(r.bureau_id)]);
   return {
     ctx,
     now: new Date(),
     data: {
       agency: ctx.agency,
       currentMemberId: ctx.member.id,
-      members: memberRows.map(toMember).sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.fullName.localeCompare(b.fullName, "fr")),
+      members: memberRows
+        .map((r) => ({ ...toMember(r), bureauIds: bureauIdsOf.get(String(r.id)) ?? [] }))
+        .sort((a, b) => ROLE_ORDER[a.role] - ROLE_ORDER[b.role] || a.fullName.localeCompare(b.fullName, "fr")),
+      bureaux: bureauRows.map(toBureau),
       ...EMPTY,
       ...tables,
     },

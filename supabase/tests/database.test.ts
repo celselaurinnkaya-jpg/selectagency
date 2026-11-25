@@ -3452,3 +3452,119 @@ describe("site web de l'agence", () => {
     await expect(save(UGO, "agence-u")).rejects.toThrow(/propriétaire et les administrateurs/);
   });
 });
+
+describe("bureaux de l'agence", () => {
+  const BELLA = user(27, "bella@agence-m.test", "Bella Owona");
+  const DIDIER = user(28, "didier@agence-m.test", "Didier Ekane");
+  const YVETTE = user(29, "yvette@agence-m.test", "Yvette Mbida");
+  const CAROLE = user(30, "carole@agence-m.test", "Carole Ngo");
+  let org: string;
+  let dla: string;
+  let yde: string;
+  let didier: string;
+  let yvette: string;
+  let clientD: string;
+  let clientY: string;
+  let clientNone: string;
+
+  beforeAll(async () => {
+    for (const u of [BELLA, DIDIER, YVETTE, CAROLE]) await db.query("insert into auth.users (id, email) values ($1, $2) on conflict do nothing", [u.id, u.email]);
+    org = await createOrg(BELLA, "Agence Multi");
+    const bella = await memberId(BELLA);
+    for (const [who, role] of [[DIDIER, "agent"], [YVETTE, "agent"], [CAROLE, "accountant"]] as const) {
+      const { token } = await one<{ token: string }>(BELLA, "insert into public.invitations (organization_id, email, role, invited_by) values ($1, $2, $3, $4) returning token", [org, who.email, role, bella]);
+      await one(who, "select public.accept_invitation($1)", [token]);
+    }
+    didier = await memberId(DIDIER);
+    yvette = await memberId(YVETTE);
+  });
+
+  const saveBureau = (who: User, name: string, code: string, id: string | null = null) =>
+    one<{ id: string }>(who, "select public.save_bureau($1, $2, $3, $4, 'Ville', '#0b3b66', 'Rue 1', '+237 6 00 00 00 00', '') as id", [org, id, name, code]).then((r) => r.id);
+  const visibleClients = (who: User) =>
+    rows<{ id: string }>(who, "select id from public.clients where organization_id = $1", [org]).then((r) => r.map((x) => x.id).sort());
+
+  it("crée les bureaux (propriétaire et administrateurs), avec un code unique et la limite de la formule", async () => {
+    await expect(saveBureau(DIDIER, "Douala", "DLA")).rejects.toThrow(/propriétaire et les administrateurs/);
+    dla = await saveBureau(BELLA, "Douala", "dla");
+    yde = await saveBureau(BELLA, "Yaoundé", "YDE");
+    expect(await rows(DIDIER, "select code from public.bureaux order by code")).toEqual([{ code: "DLA" }, { code: "YDE" }]);
+    await expect(saveBureau(BELLA, "Douala bis", "DLA")).rejects.toThrow(/utilise déjà le code DLA/);
+    await expect(as(BELLA, (tx) => tx.query("insert into public.bureaux (organization_id, name, code) values ($1, 'Pirate', 'PIR')", [org]))).rejects.toThrow(/permission denied/);
+    // Formule STARTER : un seul bureau (l'agence en a déjà deux : pas de troisième).
+    await db.query(
+      "update public.subscriptions set status = 'active', plan_id = (select id from public.plans where tier = 'starter' and is_active), current_period_end = now() + interval '30 days' where organization_id = $1",
+      [org],
+    );
+    await expect(saveBureau(BELLA, "Kribi", "KRI")).rejects.toThrow(/formule permet 1 bureau/);
+    await db.query("update public.subscriptions set status = 'trialing', plan_id = null, current_period_end = null, trial_ends_at = now() + interval '10 days' where organization_id = $1", [org]);
+  });
+
+  it("rattache les membres et remplit le bureau du client avec celui du conseiller ; un transfert est noté", async () => {
+    await expect(one(DIDIER, "select public.set_member_bureaux($1, $2::uuid[])", [didier, [dla]])).rejects.toThrow(/pas le droit/);
+    await one(BELLA, "select public.set_member_bureaux($1, $2::uuid[])", [didier, [dla]]);
+    await one(BELLA, "select public.set_member_bureaux($1, $2::uuid[])", [yvette, [yde]]);
+    clientD = (await createClient(DIDIER, org, didier, "Douala")).id;
+    clientY = (await createClient(YVETTE, org, yvette, "Yaounde")).id;
+    clientNone = (await createClient(BELLA, org, didier, "SansBureau")).id;
+    const bureauOf = (id: string) => one<{ b: string | null }>(BELLA, "select bureau_id as b from public.clients where id = $1", [id]).then((r) => r.b);
+    expect(await bureauOf(clientD)).toBe(dla);
+    expect(await bureauOf(clientY)).toBe(yde);
+    expect(await bureauOf(clientNone)).toBeNull();
+    // Transfert : noté dans l'historique de la fiche.
+    await as(BELLA, (tx) => tx.query("update public.clients set bureau_id = $1 where id = $2", [dla, clientNone]));
+    expect((await one<{ text: string }>(BELLA, "select text from public.activity_events where client_id = $1 and text like '%transférée%' limit 1", [clientNone])).text).toMatch(/bureau aucun → bureau Douala/);
+    await as(BELLA, (tx) => tx.query("update public.clients set bureau_id = null where id = $1", [clientNone]));
+  });
+
+  it("cloisonne les bureaux quand le propriétaire l'active, et rien ne change sinon", async () => {
+    // Réglage désactivé : chacun voit tous les clients de l'agence.
+    expect(await visibleClients(DIDIER)).toEqual([clientD, clientY, clientNone].sort());
+    await expect(one(DIDIER, "select public.set_bureau_restriction($1, true)", [org])).rejects.toThrow(/Seul le propriétaire/);
+    await one(BELLA, "select public.set_bureau_restriction($1, true)", [org]);
+
+    expect(await visibleClients(DIDIER)).toEqual([clientD, clientNone].sort());
+    expect(await visibleClients(YVETTE)).toEqual([clientY, clientNone].sort());
+    expect(await visibleClients(CAROLE)).toEqual([clientNone]);
+    expect(await visibleClients(BELLA)).toEqual([clientD, clientY, clientNone].sort());
+
+    // Les données d'un client caché sont cachées aussi (dossier, tâche) ; pas de création ni de modification hors de ses bureaux.
+    const caseY = (await createCase(YVETTE, org, clientY, yvette)).id;
+    await one(YVETTE, "insert into public.tasks (organization_id, title, assigned_to, due_at, client_id, case_id) values ($1, 'Appeler', $2, now(), $3, $4) returning id", [org, yvette, clientY, caseY]);
+    expect(await rows(DIDIER, "select id from public.cases where id = $1", [caseY])).toEqual([]);
+    expect(await rows(DIDIER, "select id from public.case_steps where case_id = $1", [caseY])).toEqual([]);
+    expect(await rows(DIDIER, "select id from public.tasks where client_id = $1", [clientY])).toEqual([]);
+    expect((await rows(YVETTE, "select id from public.case_steps where case_id = $1", [caseY])).length).toBeGreaterThan(0);
+    await expect(
+      as(DIDIER, (tx) => tx.query("insert into public.clients (organization_id, client_type, first_name, last_name, phone_e164, residence_country, city, assigned_to, bureau_id) values ($1, 'student', 'A', 'B', '+237690000009', 'CM', 'Douala', $2, $3)", [org, didier, yde])),
+    ).rejects.toThrow(/row-level security/);
+    expect(await rows(DIDIER, "update public.clients set city = 'Kribi' where id = $1 returning id", [clientY])).toEqual([]);
+
+    await one(BELLA, "select public.set_bureau_restriction($1, false)", [org]);
+    expect(await visibleClients(DIDIER)).toEqual([clientD, clientY, clientNone].sort());
+  });
+
+  it("note le bureau de chaque encaissement et clôture la caisse par bureau", async () => {
+    const caseY = (await createCase(YVETTE, org, clientY, yvette)).id;
+    const charge = (await one<{ id: string }>(YVETTE, "insert into public.charges (organization_id, case_id, label, charge_type, amount_minor, currency) values ($1, $2, 'Frais', 'agency_fee', 50000, 'XAF') returning id", [org, caseY])).id;
+    await one(YVETTE, "select public.record_payment($1, 50000, 'cash', 'Espèces', '', 'Paul', now(), $2::jsonb, 'Paiement (reçu {recu}).') as r", [caseY, JSON.stringify([{ charge_id: charge, amount_minor: 50000 }])]);
+    expect((await one<{ b: string }>(BELLA, "select bureau_id as b from public.payments where case_id = $1", [caseY])).b).toBe(yde);
+    const close = (bureau: string | null) =>
+      one<{ c: { total_collected_minor: number; bureau_id: string | null } }>(CAROLE, "select public.close_daily_cash((now() at time zone 'Africa/Douala')::date, 'XAF', 0, null, $1) as c", [bureau]).then((r) => r.c);
+    expect(await close(yde)).toMatchObject({ total_collected_minor: 50000, bureau_id: yde });
+    expect(await close(dla)).toMatchObject({ total_collected_minor: 0, bureau_id: dla });
+    expect(await close(null)).toMatchObject({ total_collected_minor: 50000, bureau_id: null });
+    // Une clôture par jour, par devise et par bureau (la même journée se met à jour).
+    await close(yde);
+    expect((await one<{ n: number }>(BELLA, "select count(*)::int as n from public.cash_closings where organization_id = $1", [org])).n).toBe(3);
+  });
+
+  it("site web : le visiteur choisit son bureau, la demande y arrive", async () => {
+    await one(BELLA, "select public.save_agency_website($1, 'agence-multi', '', $2::jsonb)", [org, JSON.stringify({ agencyName: "Agence Multi" })]);
+    await one(BELLA, "select public.publish_agency_website($1)", [org]);
+    const site = await one<{ s: { bureaux: { name: string }[] } }>(null, "select public.public_agency_website('agence-multi') as s");
+    expect(site.s.bureaux.map((b) => b.name)).toEqual(["Douala", "Yaoundé"]);
+    await one(null, "select public.website_submit_lead('agence-multi', 'Awa', 'Bello', '+237690000555', null, null, null, 'Bonjour', null, $1)", [yde]);
+    expect((await one<{ b: string }>(BELLA, "select bureau_id as b from public.clients where phone_e164 = '+237690000555'")).b).toBe(yde);
+  });
+});

@@ -1,4 +1,5 @@
 import type {
+  Bureau,
   ActivityEvent,
   Agency,
   AgencyService,
@@ -57,7 +58,7 @@ const columns = (...names: string[]) => ({ names, list: names.join(", ") as "*" 
 
 // Agence et membres ---------------------------------------------------------------------------
 
-export const ORGANIZATION = columns("id", "name", "city", "country_code", "currency", "timezone", "receipt_prefix", "is_demo", "created_at");
+export const ORGANIZATION = columns("id", "name", "city", "country_code", "currency", "timezone", "receipt_prefix", "is_demo", "created_at", "restrict_by_bureau");
 
 export function toAgency(r: Row): Agency {
   return {
@@ -67,6 +68,24 @@ export function toAgency(r: Row): Agency {
     currency: str(r.currency),
     timezone: str(r.timezone),
     receiptPrefix: str(r.receipt_prefix),
+    restrictByBureau: r.restrict_by_bureau === true,
+  };
+}
+
+export const BUREAU = columns("id", "name", "code", "city", "color", "address", "phone", "email", "archived_at");
+export const MEMBER_BUREAU = columns("member_id", "bureau_id");
+
+export function toBureau(r: Row): Bureau {
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    code: str(r.code),
+    city: str(r.city),
+    color: str(r.color) || "#023764",
+    address: str(r.address),
+    phone: str(r.phone),
+    email: str(r.email),
+    archived: r.archived_at !== null && r.archived_at !== undefined,
   };
 }
 
@@ -95,6 +114,7 @@ export const CLIENT = columns(
   "residence_country", "city", "preferred_language", "registered_at", "assigned_to", "passport_last4", "notes",
   "archived_at", "is_demo_fixture", "gender", "birth_date", "nationality", "marital_status", "id_doc_type",
   "address", "service_motive", "is_self_responsible", "guardian1", "guardian2", "status", "source", "source_detail", "converted_at", "partner_id", "email_opt_out", "campaign",
+  "bureau_id",
 );
 
 /** Numéro complet de la pièce d'identité (table à part, non lisible par le comptable ni la lecture seule). */
@@ -130,6 +150,7 @@ export function toClient(r: Row): Client {
     guardian1: opt(r.guardian1 as Client["guardian1"] | null),
     guardian2: opt(r.guardian2 as Client["guardian2"] | null),
     status: r.status === "prospect" ? "prospect" : "client",
+    bureauId: optStr(r.bureau_id),
     source: optStr(r.source) as Client["source"],
     sourceDetail: optStr(r.source_detail),
     campaign: optStr(r.campaign),
@@ -170,6 +191,7 @@ export function clientToRow(c: Omit<Client, "id" | "reference" | "registeredAt" 
     source: nul(c.source),
     source_detail: nul(c.sourceDetail),
     campaign: nul(c.campaign),
+    bureau_id: nul(c.bureauId),
   };
 }
 
@@ -440,6 +462,7 @@ export function chargeToRow(c: Charge): Row {
 export const PAYMENT = columns(
   "id", "case_id", "client_id", "amount_minor", "currency", "method_kind", "method_label", "transaction_reference",
   "payer_name", "paid_at", "received_by", "status", "receipt_number", "confirmed_at", "confirmed_by", "balance_after_minor", "voided_at", "voided_by", "void_reason",
+  "bureau_id",
 );
 
 export const ALLOCATION = columns("id", "payment_id", "charge_id", "amount_minor");
@@ -466,6 +489,7 @@ export function toPayment(r: Row, allocations: PaymentAllocation[]): Payment {
     voidedAt: optIso(r.voided_at),
     voidedBy: optStr(r.voided_by),
     voidReason: optStr(r.void_reason),
+    bureauId: optStr(r.bureau_id),
   };
 }
 

@@ -7,6 +7,7 @@ import { lastMonths, resolvePeriod } from "@/lib/period";
 import { agencyFinance } from "@/features/finance/calculations";
 import { loadFinanceWatch } from "@/features/finance/queries";
 import { summarizeCase } from "@/features/cases/summary";
+import { parseBureauParam } from "@/features/bureaux/display";
 
 export interface ToHandleItem {
   id: string;
@@ -18,7 +19,7 @@ export interface ToHandleItem {
   href: string;
 }
 
-export async function getDashboard(periodKey?: string) {
+export async function getDashboard(periodKey?: string, bureauParam?: string) {
   const { data, now, ctx } = await readAgency({
     cases: true,
     clients: true,
@@ -30,13 +31,32 @@ export async function getDashboard(periodKey?: string) {
     payments: true,
     expenses: true,
   });
+  // Vue d'un bureau : seulement ses clients et ce qui leur est rattaché (dépenses et alertes financières : toute l'agence).
+  const agencyIsEmpty = data.clients.length === 0;
+  const bureau = parseBureauParam(bureauParam, data.bureaux);
+  const bureauFilter = bureau && bureau !== "aucun" ? bureau : undefined;
+  if (bureauFilter) {
+    data.clients = data.clients.filter((c) => c.bureauId === bureauFilter);
+    const clientIds = new Set(data.clients.map((c) => c.id));
+    data.cases = data.cases.filter((k) => clientIds.has(k.clientId));
+    const caseIds = new Set(data.cases.map((k) => k.id));
+    data.steps = data.steps.filter((s) => caseIds.has(s.caseId));
+    data.requirements = data.requirements.filter((r) => caseIds.has(r.caseId));
+    data.charges = data.charges.filter((c) => caseIds.has(c.caseId));
+    data.payments = data.payments.filter((p) => clientIds.has(p.clientId));
+    data.tasks = data.tasks.filter((t) => (t.clientId ? clientIds.has(t.clientId) : t.caseId ? caseIds.has(t.caseId) : true));
+    data.appointments = data.appointments.filter((a) => (a.clientId ? clientIds.has(a.clientId) : a.caseId ? caseIds.has(a.caseId) : true));
+  }
   // Activité récente (les six derniers événements seulement) et finances à surveiller, lues en même temps.
   const [{ data: recentEvents, error }, financeWatch] = await Promise.all([
-    ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(6),
+    ctx.supabase.from("activity_events").select(EVENT.list).order("at", { ascending: false }).limit(bureauFilter ? 60 : 6),
     loadFinanceWatch(ctx, data.payments, data.clients, now, data.agency.timezone, data.expenses),
   ]);
   if (error) throw new Error(`Lecture impossible (activity_events) : ${error.message}`);
-  data.events = ((recentEvents ?? []) as unknown as Record<string, unknown>[]).map(toEvent);
+  data.events = ((recentEvents ?? []) as unknown as Record<string, unknown>[])
+    .map(toEvent)
+    .filter((e) => !bureauFilter || (e.clientId ? data.clients.some((c) => c.id === e.clientId) : false))
+    .slice(0, 6);
   const tz = data.agency.timezone;
   const period = resolvePeriod(periodKey, now, tz);
   const inPeriod = (iso: string) => !period.from || new Date(iso).getTime() >= period.from.getTime();
@@ -124,11 +144,14 @@ export async function getDashboard(periodKey?: string) {
 
   return {
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau: bureauFilter,
     member: ctx.member,
+    myBureauIds: data.members.find((m) => m.id === ctx.member.id)?.bureauIds ?? [],
     canSeeFinance: allowed(ctx, "finance.read"),
     now,
     period,
-    isEmpty: data.clients.length === 0,
+    isEmpty: agencyIsEmpty,
     kpis: {
       clients: data.clients.filter((c) => !c.archivedAt && c.status !== "prospect").length,
       prospects: data.clients.filter((c) => !c.archivedAt && c.status === "prospect").length,

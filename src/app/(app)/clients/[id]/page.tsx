@@ -36,6 +36,7 @@ import { formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/forma
 import { isMissingRequired } from "@/lib/domain/requirements";
 import { AppointmentForm } from "@/features/appointments/AppointmentForms";
 import { getClientDetail } from "@/features/clients/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
 import { ClientPortalAccess } from "@/features/client-portal/ClientPortalForms";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { AddNoteForm, LogExchangeForm } from "@/features/communications/ExchangeForms";
@@ -76,7 +77,7 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getClientDetail(id);
   if (!detail) notFound();
-  const { client, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates, portal } = detail;
+  const { client, bureau, agencyHasBureaux, agency, now, advisor, permissions, cases, requirements, appointments, payments, events, communications, aiConversations, hasAiAgent, caseReferences, members, services, followUps, today, partner, messageTemplates, canManageTemplates, portal } = detail;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
   const isProspect = client.status === "prospect";
@@ -106,6 +107,8 @@ async function ClientDetail({ params, searchParams }: PageProps<"/clients/[id]">
         back={isProspect ? { href: "/prospects", label: "Retour aux prospects" } : { href: "/clients", label: "Retour aux clients" }}
         eyebrow={
           <span className="flex flex-wrap items-center gap-2">
+            <BureauBadge bureau={bureau} size="lg" />
+            {!bureau && agencyHasBureaux && <StatusBadge spec={{ label: "Bureau à choisir (Modifier)", tone: "warning" }} />}
             <span className="font-mono text-sm text-slate-500">{client.reference}</span>
             {isProspect && <StatusBadge spec={PROSPECT_BADGE} />}
           </span>

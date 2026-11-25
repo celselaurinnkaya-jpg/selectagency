@@ -6,6 +6,7 @@ import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
+import { openBureaux } from "@/features/bureaux/display";
 import { dbMessage } from "@/lib/data/errors";
 import { sendQueuedEmailsAfterResponse } from "@/lib/email/dispatcher";
 import { clientToRow } from "@/lib/data/rows";
@@ -32,6 +33,7 @@ const clientSchema = z.object({
   idDocType: z.string().max(30).optional(),
   idDocNumber: z.string().trim().max(50).optional(),
   serviceMotive: z.string().max(40).optional(),
+  bureauId: z.union([z.literal(""), z.uuid()]).optional(),
 
   residenceCountry: z.string().trim().min(1, "Choisissez ou indiquez le pays de résidence.").max(80),
   city: z.string().trim().min(1, "Indiquez la ville.").max(80),
@@ -138,6 +140,10 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
   }
 
   const existing = clientId ? data.clients.find((c) => c.id === clientId) : undefined;
+  // Agence avec des bureaux : le bureau du client est obligatoire (création comme modification).
+  if (openBureaux(data.bureaux).length > 0 && !input.bureauId) {
+    return { message: "Choisissez le bureau du client (en bas du formulaire).", fieldErrors: { bureauId: ["Choisissez le bureau d'où vient ce client."] }, values };
+  }
   if (clientId && !existing) {
     return { message: "Ce client n'existe pas ou a été supprimé.", values };
   }
@@ -171,6 +177,8 @@ export async function saveClientAction(_prev: FormState, formData: FormData): Pr
     source: (input.source || undefined) as Client["source"],
     sourceDetail: input.sourceDetail || undefined,
     campaign: input.campaign || undefined,
+    // Champ absent (agence sans bureaux) : le bureau de la fiche ne change pas.
+    bureauId: input.bureauId === undefined ? existing?.bureauId : input.bureauId || undefined,
   };
 
   const supabase = ctx.supabase;

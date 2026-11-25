@@ -1,4 +1,6 @@
 import "server-only";
+import { matchesBureau, parseBureauParam } from "@/features/bureaux/display";
+import { bureauById } from "@/features/bureaux/display";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed } from "@/lib/auth/permissions";
 import { fetchRows, loadTables, readAgency } from "@/lib/data/agency";
@@ -20,6 +22,8 @@ export interface CaseFilters {
   status?: CaseStatus | "all";
   destination?: string;
   waiting?: StepKind;
+  /** Paramètre « ?bureau= » brut (bureau du client, vérifié ici). */
+  bureau?: string;
 }
 
 const normalize = (value: string) => value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
@@ -28,6 +32,7 @@ export async function listCases(filters: CaseFilters) {
   const { data, now } = await readAgency({ cases: true, clients: true, steps: true, requirements: true, charges: true, payments: true });
   const query = filters.q ? normalize(filters.q.trim()) : "";
   const status = filters.status ?? "active";
+  const bureau = parseBureauParam(filters.bureau, data.bureaux);
 
   const rows = data.cases
     .filter((c) => status === "all" || c.status === status)
@@ -35,6 +40,7 @@ export async function listCases(filters: CaseFilters) {
     .filter((c) => !filters.destination || c.destinationCountry === filters.destination)
     .map((c) => summarizeCase(data, c, now))
     .filter((s) => !filters.waiting || s.waitingOn === filters.waiting)
+    .filter((s) => matchesBureau(bureau, s.client.bureauId))
     .filter(
       (s) =>
         !query ||
@@ -51,6 +57,8 @@ export async function listCases(filters: CaseFilters) {
     rows,
     now,
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau,
     destinations: [...new Set(data.cases.map((c) => c.destinationCountry))],
     counts: {
       all: data.cases.length,
@@ -102,6 +110,7 @@ export async function getCaseDetail(id: string) {
 
   return {
     summary,
+    bureau: bureauById(data.bureaux, summary.client.bureauId),
     agency: data.agency,
     now,
     members: data.members,

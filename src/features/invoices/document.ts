@@ -1,4 +1,4 @@
-import type { Agency, Client, Invoice, InvoiceImageKind, InvoiceSettings, InvoiceStatus, TravelCase } from "@/lib/domain/types";
+import type { Agency, Bureau, Client, Invoice, InvoiceImageKind, InvoiceSettings, InvoiceStatus, TravelCase } from "@/lib/domain/types";
 import { caseKindLabel } from "@/features/workflows/templates";
 import type { InvoiceLine } from "./totals";
 
@@ -57,10 +57,20 @@ export function imageUrls(settings: InvoiceSettings): InvoiceImages {
   return urls;
 }
 
-export function issuerParty(agency: Agency, settings: InvoiceSettings): InvoiceParty {
+/**
+ * Émetteur du document : l'agence (raison sociale, numéro d'identification) ; avec un bureau, ses coordonnées à lui
+ * (adresse, téléphone, e-mail) quand elles sont renseignées, et son nom.
+ */
+export function issuerParty(agency: Agency, settings: InvoiceSettings, bureau?: Pick<Bureau, "name" | "address" | "phone" | "email" | "city">): InvoiceParty {
   return {
     name: settings.legalName || agency.name,
-    lines: [settings.address || agency.city, settings.phone, settings.email, settings.taxId].filter(Boolean),
+    lines: [
+      bureau ? `Bureau : ${bureau.name}` : "",
+      bureau?.address || settings.address || bureau?.city || agency.city,
+      bureau?.phone || settings.phone,
+      bureau?.email || settings.email,
+      settings.taxId,
+    ].filter(Boolean) as string[],
   };
 }
 
@@ -97,6 +107,8 @@ export function documentFromInvoice(input: {
   settings: InvoiceSettings;
   isDemo: boolean;
   today: string;
+  /** Bureau du client : ses coordonnées sur la facture. */
+  bureau?: Bureau;
 }): InvoiceDocumentData {
   const { invoice, settings } = input;
   return {
@@ -106,7 +118,7 @@ export function documentFromInvoice(input: {
     issueDate: invoice.issueDate,
     dueDate: invoice.dueDate,
     currency: invoice.currency,
-    issuer: issuerParty(input.agency, settings),
+    issuer: issuerParty(input.agency, settings, input.bureau),
     recipient: recipientParty(input.client),
     caseLabel: input.travelCase && caseLabel(input.travelCase),
     items: invoice.items.map(({ label, quantity, unitAmountMinor, taxRate }) => ({ label, quantity, unitAmountMinor, taxRate })),

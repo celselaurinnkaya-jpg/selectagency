@@ -149,6 +149,7 @@ export async function getTeam() {
   const seatsUsed = active.filter((m) => m.hasAccount !== false).length + pending.filter((i) => !i.expired).length;
   return {
     agency: data.agency,
+    bureaux: data.bureaux,
     currentMemberId: data.currentMemberId,
     currentRole: ctx.member.role,
     canManage,
@@ -215,7 +216,7 @@ export async function search(q: string) {
   const { data, ctx } = await readAgency({ clients: true, cases: true });
   const query = normalize(q.trim());
   const digits = q.replace(/\D/g, "");
-  if (query.length < 2) return { query: q, clients: [], cases: [], invoices: [], receipts: [] };
+  if (query.length < 2) return { query: q, clients: [], cases: [], invoices: [], receipts: [], bureaux: data.bureaux };
   // Factures (numéro, client) et reçus (numéro) : seulement pour les rôles qui voient la finance.
   const financeRead = allowed(ctx, "finance.read");
   const [invoiceRows, paymentRows] = financeRead
@@ -227,6 +228,7 @@ export async function search(q: string) {
   };
   return {
     query: q,
+    bureaux: data.bureaux,
     invoices: invoiceRows
       .filter((i) => normalize(`${i.number} ${clientName(i.clientId)}`).includes(query))
       .slice(0, 30)

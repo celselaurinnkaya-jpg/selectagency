@@ -17,10 +17,13 @@ interface CashClosingRow {
   total_collected_minor: number | string;
   breakdown: Record<string, number> | null;
   notes: string | null;
+  bureau_id: string | null;
 }
 
-export async function getCashClosingData(targetDate?: string) {
+export async function getCashClosingData(targetDate?: string, bureauParam?: string) {
   const { data, now, ctx } = await readAgency({ payments: true });
+  // Caisse d'un bureau (paiements encaissés dans ce bureau) ou de toute l'agence.
+  const bureau = data.bureaux.some((b) => b.id === bureauParam) ? bureauParam : undefined;
   const tz = data.agency.timezone;
   const date = targetDate || dayKey(now, tz);
   const currency = data.agency.currency;
@@ -31,6 +34,7 @@ export async function getCashClosingData(targetDate?: string) {
   // Encaissements confirmés de la date cible
   const dayPayments = (data.payments as Payment[]).filter((p: Payment) => {
     if (p.status !== "recorded" || p.currency !== currency) return false;
+    if (bureau && p.bureauId !== bureau) return false;
     const pDate = dayKey(p.paidAt, tz);
     return pDate === date;
   });
@@ -61,6 +65,7 @@ export async function getCashClosingData(targetDate?: string) {
     return {
       id: String(r.id),
       organizationId: String(r.organization_id),
+      bureauId: r.bureau_id ? String(r.bureau_id) : undefined,
       closingDate: String(r.closing_date),
       currency: String(r.currency),
       closedBy: String(r.closed_by),
@@ -75,7 +80,7 @@ export async function getCashClosingData(targetDate?: string) {
     };
   });
 
-  const todayClosing = closings.find((c) => c.closingDate === date && c.currency === currency);
+  const todayClosing = closings.find((c) => c.closingDate === date && c.currency === currency && (c.bureauId ?? undefined) === bureau);
 
   const summary: DayCashSummary = {
     date,
@@ -89,6 +94,8 @@ export async function getCashClosingData(targetDate?: string) {
 
   return {
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau,
     now,
     tz,
     date,

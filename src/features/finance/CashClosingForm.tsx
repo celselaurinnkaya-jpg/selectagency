@@ -20,12 +20,18 @@ export function CashClosingForm({
   currency,
   timeZone,
   canWrite,
+  bureauId,
+  bureauNames = {},
 }: {
   summary: DayCashSummary;
   closings: CashClosing[];
   currency: string;
   timeZone: string;
   canWrite: boolean;
+  /** Caisse d'un bureau (vide : toute l'agence). */
+  bureauId?: string;
+  /** Nom des bureaux, pour l'historique. */
+  bureauNames?: Record<string, string>;
 }) {
   const [state, formAction, pending] = useActionState(closeDailyCashAction, initialFormState);
   const [actualInput, setActualInput] = useState(
@@ -120,6 +126,7 @@ export function CashClosingForm({
           <form action={formAction} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4">
             <input type="hidden" name="closingDate" value={summary.date} />
             <input type="hidden" name="currency" value={currency} />
+            <input type="hidden" name="bureauId" value={bureauId ?? ""} />
 
             <div className="flex items-center gap-2 text-navy-800 font-medium text-sm">
               <Lock className="size-4 text-citron-600" />
@@ -197,7 +204,12 @@ export function CashClosingForm({
                   const hasDiscrepancy = c.discrepancyMinor !== 0;
                   return (
                     <tr key={c.id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3 font-medium text-navy-800">{c.closingDate}</td>
+                      <td className="px-4 py-3 font-medium text-navy-800">
+                        {c.closingDate}
+                        {Object.keys(bureauNames).length > 0 && (
+                          <span className="block text-xs font-normal text-slate-500">{c.bureauId ? bureauNames[c.bureauId] ?? "Bureau" : "Toute l'agence"}</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-slate-600">{c.closedByName ?? "Responsable"}</td>
                       <td className="px-4 py-3 text-right font-medium tabular-nums text-slate-900">
                         {formatMoney(c.actualCashMinor, c.currency)}

@@ -13,6 +13,9 @@ import { CLIENT_TYPE } from "@/lib/domain/labels";
 import type { ClientType } from "@/lib/domain/types";
 import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { listClients } from "@/features/clients/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
+import { BureauSelect } from "@/features/bureaux/BureauFilter";
+import { bureauById } from "@/features/bureaux/display";
 import { DeleteClientModal } from "@/features/clients/DeleteClientModal";
 import { QuickContact } from "@/features/communications/QuickContact";
 
@@ -45,7 +48,12 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
   const q = typeof params.q === "string" ? params.q : "";
   const type = typeof params.type === "string" && params.type in CLIENT_TYPE ? (params.type as ClientType) : undefined;
   const country = typeof params.pays === "string" ? params.pays : undefined;
-  const { rows, agency, now, countries, total, prospects, canWrite, canDelete } = await listClients({ q, type, country });
+  const { rows, agency, now, countries, total, prospects, canWrite, canDelete, bureaux, bureau } = await listClients({
+    q,
+    type,
+    country,
+    bureau: typeof params.bureau === "string" ? params.bureau : undefined,
+  });
   const tz = agency.timezone;
 
   return (
@@ -91,6 +99,7 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
             ))}
           </select>
         </div>
+        <BureauSelect bureaux={bureaux} value={bureau} />
         <Button type="submit" variant="default">
           <Search aria-hidden />
           Filtrer
@@ -146,9 +155,12 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
                 {rows.map(({ client, advisor, casesCount, activeCases, balanceMinor, lastActivityAt }) => (
                   <tr key={client.id} className="hover:bg-navy-50/50">
                     <td className="px-4 py-3">
-                      <Link href={`/clients/${client.id}`} className="font-medium text-navy-800 hover:underline">
-                        {client.firstName} {client.lastName}
-                      </Link>
+                      <span className="flex items-center gap-1.5">
+                        <BureauBadge bureau={bureauById(bureaux, client.bureauId)} />
+                        <Link href={`/clients/${client.id}`} className="font-medium text-navy-800 hover:underline">
+                          {client.firstName} {client.lastName}
+                        </Link>
+                      </span>
                       <span className="block font-mono text-xs text-slate-500">{client.reference}</span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">{CLIENT_TYPE[client.clientType]}</td>
@@ -188,7 +200,8 @@ async function ClientsList({ searchParams }: Pick<PageProps<"/clients">, "search
               <li key={client.id} className="rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.12)] border border-slate-100">
                 <Link href={`/clients/${client.id}`} className="block">
                   <span className="flex items-baseline justify-between gap-2">
-                    <span className="font-medium text-navy-800">
+                    <span className="flex items-center gap-1.5 font-medium text-navy-800">
+                      <BureauBadge bureau={bureauById(bureaux, client.bureauId)} />
                       {client.firstName} {client.lastName}
                     </span>
                     <span className="font-mono text-xs text-slate-500">{client.reference}</span>

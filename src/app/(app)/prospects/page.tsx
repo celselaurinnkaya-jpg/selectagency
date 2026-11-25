@@ -9,6 +9,8 @@ import { Card, EmptyState, PageHeader, StatCard, StatusBadge } from "@/component
 import { CLIENT_SOURCE, SERVICE_MOTIVES } from "@/lib/domain/labels";
 import { formatDate, formatRelativeDay, initials } from "@/lib/format";
 import { isProspectFilter, listProspects, type ProspectFilter } from "@/features/prospects/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
+import { bureauById } from "@/features/bureaux/display";
 import { QuickContact } from "@/features/communications/QuickContact";
 
 export const metadata: Metadata = { title: "Prospects" };
@@ -43,11 +45,20 @@ export default function ProspectsPage({ searchParams }: PageProps<"/prospects">)
 }
 
 async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "searchParams">) {
-  const { vue } = await searchParams;
+  const { vue, bureau: bureauParam } = await searchParams;
   const filter: ProspectFilter = isProspectFilter(vue) ? vue : "tous";
-  const { rows, counts, convertedThisMonth, newThisMonth, agency, now } = await listProspects(filter);
+  const { rows, counts, convertedThisMonth, newThisMonth, agency, now, bureaux, bureau } = await listProspects(
+    filter,
+    typeof bureauParam === "string" ? bureauParam : undefined,
+  );
   const tz = agency.timezone;
-  const href = (key: ProspectFilter) => (key === "tous" ? "/prospects" : `/prospects?vue=${key}`);
+  const href = (key: ProspectFilter, b: string | undefined = bureau) => {
+    const search = new URLSearchParams();
+    if (key !== "tous") search.set("vue", key);
+    if (b) search.set("bureau", b);
+    const text = search.toString();
+    return `/prospects${text ? `?${text}` : ""}`;
+  };
 
   return (
     <div className="space-y-6">
@@ -60,6 +71,17 @@ async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "search
 
       <div>
         <Pills label="Filtrer les prospects" active={filter} items={FILTERS.map((f) => ({ key: f.key, label: f.label, href: href(f.key), count: counts[f.key] }))} />
+        {bureaux.length > 0 && (
+          <Pills
+            label="Filtrer par bureau"
+            active={bureau ?? "tous-bureaux"}
+            items={[
+              { key: "tous-bureaux", label: "Tous les bureaux", href: href(filter, undefined) },
+              ...bureaux.filter((b) => !b.archived).map((b) => ({ key: b.id, label: b.code, href: href(filter, b.id) })),
+              { key: "aucun", label: "Sans bureau", href: href(filter, "aucun") },
+            ]}
+          />
+        )}
         {rows.length === 0 ? (
           <EmptyState
             icon={Target}
@@ -91,9 +113,12 @@ async function Prospects({ searchParams }: Pick<PageProps<"/prospects">, "search
                       {initials(`${c.firstName} ${c.lastName}`)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <Link href={c.status === "client" ? `/clients/${c.id}` : `/prospects/${c.id}`} className="block truncate font-semibold text-navy-800 hover:underline">
-                        {c.firstName} {c.lastName}
-                      </Link>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <BureauBadge bureau={bureauById(bureaux, c.bureauId)} />
+                        <Link href={c.status === "client" ? `/clients/${c.id}` : `/prospects/${c.id}`} className="block truncate font-semibold text-navy-800 hover:underline">
+                          {c.firstName} {c.lastName}
+                        </Link>
+                      </span>
                       <span className="block truncate text-sm text-slate-600">
                         <a href={`tel:${c.phoneE164}`} className="tabular-nums hover:underline">
                           {c.phoneE164}

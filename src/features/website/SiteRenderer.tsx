@@ -210,10 +210,13 @@ export function SiteRenderer({
   content: c,
   slug,
   countryCode,
+  bureaux = [],
   preview = false,
 }: {
   content: SiteContent;
   slug: string;
+  /** Bureaux de l'agence : le visiteur choisit celui qui lui convient. */
+  bureaux?: { id: string; name: string; city: string }[];
   /** Pays de l'agence : indicatif ajouté aux numéros saisis sans lui (lien WhatsApp). */
   countryCode: string;
   preview?: boolean;
@@ -294,6 +297,7 @@ export function SiteRenderer({
                 agencyName={c.agencyName}
                 services={c.services.items.map((s) => s.name).filter(Boolean)}
                 ctaLabel={c.hero.ctaLabel ? `${c.hero.ctaLabel}` : "Envoyer ma demande"}
+                bureaux={bureaux}
                 preview={preview}
               />
             </div>

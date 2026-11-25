@@ -152,6 +152,7 @@ const leadSchema = z.object({
   destination: z.string().trim().max(120).optional(),
   message: z.string().trim().max(1500, "Message trop long (1 500 caractères au plus).").optional(),
   consent: z.literal("on", { error: "Cochez la case pour que l'agence puisse vous recontacter." }),
+  bureauId: z.union([z.literal(""), z.uuid()]).optional(),
 });
 
 export async function submitWebsiteLeadAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -178,6 +179,8 @@ export async function submitWebsiteLeadAction(_prev: FormState, formData: FormDa
     p_message: input.message ?? "",
     // « Projet » de la fiche prospect, d'après le service choisi.
     p_service_motive: serviceMotive(input.service ?? "") ?? null,
+    // Bureau choisi par le visiteur (la base vérifie qu'il appartient à l'agence).
+    p_bureau_id: input.bureauId || null,
   });
   if (error) return { message: dbMessage(error), values };
   return { ok: true, message: `Merci ! Votre demande a bien été reçue par ${site.content.agencyName} : un conseiller vous recontacte rapidement.` };

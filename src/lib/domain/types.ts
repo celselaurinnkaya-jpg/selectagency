@@ -59,6 +59,23 @@ export interface Agency {
   currency: string;
   timezone: string;
   receiptPrefix: string;
+  /** Visibilité par bureau : conseillers, comptables et lectures seules ne voient que les clients de leurs bureaux. */
+  restrictByBureau?: boolean;
+}
+
+/** Bureau de l'agence (ville, point de vente) : badge « DLA », coordonnées pour les reçus et factures. */
+export interface Bureau {
+  id: string;
+  name: string;
+  /** Code court affiché en badge (2 à 5 lettres ou chiffres). */
+  code: string;
+  city: string;
+  color: string;
+  address: string;
+  phone: string;
+  email: string;
+  /** Bureau fermé : il n'est plus proposé, ses clients et paiements le gardent. */
+  archived: boolean;
 }
 
 export interface Member {
@@ -71,6 +88,8 @@ export interface Member {
   removedAt?: string;
   /** Faux pour un collègue fictif de la démonstration ou un membre retiré (aucun compte rattaché). */
   hasAccount?: boolean;
+  /** Bureaux auxquels le membre est rattaché. */
+  bureauIds?: string[];
 }
 
 export interface ClientGuardian {
@@ -133,6 +152,8 @@ export interface Client {
 
   /** Vrai si le client s'est désinscrit des relances et notifications par e-mail. */
   emailOptOut?: boolean;
+  /** Bureau de l'agence auquel la fiche est rattachée. */
+  bureauId?: string;
 }
 
 export interface CaseDetails {
@@ -287,6 +308,8 @@ export interface Payment {
   voidedAt?: string;
   voidedBy?: string;
   voidReason?: string;
+  /** Bureau où le paiement a été encaissé (caisse par bureau). */
+  bureauId?: string;
 }
 
 export type QuoteStatus = "draft" | "sent" | "accepted" | "refused" | "cancelled";
@@ -709,6 +732,8 @@ export interface AgencyData {
   agency: Agency;
   currentMemberId: string;
   members: Member[];
+  /** Bureaux de l'agence (ouverts et fermés). */
+  bureaux: Bureau[];
   clients: Client[];
   cases: TravelCase[];
   steps: CaseStep[];

@@ -16,6 +16,10 @@ import { formatMoney, formatRelativeDay } from "@/lib/format";
 import { listCases } from "@/features/cases/queries";
 import { caseKindLabel } from "@/features/workflows/templates";
 import type { CaseSummary } from "@/features/cases/summary";
+import type { Bureau } from "@/lib/domain/types";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
+import { BureauSelect } from "@/features/bureaux/BureauFilter";
+import { bureauById } from "@/features/bureaux/display";
 
 export const metadata: Metadata = { title: "Dossiers" };
 
@@ -53,13 +57,21 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
     attente: str(params.attente),
     q: str(params.q),
     vue: str(params.vue),
+    bureau: str(params.bureau),
   };
   const category = current.categorie && current.categorie in CATEGORY_LABELS ? (current.categorie as CaseCategory) : undefined;
   const status = current.statut === "all" ? "all" : current.statut && current.statut in CASE_STATUS ? (current.statut as CaseStatus) : "active";
   const waiting = current.attente && current.attente in STEP_KIND ? (current.attente as StepKind) : undefined;
   const view = current.vue === "colonnes" ? "colonnes" : "liste";
 
-  const { rows, agency, destinations, now } = await listCases({ q: current.q, category, status, destination: current.destination, waiting });
+  const { rows, agency, destinations, now, bureaux, bureau } = await listCases({
+    q: current.q,
+    category,
+    status,
+    destination: current.destination,
+    waiting,
+    bureau: current.bureau,
+  });
   const tz = agency.timezone;
 
   return (
@@ -117,6 +129,7 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
             ))}
           </select>
         </div>
+        <BureauSelect bureaux={bureaux} value={bureau} />
         <Button type="submit">
           <Search aria-hidden />
           Filtrer
@@ -168,7 +181,7 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
                 <ul className="space-y-2">
                   {items.map((s) => (
                     <li key={s.travelCase.id}>
-                      <CaseCard summary={s} now={now} tz={tz} />
+                      <CaseCard summary={s} now={now} tz={tz} bureau={bureauById(bureaux, s.client.bureauId)} />
                     </li>
                   ))}
                   {items.length === 0 && <li className="rounded-xl border border-dashed border-slate-300 p-3 text-center text-sm text-slate-500">Aucun dossier</li>}
@@ -203,7 +216,10 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
                       </span>
                     </td>
                     <td className="px-4 py-3 text-slate-700">
-                      {s.client.firstName} {s.client.lastName}
+                      <span className="flex items-center gap-1.5">
+                        <BureauBadge bureau={bureauById(bureaux, s.client.bureauId)} />
+                        {s.client.firstName} {s.client.lastName}
+                      </span>
                       <span className="block text-xs text-slate-500">{s.assignee?.fullName}</span>
                     </td>
                     <td className="px-4 py-3">
@@ -238,7 +254,7 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
           <ul className="space-y-2 lg:hidden">
             {rows.map((s) => (
               <li key={s.travelCase.id}>
-                <CaseCard summary={s} now={now} tz={tz} />
+                <CaseCard summary={s} now={now} tz={tz} bureau={bureauById(bureaux, s.client.bureauId)} />
               </li>
             ))}
           </ul>
@@ -248,10 +264,11 @@ async function CasesList({ searchParams }: Pick<PageProps<"/cases">, "searchPara
   );
 }
 
-function CaseCard({ summary: s, now, tz }: { summary: CaseSummary; now: Date; tz: string }) {
+function CaseCard({ summary: s, now, tz, bureau }: { summary: CaseSummary; now: Date; tz: string; bureau?: Bureau }) {
   return (
     <Link href={`/cases/${s.travelCase.id}`} className="block rounded-xl bg-white p-4 shadow-[0_1px_3px_rgba(2,55,100,0.12)] hover:ring-2 hover:ring-navy-200">
       <span className="flex flex-wrap items-center gap-2">
+        <BureauBadge bureau={bureau} />
         <span className="font-mono text-xs text-slate-500">{s.travelCase.reference}</span>
         {s.travelCase.priority === "urgent" || s.travelCase.priority === "high" ? <StatusBadge spec={PRIORITY[s.travelCase.priority]} /> : null}
       </span>

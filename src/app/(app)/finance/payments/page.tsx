@@ -12,6 +12,8 @@ import { PendingPaymentActions } from "@/features/finance/FinanceForms";
 import { isPaymentFilter, listPayments, type PaymentFilter } from "@/features/finance/queries";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { FinanceTabs } from "@/features/finance/FinanceTabs";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
+import { bureauById } from "@/features/bureaux/display";
 
 export const metadata: Metadata = { title: "Paiements et reçus" };
 
@@ -45,9 +47,19 @@ export default function PaymentsPage({ searchParams }: PageProps<"/finance/payme
 }
 
 async function Payments({ searchParams }: Pick<PageProps<"/finance/payments">, "searchParams">) {
-  const { vue } = await searchParams;
+  const { vue, bureau: bureauParam } = await searchParams;
   const filter: PaymentFilter = isPaymentFilter(vue) ? vue : "tous";
-  const { rows, agency, canSeeFinance, canWrite, counts, pendingTotals } = await listPayments(filter);
+  const { rows, agency, canSeeFinance, canWrite, counts, pendingTotals, bureaux, bureau } = await listPayments(
+    filter,
+    typeof bureauParam === "string" ? bureauParam : undefined,
+  );
+  const href = (key: PaymentFilter, b: string | undefined = bureau) => {
+    const search = new URLSearchParams();
+    if (key !== "tous") search.set("vue", key);
+    if (b) search.set("bureau", b);
+    const text = search.toString();
+    return `/finance/payments${text ? `?${text}` : ""}`;
+  };
   const tz = agency.timezone;
   if (!canSeeFinance) return <><FinanceTabs /><FinanceRestricted /></>;
   const receiptLabel = (p: (typeof rows)[number]["payment"]) => p.receiptNumber ?? "Sans reçu";
@@ -68,8 +80,19 @@ async function Payments({ searchParams }: Pick<PageProps<"/finance/payments">, "
       <Pills
         label="Filtrer les paiements"
         active={filter}
-        items={FILTERS.map((f) => ({ key: f.key, label: f.label, href: f.key === "tous" ? "/finance/payments" : `/finance/payments?vue=${f.key}`, count: counts[f.key] }))}
+        items={FILTERS.map((f) => ({ key: f.key, label: f.label, href: href(f.key), count: counts[f.key] }))}
       />
+      {bureaux.length > 0 && (
+        <Pills
+          label="Bureau d'encaissement"
+          active={bureau ?? "tous-bureaux"}
+          items={[
+            { key: "tous-bureaux", label: "Tous les bureaux", href: href(filter, undefined) },
+            ...bureaux.filter((b) => !b.archived).map((b) => ({ key: b.id, label: b.code, href: href(filter, b.id) })),
+            { key: "aucun", label: "Sans bureau", href: href(filter, "aucun") },
+          ]}
+        />
+      )}
       {rows.length === 0 ? (
         <EmptyState
           icon={Wallet}
@@ -120,9 +143,12 @@ async function Payments({ searchParams }: Pick<PageProps<"/finance/payments">, "
                 {rows.map(({ payment: p, client, caseRef, receivedBy }) => (
                   <tr key={p.id} className="hover:bg-navy-50/50">
                     <td className="px-4 py-3">
-                      <Link href={`/finance/receipts/${p.id}`} className="font-mono font-medium text-navy-800 hover:underline">
-                        {receiptLabel(p)}
-                      </Link>
+                      <span className="flex items-center gap-1.5">
+                        <BureauBadge bureau={bureauById(bureaux, p.bureauId)} />
+                        <Link href={`/finance/receipts/${p.id}`} className="font-mono font-medium text-navy-800 hover:underline">
+                          {receiptLabel(p)}
+                        </Link>
+                      </span>
                       {p.status !== "recorded" && <StatusBadge className="ml-2" spec={PAYMENT_STATUS[p.status]} />}
                     </td>
                     <td className="px-4 py-3 text-slate-700">{formatDate(p.paidAt, tz, "dateTime")}</td>

@@ -1,4 +1,4 @@
-import type { Agency, Charge, InvoiceSettings, Member, Payment, TravelCase } from "@/lib/domain/types";
+import type { Agency, Bureau, Charge, InvoiceSettings, Member, Payment, TravelCase } from "@/lib/domain/types";
 import { formatDate } from "@/lib/format";
 import { caseLabel, issuerParty, recipientParty, type InvoiceClient, type InvoiceParty } from "@/features/invoices/document";
 
@@ -48,6 +48,8 @@ export function documentFromPayment(input: {
   receivedBy?: Pick<Member, "fullName">;
   voidedBy?: Pick<Member, "fullName">;
   isDemo: boolean;
+  /** Bureau d'encaissement : ses coordonnées sur le reçu. */
+  bureau?: Bureau;
 }): ReceiptDocumentData {
   const { payment: p, agency } = input;
   const tz = agency.timezone;
@@ -57,7 +59,7 @@ export function documentFromPayment(input: {
     currency: p.currency,
     amountMinor: p.amountMinor,
     balanceAfterMinor: p.status === "voided" ? undefined : p.balanceAfterMinor,
-    issuer: issuerParty(agency, input.settings),
+    issuer: issuerParty(agency, input.settings, input.bureau),
     recipient: recipientParty(input.client),
     caseLabel: caseLabel(input.travelCase),
     method: p.transactionReference ? `${p.methodLabel} — réf. ${p.transactionReference}` : p.methodLabel,

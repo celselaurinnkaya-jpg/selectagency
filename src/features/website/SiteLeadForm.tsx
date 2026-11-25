@@ -16,12 +16,14 @@ export function SiteLeadForm({
   agencyName,
   services,
   ctaLabel,
+  bureaux = [],
   preview = false,
 }: {
   slug: string;
   agencyName: string;
   services: string[];
   ctaLabel: string;
+  bureaux?: { id: string; name: string; city: string }[];
   preview?: boolean;
 }) {
   const [state, action, pending] = useActionState(submitWebsiteLeadAction, initialFormState);
@@ -86,6 +88,21 @@ export function SiteLeadForm({
             </select>
           </label>
         )}
+        {bureaux.length > 1 && (
+          <label className="block text-sm font-medium text-slate-700">
+            Bureau qui vous arrange
+            <select key={`bureau-${v.bureauId ?? ""}`} name="bureauId" defaultValue={v.bureauId ?? ""} className={field}>
+              <option value="">Peu importe</option>
+              {bureaux.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                  {b.city && b.city !== b.name ? ` (${b.city})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {bureaux.length === 1 && <input type="hidden" name="bureauId" value={bureaux[0]!.id} />}
         <label className="block text-sm font-medium text-slate-700">
           Destination
           <input name="destination" maxLength={120} defaultValue={v.destination} className={field} />

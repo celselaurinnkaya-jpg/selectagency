@@ -32,6 +32,7 @@ import {
 import type { CaseStep } from "@/lib/domain/types";
 import { dayKey, formatDate, formatMoney, formatRelativeDay, timeKey } from "@/lib/format";
 import { getCaseDetail } from "@/features/cases/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
 import { StepTransitionForm } from "@/features/cases/StepTransitionForm";
 import { PrepareWhatsApp } from "@/features/communications/PrepareWhatsApp";
 import { AddNoteForm, LogExchangeForm } from "@/features/communications/ExchangeForms";
@@ -108,7 +109,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const detail = await getCaseDetail(id);
   if (!detail) notFound();
-  const { summary, agency, now, members, permissions, organizationId, notifyCaseStatus, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications, messageTemplates, canManageTemplates } = detail;
+  const { summary, bureau, agency, now, members, permissions, organizationId, notifyCaseStatus, steps, transitions, requirements, files, appointments, tasks, charges, quotes, invoices, payments, events, communications, messageTemplates, canManageTemplates } = detail;
   const { travelCase: c, client, finance, current } = summary;
   const tz = agency.timezone;
   const tab = TABS.find((t) => t.key === query.tab)?.key ?? "apercu";
@@ -142,6 +143,7 @@ async function CaseDetail({ params, searchParams }: PageProps<"/cases/[id]">) {
         back={{ href: "/cases", label: "Retour aux dossiers" }}
         eyebrow={
           <span className="flex flex-wrap items-center gap-2">
+            <BureauBadge bureau={bureau} size="lg" />
             <span className="font-mono text-sm text-slate-500">{c.reference}</span>
             <StatusBadge spec={CASE_STATUS[c.status]} />
             {c.outcome !== "pending" && <StatusBadge spec={CASE_OUTCOME[c.outcome]} />}

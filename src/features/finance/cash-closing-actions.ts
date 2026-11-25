@@ -13,6 +13,7 @@ const closeCashSchema = z.object({
   currency: z.string().length(3, "Devise invalide."),
   actualCashAmount: z.string().trim(),
   notes: z.string().trim().max(500, "Notes trop longues (500 caractères max).").optional(),
+  bureauId: z.union([z.literal(""), z.uuid()]).optional(),
 });
 
 export async function closeDailyCashAction(_prev: FormState, formData: FormData): Promise<FormState> {
@@ -21,6 +22,7 @@ export async function closeDailyCashAction(_prev: FormState, formData: FormData)
     currency: formData.get("currency"),
     actualCashAmount: formData.get("actualCashAmount"),
     notes: formData.get("notes") || undefined,
+    bureauId: formData.get("bureauId") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -46,6 +48,8 @@ export async function closeDailyCashAction(_prev: FormState, formData: FormData)
     p_currency: parsed.data.currency,
     p_actual_cash_minor: actualMinor,
     p_notes: parsed.data.notes ?? null,
+    // Caisse d'un bureau (vide : toute l'agence).
+    p_bureau_id: parsed.data.bureauId || null,
   });
 
   if (error) return { message: dbMessage(error) };

@@ -1,4 +1,6 @@
 import "server-only";
+import { matchesBureau, parseBureauParam } from "@/features/bureaux/display";
+import { bureauById } from "@/features/bureaux/display";
 import { allowed } from "@/lib/auth/permissions";
 import { loadTables, readAgency } from "@/lib/data/agency";
 import { dayKey } from "@/lib/format";
@@ -10,7 +12,7 @@ import { agencyFinance } from "./calculations";
 import { documentFromPayment } from "./receipt";
 import { activeMembers } from "@/lib/domain/members";
 import type { AgencyContext } from "@/lib/auth/context";
-import type { Client, Expense, Payment } from "@/lib/domain/types";
+import type { Bureau, Client, Expense, Payment } from "@/lib/domain/types";
 import { campaignStats } from "@/features/communications/campaigns";
 
 /** Montants par devise (une agence peut encaisser en XAF et en EUR : jamais de conversion). */
@@ -96,14 +98,19 @@ const PAYMENT_FILTERS: Record<PaymentFilter, (p: Payment) => boolean> = {
 
 export const isPaymentFilter = (value: unknown): value is PaymentFilter => typeof value === "string" && value in PAYMENT_FILTERS;
 
-export async function listPayments(filter: PaymentFilter = "tous") {
-  const { data, ctx } = await readAgency({ payments: true, clients: true, cases: true });
+export async function listPayments(filter: PaymentFilter = "tous", bureauParam?: string) {
+  const { data: all, ctx } = await readAgency({ payments: true, clients: true, cases: true });
+  // Bureau où le paiement a été encaissé.
+  const bureau = parseBureauParam(bureauParam, all.bureaux);
+  const data = { ...all, payments: all.payments.filter((p) => matchesBureau(bureau, p.bureauId)) };
   const count = (f: PaymentFilter) => data.payments.filter(PAYMENT_FILTERS[f]).length;
   // Montant à vérifier, par devise (une agence peut encaisser en XAF et en EUR).
   const pendingTotals = new Map<string, number>();
   for (const p of data.payments) if (p.status === "pending") pendingTotals.set(p.currency, (pendingTotals.get(p.currency) ?? 0) + p.amountMinor);
   return {
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau,
     canSeeFinance: allowed(ctx, "finance.read"),
     canWrite: allowed(ctx, "finance.write"),
     counts: { tous: count("tous"), "a-verifier": count("a-verifier"), confirmes: count("confirmes"), annules: count("annules") },
@@ -217,6 +224,7 @@ export async function getReceipt(paymentId: string) {
           receivedBy: member(payment.receivedBy),
           voidedBy: member(payment.voidedBy),
           isDemo: ctx.isDemo,
+          bureau: bureauById(data.bureaux, payment.bureauId ?? client.bureauId),
         })
       : undefined,
     images: imageUrls(settings),
@@ -276,6 +284,24 @@ export async function getReports(periodKey?: string) {
       receivedMinor: data.payments.filter((p) => p.status === "recorded" && p.currency === data.agency.currency && monthOf(p.paidAt) === m.key).reduce((s, p) => s + p.amountMinor, 0),
     })),
     finance: agencyFinance(data.charges, data.payments, data.expenses, period),
+    byBureau: data.bureaux.length === 0
+      ? []
+      : [...data.bureaux.map((b) => ({ bureau: b as Bureau | undefined, id: b.id as string | undefined })), { bureau: undefined, id: undefined }]
+          .map(({ bureau, id }) => {
+            const clientIds = new Set(data.clients.filter((c) => c.bureauId === id).map((c) => c.id));
+            const received = new Map<string, number>();
+            for (const p of data.payments) {
+              if (p.status === "recorded" && p.bureauId === id && inPeriod(p.paidAt)) received.set(p.currency, (received.get(p.currency) ?? 0) + p.amountMinor);
+            }
+            return {
+              bureau,
+              newContacts: data.clients.filter((c) => c.bureauId === id && inPeriod(c.registeredAt)).length,
+              openedCases: opened.filter((c) => clientIds.has(c.clientId)).length,
+              activeCases: active.filter((s) => clientIds.has(s.client.id)).length,
+              received: [...received].map(([currency, amountMinor]) => ({ currency, amountMinor })),
+            };
+          })
+          .filter((row) => row.bureau ? !row.bureau.archived || row.newContacts + row.openedCases + row.activeCases + row.received.length > 0 : row.newContacts + row.openedCases + row.activeCases + row.received.length > 0),
     workload: activeMembers(data.members)
       .filter((m) => m.role !== "viewer")
       .map((member) => {

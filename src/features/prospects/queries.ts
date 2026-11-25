@@ -1,4 +1,6 @@
 import "server-only";
+import { bureauOptions, defaultBureauFor } from "@/features/bureaux/display";
+import { matchesBureau, parseBureauParam } from "@/features/bureaux/display";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
 import { readAgency } from "@/lib/data/agency";
 import { countryOptions, RESIDENCE_COUNTRIES } from "@/lib/countries";
@@ -26,8 +28,10 @@ export interface ProspectRow {
   dueToday: boolean;
 }
 
-export async function listProspects(filter: ProspectFilter) {
+export async function listProspects(filter: ProspectFilter, bureauParam?: string) {
   const { data, now, ctx } = await readAgency({ clients: true, tasks: true, appointments: true });
+  const bureau = parseBureauParam(bureauParam, data.bureaux);
+  const inBureau = (c: Client) => matchesBureau(bureau, c.bureauId);
   const tz = data.agency.timezone;
   const today = dayKey(now, tz);
   const month = today.slice(0, 7);
@@ -46,11 +50,11 @@ export async function listProspects(filter: ProspectFilter) {
     };
   };
 
-  const prospects = data.clients.filter((c) => c.status === "prospect" && !c.archivedAt).map(rowOf);
+  const prospects = data.clients.filter((c) => c.status === "prospect" && !c.archivedAt && inBureau(c)).map(rowOf);
   // Devenus clients : les plus récents d'abord (trois derniers mois).
   const since = new Date(now.getTime() - 92 * 24 * 3600 * 1000).toISOString();
   const converted = data.clients
-    .filter((c) => c.status === "client" && c.convertedAt && c.convertedAt >= since)
+    .filter((c) => c.status === "client" && c.convertedAt && c.convertedAt >= since && inBureau(c))
     .sort((a, b) => (b.convertedAt ?? "").localeCompare(a.convertedAt ?? ""))
     .map(rowOf);
 
@@ -73,6 +77,8 @@ export async function listProspects(filter: ProspectFilter) {
 
   return {
     agency: data.agency,
+    bureaux: data.bureaux,
+    bureau,
     now,
     rows,
     canWrite: allowed(ctx, "operations.write"),
@@ -97,6 +103,8 @@ export async function getProspectForm() {
     forbidden: allowed(ctx, "operations.write") ? undefined : forbiddenMessage(ctx, "operations.write"),
     defaultCountry: data.agency.countryCode,
     defaultMemberId: ctx.member.id,
+    bureaux: bureauOptions(data.bureaux, undefined, { restrictByBureau: data.agency.restrictByBureau, member: data.members.find((m) => m.id === ctx.member.id) }),
+    defaultBureauId: defaultBureauFor(data.members.find((m) => m.id === ctx.member.id), data.bureaux),
     members: activeMembers(data.members)
       .filter((m) => m.role !== "viewer")
       .map((m) => ({ value: m.id, label: `${m.fullName} (${ROLE[m.role].label})` })),

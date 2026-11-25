@@ -1,4 +1,5 @@
 import "server-only";
+import { bureauById } from "@/features/bureaux/display";
 import { getAgencyContext, type AgencyContext } from "@/lib/auth/context";
 import { allowed, can, forbiddenMessage } from "@/lib/auth/permissions";
 import { fetchRows, loadTables, readAgency, type Filter } from "@/lib/data/agency";
@@ -138,7 +139,16 @@ export async function getInvoice(id: string) {
     travelCase,
     settings,
     agency: data.agency,
-    document: documentFromInvoice({ invoice, client, travelCase, agency: data.agency, settings, isDemo: ctx.isDemo, today: dayKey(now, data.agency.timezone) }),
+    document: documentFromInvoice({
+      invoice,
+      client,
+      travelCase,
+      agency: data.agency,
+      settings,
+      isDemo: ctx.isDemo,
+      today: dayKey(now, data.agency.timezone),
+      bureau: bureauById(data.bureaux, client.bureauId),
+    }),
     images: imageUrls(settings),
     author: data.members.find((m) => m.id === invoice.createdBy),
     canWrite: allowed(ctx, "finance.write"),

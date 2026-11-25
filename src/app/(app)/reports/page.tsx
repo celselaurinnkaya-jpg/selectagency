@@ -11,6 +11,7 @@ import type { CaseCategory, ClientSource, StepKind } from "@/lib/domain/types";
 import { formatMoney } from "@/lib/format";
 import { PERIOD_OPTIONS } from "@/lib/period";
 import { getReports } from "@/features/finance/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
 import { getShell } from "@/features/operations/queries";
 import { FinanceRestricted } from "@/features/finance/FinanceRestricted";
 import { Download } from "lucide-react";
@@ -155,6 +156,51 @@ async function Reports({ searchParams }: Pick<PageProps<"/reports">, "searchPara
           </Card>
         </Section>
       ))}
+
+      {r.byBureau.length > 0 && (
+        <Section title="Par bureau">
+          <p className="mb-3 text-sm text-slate-600">
+            Bureau du client (nouveaux contacts, dossiers) et bureau d&apos;encaissement (paiements) · {r.period.label.toLowerCase()}
+          </p>
+          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+            <table className="w-full min-w-[36rem] text-left text-sm">
+              <thead className="bg-surface text-xs font-semibold text-slate-600">
+                <tr>
+                  <th scope="col" className="px-4 py-3">Bureau</th>
+                  <th scope="col" className="px-4 py-3 text-right">Nouveaux contacts</th>
+                  <th scope="col" className="px-4 py-3 text-right">Dossiers ouverts</th>
+                  <th scope="col" className="px-4 py-3 text-right">Dossiers actifs</th>
+                  {r.canSeeFinance && <th scope="col" className="px-4 py-3 text-right">Encaissé</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {r.byBureau.map((row) => (
+                  <tr key={row.bureau?.id ?? "aucun"}>
+                    <td className="px-4 py-3">
+                      {row.bureau ? (
+                        <span className="flex items-center gap-2">
+                          <BureauBadge bureau={row.bureau} />
+                          <span className="font-medium text-slate-900">{row.bureau.name}</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">Sans bureau</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{row.newContacts}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{row.openedCases}</td>
+                    <td className="px-4 py-3 text-right tabular-nums">{row.activeCases}</td>
+                    {r.canSeeFinance && (
+                      <td className="px-4 py-3 text-right tabular-nums">
+                        {row.received.length ? row.received.map((x) => formatMoney(x.amountMinor, x.currency)).join(" · ") : "—"}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
 
       <Section title="Charge de travail de l'équipe">
         <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">

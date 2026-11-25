@@ -205,6 +205,7 @@ export function createSeed(): DemoDatabase {
     agency: { name: "Horizon Voyages & Études", city: "Douala", countryCode: "CM", currency: "XAF", timezone: "Africa/Douala", receiptPrefix: "REC" },
     currentMemberId: "m1",
     members,
+    bureaux: [],
     clients,
     cases,
     steps,

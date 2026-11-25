@@ -35,7 +35,7 @@ async function Preview() {
           Retour à l&apos;éditeur
         </Link>
       </div>
-      <SiteRenderer content={editor.draft} slug={editor.slug} countryCode={editor.countryCode} preview />
+      <SiteRenderer content={editor.draft} slug={editor.slug} countryCode={editor.countryCode} bureaux={editor.bureaux} preview />
     </>
   );
 }

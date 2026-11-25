@@ -11,6 +11,8 @@ import { CATEGORY_SHORT_LABELS, CLIENT_TYPE, INVOICE_STATUS } from "@/lib/domain
 import { formatMoney } from "@/lib/format";
 import { caseKindLabel } from "@/features/workflows/templates";
 import { search } from "@/features/operations/queries";
+import { BureauBadge } from "@/features/bureaux/BureauBadge";
+import { bureauById } from "@/features/bureaux/display";
 
 export const metadata: Metadata = { title: "Recherche" };
 
@@ -54,7 +56,8 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
                   <li key={c.id}>
                     <Link href={c.status === "prospect" ? `/prospects/${c.id}` : `/clients/${c.id}`}>
                       <Card className="hover:ring-2 hover:ring-navy-200">
-                        <span className="font-medium text-navy-800">
+                        <span className="flex items-center gap-1.5 font-medium text-navy-800">
+                          <BureauBadge bureau={bureauById(results.bureaux, c.bureauId)} />
                           {c.firstName} {c.lastName}
                         </span>
                         <span className="block text-sm text-slate-600">
@@ -76,7 +79,10 @@ async function Results({ searchParams }: Pick<PageProps<"/search">, "searchParam
                   <li key={k.id}>
                     <Link href={`/cases/${k.id}`}>
                       <Card className="hover:ring-2 hover:ring-navy-200">
-                        <span className="font-medium text-navy-800">{k.title}</span>
+                        <span className="flex items-center gap-1.5 font-medium text-navy-800">
+                          <BureauBadge bureau={bureauById(results.bureaux, client.bureauId)} />
+                          {k.title}
+                        </span>
                         <span className="block text-sm text-slate-600">
                           {k.reference} · {caseKindLabel(k.templateKey, CATEGORY_SHORT_LABELS[k.category])} · {client.firstName} {client.lastName}
                         </span>

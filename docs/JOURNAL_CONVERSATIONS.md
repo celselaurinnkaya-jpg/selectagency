@@ -15,6 +15,64 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 90 — 25 Novembre 2026 (Claude Code) — Bureau du client : choix obligatoire, bien visible
+* **Demande de l'utilisateur** (après l'essai local) :
+  - à la fin du formulaire « Nouveau client » (et en modification), un endroit où cocher le bureau du client ;
+  - obligatoire dès que des bureaux existent dans les paramètres ;
+  - le code bien visible sur chaque client.
+* **Fait** :
+  - bloc « Bureau du client » (`src/features/bureaux/BureauChoice.tsx`) :
+    - placé en bas des formulaires client et prospect, juste avant le bouton d'enregistrement ;
+    - une case par bureau, avec son badge coloré, son nom et sa ville ;
+  - obligatoire, en création comme en modification, dès que l'agence a des bureaux ouverts :
+    - contrôle du navigateur ;
+    - et du serveur, avec le message « Choisissez le bureau du client (en bas du formulaire) » ;
+  - l'ancienne liste déroulante, au milieu du formulaire et facultative, est retirée ;
+  - badge plus lisible dans les listes ;
+  - grand badge « DLA · Douala » en haut des fiches client et dossier ;
+  - « Bureau à choisir (Modifier) » sur la fiche d'un client sans bureau quand l'agence en a.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur dans les fichiers modifiés ;
+  - tests : 312/312.
+* **Non envoyé sur GitHub** (migration 20261125100000 déjà poussée par l'utilisateur).
+
+### Session 89 — 25 Novembre 2026 (Claude Code) — Bureaux d'une agence (plusieurs villes ou points de vente)
+* **Demande de l'utilisateur** :
+  - différencier les clients selon le bureau de l'agence (A, B, C, ou la ville), pour les agences qui ont plusieurs bureaux ;
+  - proposition faite, puis « vas-y, fais tout ».
+* **Migration `20261125100000_bureaux.sql`** :
+  - tables `bureaux` (nom, code-badge, ville, couleur, coordonnées, fermeture) et `member_bureaux` ;
+  - `clients.bureau_id` : rempli avec le bureau du conseiller s'il n'en a qu'un ; un changement de bureau (transfert) est noté dans l'historique ;
+  - `payments.bureau_id` : bureau d'encaissement (celui du membre qui reçoit, sinon celui du client) ;
+  - `cash_closings.bureau_id` : une clôture par jour, par devise et par bureau ; `close_daily_cash` accepte un bureau ;
+  - fonctions `save_bureau` (limite par formule : STARTER 1, PRO 3, BUSINESS et essai sans limite), `set_bureau_archived`, `set_member_bureaux`, `set_bureau_restriction` (propriétaire) ;
+  - **Visibilité par bureau** :
+    - réglage `organizations.restrict_by_bureau`, désactivé par défaut ;
+    - règles RESTRICTIVES ajoutées par-dessus les règles existantes, sur les clients et toutes les tables rattachées à un client ou un dossier, ainsi que sur les pièces stockées ;
+    - conseillers, comptables et lectures seules ne voient que les clients de leurs bureaux (et ceux sans bureau) ; propriétaire et administrateurs voient tout ;
+    - rien ne change sans le réglage, ni pour les partenaires et l'espace client ;
+  - site web : bureaux proposés au visiteur ; `website_submit_lead` reçoit le bureau choisi.
+* **Application** :
+  - Paramètres → **Bureaux** : créer, modifier, fermer ; rattacher les membres ; activer la visibilité par bureau ;
+  - champ « Bureau » dans les fiches client et prospect (un membre cloisonné ne voit que ses bureaux) ;
+  - **badge coloré** (« DLA ») dans les listes et fiches : clients, prospects, dossiers, paiements, recherche ;
+  - **filtres par bureau** :
+    - clients et dossiers (liste de choix) ;
+    - prospects et paiements (pastilles) ;
+    - tableau de bord : « Tous les bureaux » ou un bureau, avec « (mon bureau) » ;
+  - **rapports** : section « Par bureau » (nouveaux contacts, dossiers ouverts et actifs, encaissements) ;
+  - **clôture de caisse par bureau** ;
+  - **reçus et factures** au nom et aux coordonnées du bureau (la numérotation reste unique pour l'agence) ;
+  - formules : « 1 bureau », « Jusqu'à 3 bureaux », « Bureaux sans limite ».
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : aucune nouvelle erreur ;
+  - tests : 312/312, dont la base 121/121 (5 nouveaux tests des bureaux : limite, bureau par défaut, transfert, cloisonnement, caisse, site) et 5 tests unitaires ;
+  - `next build` : 97 pages.
+* **À faire par l'utilisateur AVANT la publication** : `npx supabase db push` (migration 20261125100000). Le nouveau code lit les bureaux et `organizations.restrict_by_bureau` : sans la migration, l'espace agence ne s'ouvrirait plus.
+* **Non envoyé sur GitHub.**
+
 ### Session 88 — 24 Novembre 2026 (Claude Code) — Nouveaux tarifs Stripe : paiement par carte rétabli
 * **Remarque de l'utilisateur** : « il n'y a plus les liens de paiement de Stripe ». C'était l'effet attendu : les anciens tarifs avaient été détachés (session 87).
 * **Accord explicite de l'utilisateur** pour créer les tarifs dans le compte Stripe RÉEL.

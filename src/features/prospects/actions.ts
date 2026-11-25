@@ -13,6 +13,7 @@ import type { FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import { duplicateLabel, findDuplicates } from "@/features/clients/duplicates";
 import { invalidPhoneMessage, toE164 } from "@/features/clients/phone";
+import { openBureaux } from "@/features/bureaux/display";
 import { applyClientPartner, resolvePartnerCode } from "@/features/partners/link";
 
 // Prospects : fiche légère d'un premier contact (table clients, statut « prospect »). La même fiche
@@ -34,6 +35,7 @@ const prospectSchema = z.object({
   sourceDetail: z.string().trim().max(120).optional(),
   campaign: z.string().trim().max(120, "La campagne est limitée à 120 caractères.").optional(),
   serviceMotive: z.string().max(40).optional(),
+  bureauId: z.union([z.literal(""), z.uuid()]).optional(),
   assignedTo: z.string().min(1, "Choisissez le conseiller."),
   notes: z.string().trim().max(2000).optional(),
   followUpDate: z.union([z.literal(""), z.string().regex(DAY, "Date invalide.")]).optional(),
@@ -55,6 +57,10 @@ export async function saveProspectAction(raw: ProspectInput): Promise<FormState>
   const { data, ctx } = await readAgency({ clients: true });
   if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
   if (!activeMembers(data.members).some((m) => m.id === input.assignedTo)) return { message: "Le conseiller choisi n'existe pas." };
+  // Agence avec des bureaux : le bureau du prospect est obligatoire.
+  if (openBureaux(data.bureaux).length > 0 && !input.bureauId) {
+    return { message: "Choisissez le bureau du prospect (en bas du formulaire).", fieldErrors: { bureauId: ["Choisissez le bureau d'où vient ce prospect."] } };
+  }
   const partner = await resolvePartnerCode(ctx, input.partnerCode);
   if ("error" in partner) return { message: "Certains champs sont à corriger.", fieldErrors: { partnerCode: [partner.error] } };
 
@@ -83,6 +89,7 @@ export async function saveProspectAction(raw: ProspectInput): Promise<FormState>
     source: input.source,
     sourceDetail: input.sourceDetail || undefined,
     campaign: input.campaign || undefined,
+    bureauId: input.bureauId || undefined,
   });
   const { data: row, error } = await ctx.supabase
     .from("clients")

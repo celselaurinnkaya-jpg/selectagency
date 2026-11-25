@@ -62,7 +62,7 @@ async function PublicSite({ params }: Pick<PageProps<"/site/[slug]">, "params">)
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
-      <SiteRenderer content={c} slug={site.slug} countryCode={site.countryCode} />
+      <SiteRenderer content={c} slug={site.slug} countryCode={site.countryCode} bureaux={site.bureaux} />
     </>
   );
 }
