@@ -201,12 +201,21 @@ export async function setWebsiteMessageHandledAction(messageId: string, handled:
 export async function deleteWebsiteMessagesAction(messageIds: string[]): Promise<FormState> {
   const ids = [...new Set(messageIds)];
   if (ids.length === 0) return { message: "Cochez au moins un message." };
-  if (ids.length > 500 || !ids.every((id) => z.uuid().safeParse(id).success)) return { message: "Message introuvable." };
+  if (!ids.every((id) => z.uuid().safeParse(id).success)) return { message: "Message introuvable." };
+  if (ids.length > 10000) return { message: "Trop de messages à la fois : cochez-en 10 000 au plus." };
   const ctx = await getAgencyContext();
   if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
-  const { data, error } = await ctx.supabase.rpc("delete_website_messages", { p_ids: ids });
-  if (error) return { message: dbMessage(error) };
+  // Toute la sélection, par paquets de 500 (la base en accepte 500 par appel ; « Tout cocher » peut en cocher plus).
+  let count = 0;
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500);
+    const { data, error } = await ctx.supabase.rpc("delete_website_messages", { p_ids: chunk });
+    if (error) {
+      if (count > 0) refresh();
+      return { message: count > 0 ? `${count} message(s) supprimé(s), puis : ${dbMessage(error)}` : dbMessage(error) };
+    }
+    count += typeof data === "number" ? data : chunk.length;
+  }
   refresh();
-  const count = typeof data === "number" ? data : ids.length;
   return { ok: true, message: count > 1 ? `${count} messages supprimés.` : "Message supprimé." };
 }

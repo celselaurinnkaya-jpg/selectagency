@@ -66,7 +66,9 @@ export async function toggleTaskAction(formData: FormData): Promise<void> {
 export async function deleteTasksAction(taskIds: string[]): Promise<FormState> {
   const ids = [...new Set(taskIds)];
   if (ids.length === 0) return { message: "Sélectionnez au moins une tâche." };
-  if (ids.length > 500 || !ids.every((id) => /^[0-9a-f-]{36}$/i.test(id))) return { message: "Tâche introuvable." };
+  if (!ids.every((id) => /^[0-9a-f-]{36}$/i.test(id))) return { message: "Tâche introuvable." };
+  // Toute la sélection est supprimée, par paquets (« Tout sélectionner » peut cocher des centaines de tâches).
+  if (ids.length > 10000) return { message: "Trop de tâches à la fois : sélectionnez-en 10 000 au plus." };
   const ctx = await getAgencyContext();
   if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
   let count = 0;
@@ -83,5 +85,6 @@ export async function deleteTasksAction(taskIds: string[]): Promise<FormState> {
   if (count === 0) return { message: "Aucune tâche supprimée : elle n'existe plus, ou vous n'avez pas le droit de la supprimer." };
   const missed = ids.length - count;
   const done = count > 1 ? `${count} tâches supprimées.` : "Tâche supprimée.";
-  return { ok: true, message: missed > 0 ? `${done} ${missed} n'a pas pu l'être (droits insuffisants ou déjà supprimée).` : done };
+  const notDone = missed > 1 ? `${missed} n'ont pas pu l'être (droits insuffisants ou déjà supprimées).` : "1 n'a pas pu l'être (droits insuffisants ou déjà supprimée).";
+  return { ok: true, message: missed > 0 ? `${done} ${notDone}` : done };
 }

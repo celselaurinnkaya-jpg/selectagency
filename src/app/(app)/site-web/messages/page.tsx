@@ -6,7 +6,7 @@ import { Pills } from "@/components/shared/navigation";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { formatDate } from "@/lib/format";
 import { internationalPhone, whatsappHref } from "@/features/website/content";
-import { getWebsiteMessages } from "@/features/website/queries";
+import { getWebsiteMessages, HANDLED_SHOWN, TO_HANDLE_SHOWN } from "@/features/website/queries";
 import { WebsiteMessages, type MessageView } from "@/features/website/WebsiteMessages";
 import { WebsiteSubNav, WebsiteSubNavWithCount } from "@/features/website/WebsiteSubNav";
 
@@ -41,11 +41,13 @@ const EMPTY: Record<View, string> = {
 async function Messages({ searchParams }: Pick<PageProps<"/site-web/messages">, "searchParams">) {
   const { vue } = await searchParams;
   const view: View = VIEWS.includes(vue as View) ? (vue as View) : "a-traiter";
-  const data = await getWebsiteMessages();
+  // La base filtre selon la vue : tous les messages « à traiter » sont chargés, et les nombres sont exacts.
+  const data = await getWebsiteMessages(view);
   if (!data) {
     return <Notice>La liste des messages n&apos;est pas encore disponible : la mise à jour de la base de données est en attente.</Notice>;
   }
-  if (data.locked && data.messages.length === 0) {
+  const { toHandle, handled } = data.counts;
+  if (data.locked && toHandle + handled === 0) {
     return (
       <FeatureLocked feature="website">
         Votre formule STARTER ne comprend pas le site web. Passez en PRO ou BUSINESS pour créer le site de votre agence et recevoir ses messages.
@@ -53,11 +55,8 @@ async function Messages({ searchParams }: Pick<PageProps<"/site-web/messages">, 
     );
   }
 
-  const toHandle = data.messages.filter((m) => !m.handledAt);
-  const handled = data.messages.filter((m) => m.handledAt);
-  const shown = view === "a-traiter" ? toHandle : view === "traites" ? handled : data.messages;
   // Dates et numéros mis en forme ici, dans le fuseau et le pays de l'agence.
-  const items: MessageView[] = shown.map((m) => ({
+  const items: MessageView[] = data.messages.map((m) => ({
     id: m.id,
     clientId: m.clientId,
     bureau: m.bureau,
@@ -83,15 +82,31 @@ async function Messages({ searchParams }: Pick<PageProps<"/site-web/messages">, 
         label="Messages"
         active={view}
         items={[
-          { key: "a-traiter", label: "À traiter", count: toHandle.length, href: "/site-web/messages" },
-          { key: "traites", label: "Traités", count: handled.length, href: "/site-web/messages?vue=traites" },
-          { key: "tous", label: "Tous", count: data.messages.length, href: "/site-web/messages?vue=tous" },
+          { key: "a-traiter", label: "À traiter", count: toHandle, href: "/site-web/messages" },
+          { key: "traites", label: "Traités", count: handled, href: "/site-web/messages?vue=traites" },
+          { key: "tous", label: "Tous", count: toHandle + handled, href: "/site-web/messages?vue=tous" },
         ]}
       />
       <p className="mb-4 text-sm text-slate-600">
         Chaque message crée aussi une fiche dans Prospects (ou s&apos;ajoute à la fiche du client déjà connu) et une tâche « Rappeler ». Supprimer un message
         l&apos;enlève seulement de cette liste.
       </p>
+      {data.hidden.toHandle > 0 && (
+        <div className="mb-4">
+          <Notice tone="warning">
+            Les {TO_HANDLE_SHOWN.toLocaleString("fr-FR")} messages à traiter les plus récents sont affichés ({data.hidden.toHandle} plus anciens en attente) :
+            traitez-les ou supprimez-les, les suivants apparaîtront.
+          </Notice>
+        </div>
+      )}
+      {data.hidden.handled > 0 && (
+        <div className="mb-4">
+          <Notice>
+            Seuls les {HANDLED_SHOWN} derniers messages traités sont affichés ({data.hidden.handled} plus anciens) : supprimez ceux dont vous n&apos;avez plus
+            besoin pour voir les suivants.
+          </Notice>
+        </div>
+      )}
       <WebsiteMessages key={view} messages={items} canManage={data.canHandle} emptyText={EMPTY[view]} />
     </>
   );

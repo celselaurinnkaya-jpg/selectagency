@@ -118,18 +118,46 @@ export interface WebsiteMessage {
 const MESSAGE_COLUMNS =
   "id, client_id, bureau_id, first_name, last_name, phone_e164, email, service, destination, message, is_new_client, received_at, handled_at, handled_by";
 
-/** « Messages reçus » par le site (les plus récents d'abord). Null avant la migration 20261126100000. */
-export async function getWebsiteMessages() {
+/** Filtre de la page « Messages reçus par le site ». */
+export type MessageFilter = "a-traiter" | "traites" | "tous";
+
+/** Messages « à traiter » chargés au plus (bien au-delà d'un usage normal : le site accepte 100 demandes par jour). */
+export const TO_HANDLE_SHOWN = 1000;
+/** Messages déjà traités affichés : les plus récents. */
+export const HANDLED_SHOWN = 200;
+
+/**
+ * « Messages reçus » par le site, les plus récents d'abord. Les messages « à traiter » sont toujours tous chargés
+ * (aucun ne disparaît derrière des messages traités plus récents) ; les nombres viennent de la base, pas de la liste.
+ * Null avant la migration 20261126100000.
+ */
+export async function getWebsiteMessages(filter: MessageFilter = "tous") {
   const ctx = await getAgencyContext();
-  const [{ data, error }, { data: bureaux }, { data: members }] = await Promise.all([
-    ctx.supabase.from("website_messages").select(MESSAGE_COLUMNS).eq("organization_id", ctx.organizationId).order("received_at", { ascending: false }).limit(200),
+  const messagesOf = (handled: boolean, rows: number) => {
+    const query = ctx.supabase
+      .from("website_messages")
+      // head : seulement le nombre, aucune ligne lue.
+      .select(MESSAGE_COLUMNS, { count: "exact", head: rows === 0 })
+      .eq("organization_id", ctx.organizationId);
+    const filtered = handled ? query.not("handled_at", "is", null) : query.is("handled_at", null);
+    return rows > 0 ? filtered.order("received_at", { ascending: false }).limit(rows) : filtered;
+  };
+  const [open, done, { data: bureaux }, { data: members }] = await Promise.all([
+    // Pour le filtre « Traités », seulement le nombre de messages à traiter (et inversement).
+    messagesOf(false, filter === "traites" ? 0 : TO_HANDLE_SHOWN),
+    messagesOf(true, filter === "a-traiter" ? 0 : HANDLED_SHOWN),
     ctx.supabase.from("bureaux").select(BUREAU.list).eq("organization_id", ctx.organizationId),
     ctx.supabase.from("members").select("id, full_name").eq("organization_id", ctx.organizationId),
   ]);
-  if (error) return null;
+  if (open.error || done.error) return null;
+  const rows = [...((open.data ?? []) as Record<string, unknown>[]), ...((done.data ?? []) as Record<string, unknown>[])].sort((a, b) =>
+    String(b.received_at).localeCompare(String(a.received_at)),
+  );
   const bureauById = new Map((bureaux ?? []).map((r) => [String(r.id), toBureau(r)]));
   const memberName = new Map((members ?? []).map((m) => [String(m.id), String(m.full_name ?? "")]));
-  const messages: WebsiteMessage[] = (data ?? []).map((r) => ({
+  const toHandle = open.count ?? 0;
+  const handled = done.count ?? 0;
+  const messages: WebsiteMessage[] = rows.map((r) => ({
     id: String(r.id),
     clientId: r.client_id ? String(r.client_id) : undefined,
     bureau: r.bureau_id ? bureauById.get(String(r.bureau_id)) : undefined,
@@ -147,6 +175,13 @@ export async function getWebsiteMessages() {
   }));
   return {
     messages,
+    /** Nombres exacts dans la base (pour les filtres), quel que soit le nombre de messages affichés. */
+    counts: { toHandle, handled },
+    /** Messages non affichés faute de place : traités plus anciens que les 200 derniers, ou « à traiter » au-delà de 1 000. */
+    hidden: {
+      handled: filter === "a-traiter" ? 0 : Math.max(0, handled - (done.data?.length ?? 0)),
+      toHandle: filter === "traites" ? 0 : Math.max(0, toHandle - (open.data?.length ?? 0)),
+    },
     canHandle: allowed(ctx, "operations.write"),
     locked: ctx.locked.includes("website"),
     timezone: ctx.agency.timezone,

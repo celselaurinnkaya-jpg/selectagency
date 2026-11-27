@@ -15,6 +15,58 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 98 — 27 Novembre 2026 (Claude Code) — Corrections de la revue : points 1 et 2
+* **Demande de l'utilisateur** :
+  - corriger les points 1 et 2 de la revue (session 97) ;
+  - point 3 laissé tel quel : une personne invitée ne voit pas « créer une agence ».
+* **Point 1 — Messages du site** (`getWebsiteMessages(filtre)`) :
+  - la base filtre selon la vue ;
+  - tous les messages « à traiter » sont chargés, jusqu'à 1 000 ;
+  - les 200 derniers messages traités sont chargés ;
+  - les nombres des filtres viennent de la base (comptes exacts) ;
+  - un avis s'affiche si des messages ne tiennent pas dans la liste ;
+  - même suppression par paquets pour les messages (500 par appel à la base), pour que « Tout cocher » fonctionne au-delà de 500.
+* **Point 2 — Tâches** (`deleteTasksAction`) :
+  - plus de refus au-delà de 500 : toute la sélection est supprimée par paquets de 100 ;
+  - message d'erreur exact ;
+  - pluriel corrigé (« n'ont pas pu l'être »).
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 319/319.
+* **Non envoyé sur GitHub.**
+
+### Session 97 — 27 Novembre 2026 (Claude Code) — Revue du code (643819f..HEAD), sans correction
+* **Demande de l'utilisateur** : « fais : code-review ».
+* **Revue** des commits a5bbc25 et 5ba70d2 : 13 remarques, dont 3 importantes.
+* **Importantes** :
+  - « Messages reçus » ne lit que les 200 derniers messages : au-delà, un ancien message à traiter reste compté dans l'alerte, mais n'est plus visible ;
+  - Tâches : « Tout sélectionner » sur plus de 500 tâches, puis supprimer, est refusé avec un message faux (« Tâche introuvable ») ;
+  - page Bienvenue : une personne qui a un lien d'espace client en attente ne peut plus créer sa propre agence (comportement demandé, mais sans issue) → décision de l'utilisateur.
+* **Mineures** :
+  - bureau du message (client déjà connu) ;
+  - suppression « tout ou rien » des messages ;
+  - « traité » pas lié à la tâche « Rappeler » ;
+  - texte d'inscription pour une invitation annulée ;
+  - jetons de `my_pending_accesses` (dépend de la confirmation des e-mails) ;
+  - reprise des anciens messages (déjà exécutée) ;
+  - clé étrangère du bureau ;
+  - pluriel ;
+  - alerte du tableau de bord sans filtre de bureau ;
+  - test sans remise à zéro.
+* **Aucune correction faite** : en attente de la décision de l'utilisateur.
+
+### Session 96 — 27 Novembre 2026 (Claude Code) — Publication : pages Site web séparées, suppression des messages et des tâches
+* **Demande de l'utilisateur** : « vas-y », publication sur GitHub et Vercel.
+* **Avant la publication** : migrations 20261126100000 et 20261126120000 en ligne (poussées par l'utilisateur), vérifié avec `migration list --linked`.
+* **Fait** :
+  - construction de l'application réussie (98 pages) ;
+  - commit 5ba70d2 envoyé sur main ;
+  - Vercel : « Deployment has completed ».
+* **Vérifié en ligne** :
+  - accueil : 200 ;
+  - `/site-web`, `/site-web/messages` et `/tasks` demandent la connexion.
+
 ### Session 95 — 27 Novembre 2026 (Claude Code) — Tâches : supprimer une ou plusieurs tâches
 * **Demande de l'utilisateur** : « sur Tâches, où est la possibilité de supprimer ? », puis « vas-y » sur la proposition (comme pour les messages du site).
 * **Fait** :
