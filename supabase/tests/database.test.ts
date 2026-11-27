@@ -1408,7 +1408,11 @@ describe("partenaires et commissions", () => {
     await expect(one(LINA, "select public.create_partner_access($1, 'oscar@partenaire.test')", [partner])).rejects.toThrow(/propriétaire et les administrateurs/);
     expect(await one(null, "select agency_name, partner_name, email from public.get_partner_access($1)", [token])).toMatchObject({ partner_name: "Amina Ngo", email: "oscar@partenaire.test" });
     await expect(one(BRUNO, "select public.accept_partner_access($1)", [token])).rejects.toThrow(/autre adresse/);
+    // Connecté sans repasser par le lien : l'application retrouve le lien en attente d'après son adresse.
+    expect(await rows(OSCAR, "select kind, token from public.my_pending_accesses()")).toEqual([{ kind: "partner", token }]);
+    expect(await rows(BRUNO, "select kind from public.my_pending_accesses()")).toEqual([]);
     await one(OSCAR, "select public.accept_partner_access($1)", [token]);
+    expect(await rows(OSCAR, "select kind from public.my_pending_accesses()")).toEqual([]);
     await expect(one(OSCAR, "select public.accept_partner_access($1)", [token])).rejects.toThrow(/déjà utilisé/);
 
     expect((await one<{ p: boolean }>(OSCAR, "select public.is_partner() as p")).p).toBe(true);
@@ -3321,7 +3325,12 @@ describe("espace client", () => {
     token = (await one<{ t: string }>(TINA, "select public.create_client_portal_access($1, $2) as t", [clientId, AWA.email.toUpperCase()])).t;
     expect(await rows(null, "select agency_name, email from public.get_client_portal_access($1)", [token])).toEqual([{ agency_name: "Agence T", email: AWA.email }]);
     await expect(one(INTRUS, "select public.accept_client_portal_access($1)", [token])).rejects.toThrow(/autre adresse e-mail/);
+    // Connecté sans repasser par le lien : l'application retrouve le lien en attente d'après son adresse.
+    expect(await rows(AWA, "select kind, token, agency_name from public.my_pending_accesses()")).toEqual([{ kind: "client", token, agency_name: "Agence T" }]);
+    expect(await rows(INTRUS, "select kind from public.my_pending_accesses()")).toEqual([]);
+    await expect(rows(null, "select kind from public.my_pending_accesses()")).rejects.toThrow(/permission denied/);
     await one(AWA, "select public.accept_client_portal_access($1)", [token]);
+    expect(await rows(AWA, "select kind from public.my_pending_accesses()")).toEqual([]);
     expect((await one<{ p: boolean }>(AWA, "select public.is_portal_client() as p")).p).toBe(true);
     await expect(one(AWA, "select public.accept_client_portal_access($1)", [token])).rejects.toThrow(/déjà utilisé/);
   });
@@ -3439,6 +3448,33 @@ describe("site web de l'agence", () => {
     expect((await rows(UGO, "select id from public.clients where phone_e164 = '+237690000111'")).length).toBe(1);
     await submit("+237690000111");
     await expect(submit("+237690000111")).rejects.toThrow(/déjà été reçue/);
+  });
+
+  it("garde chaque demande dans « Messages reçus », lue par l'équipe et marquée traitée", async () => {
+    type Message = { id: string; first_name: string; phone_e164: string; service: string; destination: string; message: string; is_new_client: boolean; handled: boolean; client_id: string };
+    const list = () =>
+      rows<Message>(VERA, "select id, first_name, phone_e164, service, destination, message, is_new_client, handled_at is not null as handled, client_id from public.website_messages where organization_id = $1 order by received_at", [org]);
+    const messages = await list();
+    // Trois demandes du même numéro : la première a créé la fiche, les deux suivantes y sont rattachées.
+    expect(messages.map((m) => [m.message, m.is_new_client, m.handled])).toEqual([
+      ["Je veux étudier à Lyon", true, false],
+      ["Je confirme", false, false],
+      ["Je veux étudier à Lyon", false, false],
+    ]);
+    expect(messages[0]).toMatchObject({ first_name: "Inès", phone_e164: "+237690000111", service: "Études en France", destination: "France" });
+    expect(new Set(messages.map((m) => m.client_id)).size).toBe(1);
+    // Rien pour une autre agence ni pour un visiteur ; aucune écriture directe.
+    expect(await rows(ALICE, "select id from public.website_messages")).toEqual([]);
+    await expect(rows(null, "select id from public.website_messages")).rejects.toThrow(/permission denied/);
+    await expect(rows(UGO, "update public.website_messages set handled_at = now() returning id")).rejects.toThrow(/permission denied/);
+    // Marquée « traitée » par un conseiller (avec son nom), puis remise « à traiter ».
+    const id = messages[0]!.id;
+    await expect(one(ALICE, "select public.set_website_message_handled($1, true)", [id])).rejects.toThrow(/introuvable/);
+    await one(VERA, "select public.set_website_message_handled($1, true)", [id]);
+    const vera = await memberId(VERA);
+    expect(await one(UGO, "select handled_at is not null as handled, handled_by from public.website_messages where id = $1", [id])).toEqual({ handled: true, handled_by: vera });
+    await one(UGO, "select public.set_website_message_handled($1, false)", [id]);
+    expect(await one(UGO, "select handled_at, handled_by from public.website_messages where id = $1", [id])).toEqual({ handled_at: null, handled_by: null });
   });
 
   it("limite la rédaction par l'IA à 20 par jour et ferme le site hors formule", async () => {
@@ -3566,5 +3602,13 @@ describe("bureaux de l'agence", () => {
     expect(site.s.bureaux.map((b) => b.name)).toEqual(["Douala", "Yaoundé"]);
     await one(null, "select public.website_submit_lead('agence-multi', 'Awa', 'Bello', '+237690000555', null, null, null, 'Bonjour', null, $1)", [yde]);
     expect((await one<{ b: string }>(BELLA, "select bureau_id as b from public.clients where phone_e164 = '+237690000555'")).b).toBe(yde);
+    // « Messages reçus » cloisonnés comme la fiche : le bureau de Yaoundé voit le message, pas celui de Douala.
+    await one(BELLA, "select public.set_bureau_restriction($1, true)", [org]);
+    const seen = (who: User) => rows(who, "select id from public.website_messages where organization_id = $1", [org]).then((r) => r.length);
+    expect([await seen(YVETTE), await seen(DIDIER), await seen(BELLA)]).toEqual([1, 0, 1]);
+    const message = (await one<{ id: string }>(BELLA, "select id from public.website_messages where organization_id = $1", [org])).id;
+    await expect(one(DIDIER, "select public.set_website_message_handled($1, true)", [message])).rejects.toThrow(/introuvable/);
+    await one(YVETTE, "select public.set_website_message_handled($1, true)", [message]);
+    await one(BELLA, "select public.set_bureau_restriction($1, false)", [org]);
   });
 });

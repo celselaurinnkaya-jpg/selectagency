@@ -29,6 +29,7 @@ import { getDashboard } from "@/features/dashboard/queries";
 import { FinanceWatchCards, hasFinanceWatch } from "@/features/finance/FinanceWatch";
 import { ClockPanel } from "@/features/attendance/AttendanceForms";
 import { getMyClock } from "@/features/attendance/queries";
+import { countWebsiteMessagesToHandle } from "@/features/website/queries";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
 
@@ -48,9 +49,10 @@ const CONFIRMATIONS: Record<string, string> = {
 
 async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "searchParams">) {
   const { periode, ok, bureau } = await searchParams;
-  const [d, clock] = await Promise.all([
+  const [d, clock, websiteMessages] = await Promise.all([
     getDashboard(typeof periode === "string" ? periode : undefined, typeof bureau === "string" ? bureau : undefined),
     getMyClock(),
+    countWebsiteMessagesToHandle(),
   ]);
   const dashHref = (p: { periode?: string; bureau?: string | null }) => {
     const search = new URLSearchParams();
@@ -93,6 +95,15 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
   return (
     <div className="space-y-6">
       {confirmation && <Notice tone="success">{confirmation}</Notice>}
+      {/* Messages du formulaire « Contact » du site, pas encore traités. */}
+      {websiteMessages > 0 && (
+        <Notice title={websiteMessages > 1 ? `${websiteMessages} nouveaux messages reçus par votre site web` : "1 nouveau message reçu par votre site web"}>
+          Des visiteurs vous ont écrit depuis le formulaire « Contact » de votre site.{" "}
+          <Link href="/site-web#messages" className="font-medium underline">
+            Voir les messages
+          </Link>
+        </Notice>
+      )}
       {/* Bannière de bienvenue (référence UNIP) */}
       <div className="flex flex-col gap-4 rounded-2xl bg-linear-to-r from-navy-900 via-navy-800 to-navy-600 px-5 py-5 text-white shadow-sm sm:px-7 sm:py-6 lg:flex-row lg:items-center lg:justify-between">
         <div>

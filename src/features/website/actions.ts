@@ -1,6 +1,6 @@
 "use server";
 
-import { updateTag } from "next/cache";
+import { refresh, updateTag } from "next/cache";
 import { z } from "zod";
 import { getAgencyContext } from "@/lib/auth/context";
 import { allowed, forbiddenMessage } from "@/lib/auth/permissions";
@@ -184,4 +184,15 @@ export async function submitWebsiteLeadAction(_prev: FormState, formData: FormDa
   });
   if (error) return { message: dbMessage(error), values };
   return { ok: true, message: `Merci ! Votre demande a bien été reçue par ${site.content.agencyName} : un conseiller vous recontacte rapidement.` };
+}
+
+/** « Messages reçus » : marque un message du site comme traité, ou le remet à traiter. */
+export async function setWebsiteMessageHandledAction(messageId: string, handled: boolean): Promise<FormState> {
+  if (!z.uuid().safeParse(messageId).success) return { message: "Message introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  const { error } = await ctx.supabase.rpc("set_website_message_handled", { p_id: messageId, p_handled: handled });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  return { ok: true, message: handled ? "Message marqué comme traité." : "Message remis à traiter." };
 }

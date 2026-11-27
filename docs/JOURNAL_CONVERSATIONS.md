@@ -15,6 +15,50 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 92 — 26 Novembre 2026 (Claude Code) — Invités sans « créer une agence » et « Messages reçus » du site
+* **Demande de l'utilisateur** : « vas-y », sur les propositions de la session précédente (correction 1 complète, partenaire inclus, et messages A + B ; e-mail C non retenu).
+* **Fait — personnes invitées** :
+  - page d'inscription arrivée par un lien (`/invite/…`, `/acces-client/…`, `/acces-partenaire/…`) :
+    - texte « Créez votre compte pour rejoindre l'équipe de [agence] » ou « … ouvrir votre espace client / partenaire chez [agence] » ;
+    - plus aucune mention de la création d'une agence (`src/features/auth/invite-context.ts`) ;
+  - page « Bienvenue » (`/onboarding`) :
+    - une personne invitée (équipe, espace client, espace partenaire) ne voit plus « créer une agence » ni la démonstration ;
+    - un seul lien d'espace client ou partenaire en attente : retour direct sur ce lien ;
+    - nouvelle fonction de la base `my_pending_accesses()`, qui retrouve ces liens d'après l'adresse e-mail du compte.
+* **Fait — messages du site** :
+  - nouvelle table `website_messages` :
+    - lecture par les membres de l'agence, cloisonnée par bureau ;
+    - aucune écriture directe ;
+    - `set_website_message_handled` pour « traité » ou « à traiter » ;
+  - `website_submit_lead` ajoute chaque demande à la liste, y compris quand le client est déjà connu ;
+  - les demandes déjà reçues sont reprises depuis les fiches créées par le formulaire ;
+  - page Site web : « Messages reçus » en haut, avec le texte complet, le téléphone, WhatsApp, l'e-mail, le bureau, « Ouvrir la fiche » et « Marquer comme traité » ; les messages traités sont repliés ;
+  - tableau de bord : alerte « N nouveaux messages reçus par votre site web », avec un lien vers la liste.
+* **Migration** : `20261126100000_invites_et_messages_site.sql`, à pousser par l'utilisateur (`npx supabase db push`) ; la simulation ne montre que celle-ci.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 317/317 ;
+  - pages d'inscription contrôlées sur le serveur local.
+* **Non envoyé sur GitHub.**
+
+### Session 91 — 26 Novembre 2026 (Claude Code) — Analyse : invitations et messages du site (sans correction)
+* **Demande de l'utilisateur** (« essaie de voir, ne corrige pas encore ») :
+  - une personne invitée (équipe ou espace client) ne doit voir que « créer un compte », jamais « créer une agence » ;
+  - savoir où arrive le message envoyé par le formulaire « Contact » du site de l'agence.
+* **Constaté dans le code** :
+  - page d'inscription : le texte parle de créer une agence, même quand on vient d'un lien ;
+  - si l'adresse doit être confirmée, la personne se reconnecte et arrive sur `/onboarding` :
+    - pour une invitation d'équipe, la page montre l'invitation **et** « Ou créer votre propre agence » (et la démo) ;
+    - pour un lien d'espace client (ou partenaire) pas encore ouvert, la page ne montre **que** « créer une agence » ;
+  - formulaire du site (`website_submit_lead`) :
+    - nouvelle fiche dans Prospects (badge « Site web », message dans les notes) ;
+    - tâche urgente « Rappeler … (demande du site web) » pour le propriétaire ;
+    - ligne dans le journal de la fiche ;
+    - aucun e-mail envoyé ;
+    - si le numéro existe déjà, le message va seulement dans le journal du client existant.
+* **Aucune modification du code** : propositions faites, en attente de la décision de l'utilisateur.
+
 ### Session 90 — 25 Novembre 2026 (Claude Code) — Bureau du client : choix obligatoire, bien visible
 * **Demande de l'utilisateur** (après l'essai local) :
   - à la fin du formulaire « Nouveau client » (et en modification), un endroit où cocher le bureau du client ;
