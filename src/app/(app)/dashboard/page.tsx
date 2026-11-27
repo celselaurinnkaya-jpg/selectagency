@@ -99,7 +99,7 @@ async function Dashboard({ searchParams }: Pick<PageProps<"/dashboard">, "search
       {websiteMessages > 0 && (
         <Notice title={websiteMessages > 1 ? `${websiteMessages} nouveaux messages reçus par votre site web` : "1 nouveau message reçu par votre site web"}>
           Des visiteurs vous ont écrit depuis le formulaire « Contact » de votre site.{" "}
-          <Link href="/site-web#messages" className="font-medium underline">
+          <Link href="/site-web/messages" className="font-medium underline">
             Voir les messages
           </Link>
         </Notice>

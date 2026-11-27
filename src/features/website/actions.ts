@@ -196,3 +196,17 @@ export async function setWebsiteMessageHandledAction(messageId: string, handled:
   refresh();
   return { ok: true, message: handled ? "Message marqué comme traité." : "Message remis à traiter." };
 }
+
+/** « Messages reçus » : supprime les messages cochés (la fiche prospect et la tâche « Rappeler » restent). */
+export async function deleteWebsiteMessagesAction(messageIds: string[]): Promise<FormState> {
+  const ids = [...new Set(messageIds)];
+  if (ids.length === 0) return { message: "Cochez au moins un message." };
+  if (ids.length > 500 || !ids.every((id) => z.uuid().safeParse(id).success)) return { message: "Message introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  const { data, error } = await ctx.supabase.rpc("delete_website_messages", { p_ids: ids });
+  if (error) return { message: dbMessage(error) };
+  refresh();
+  const count = typeof data === "number" ? data : ids.length;
+  return { ok: true, message: count > 1 ? `${count} messages supprimés.` : "Message supprimé." };
+}

@@ -5,11 +5,12 @@ import { ListChecks } from "lucide-react";
 import { cn } from "cn";
 import { Pills } from "@/components/shared/navigation";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
-import { Card, EmptyState, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
+import { EmptyState, PageHeader, Section, StatusBadge } from "@/components/shared/ui";
 import { PRIORITY, ROLE } from "@/lib/domain/labels";
 import { dayKey, formatRelativeDay } from "@/lib/format";
 import { listTasks, type TaskScope } from "@/features/operations/queries";
 import { TaskCreateForm, TaskToggle } from "@/features/tasks/TaskForms";
+import { TaskList } from "@/features/tasks/TaskList";
 import { TasksSubNav } from "@/features/tasks/TasksSubNav";
 
 export const metadata: Metadata = { title: "Tâches" };
@@ -24,7 +25,7 @@ const SCOPES: { key: TaskScope; label: string }[] = [
 export default function TasksPage({ searchParams }: PageProps<"/tasks">) {
   return (
     <>
-      <PageHeader title="Tâches" description="Le travail de l'équipe : relances, vérifications, préparations. Cochez une tâche pour la terminer." />
+      <PageHeader title="Tâches" description="Le travail de l'équipe : relances, vérifications, préparations. Cochez une tâche pour la terminer ; sélectionnez-en une ou plusieurs pour les supprimer." />
       <Suspense fallback={<PageSkeleton />}>
         <Tasks searchParams={searchParams} />
       </Suspense>
@@ -57,37 +58,39 @@ async function Tasks({ searchParams }: Pick<PageProps<"/tasks">, "searchParams">
         {data.rows.length === 0 ? (
           <EmptyState icon={ListChecks} title="Aucune tâche dans cette vue" />
         ) : (
-          <ul className="space-y-2">
-            {data.rows.map(({ task, clientName, caseRef, assignee, overdue }) => {
+          <TaskList
+            key={`${scope}-${mine ? "moi" : "equipe"}`}
+            canDelete={data.canWrite}
+            items={data.rows.map(({ task, clientName, caseRef, assignee, overdue }) => {
               const done = task.status === "done";
-              return (
-                <li key={task.id}>
-                  <Card className="flex items-start gap-3">
-                    {data.canWrite && <TaskToggle taskId={task.id} done={done} title={task.title} />}
-                    <div className="min-w-0 flex-1">
-                      <p className={cn("font-medium", done ? "text-slate-500 line-through" : "text-slate-900")}>{task.title}</p>
-                      <p className="text-sm text-slate-600">
-                        {caseRef && task.caseId && (
-                          <>
-                            <Link href={`/cases/${task.caseId}?tab=taches`} className="font-medium text-navy-700 hover:underline">
-                              {caseRef}
-                            </Link>
-                            {" · "}
-                          </>
-                        )}
-                        {[clientName, assignee?.fullName].filter(Boolean).join(" · ")}
-                      </p>
-                      <p className={cn("text-sm", overdue ? "font-semibold text-red-700" : "text-slate-500")}>
-                        {overdue ? "En retard · " : done ? "Échéance : " : "Pour "}
-                        {formatRelativeDay(task.dueAt, data.now, tz)}
-                      </p>
-                    </div>
-                    {!done && (task.priority === "high" || task.priority === "urgent") && <StatusBadge spec={PRIORITY[task.priority]} />}
-                  </Card>
-                </li>
-              );
+              return {
+                id: task.id,
+                title: task.title,
+                toggle: data.canWrite ? <TaskToggle taskId={task.id} done={done} title={task.title} /> : undefined,
+                body: (
+                  <>
+                    <p className={cn("font-medium", done ? "text-slate-500 line-through" : "text-slate-900")}>{task.title}</p>
+                    <p className="text-sm text-slate-600">
+                      {caseRef && task.caseId && (
+                        <>
+                          <Link href={`/cases/${task.caseId}?tab=taches`} className="font-medium text-navy-700 hover:underline">
+                            {caseRef}
+                          </Link>
+                          {" · "}
+                        </>
+                      )}
+                      {[clientName, assignee?.fullName].filter(Boolean).join(" · ")}
+                    </p>
+                    <p className={cn("text-sm", overdue ? "font-semibold text-red-700" : "text-slate-500")}>
+                      {overdue ? "En retard · " : done ? "Échéance : " : "Pour "}
+                      {formatRelativeDay(task.dueAt, data.now, tz)}
+                    </p>
+                  </>
+                ),
+                badge: !done && (task.priority === "high" || task.priority === "urgent") ? <StatusBadge spec={PRIORITY[task.priority]} /> : undefined,
+              };
             })}
-          </ul>
+          />
         )}
       </div>
 

@@ -15,6 +15,58 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 95 — 27 Novembre 2026 (Claude Code) — Tâches : supprimer une ou plusieurs tâches
+* **Demande de l'utilisateur** : « sur Tâches, où est la possibilité de supprimer ? », puis « vas-y » sur la proposition (comme pour les messages du site).
+* **Fait** :
+  - liste des tâches (`src/features/tasks/TaskList.tsx`) :
+    - la coche verte termine toujours la tâche ;
+    - à droite, une case de sélection et un bouton « Supprimer » ;
+    - en haut, « Tout sélectionner » et « Supprimer la sélection », avec confirmation ;
+  - action `deleteTasksAction`, par paquets de 100 ;
+  - la règle de la base `tasks_delete` (propriétaire, administrateurs, conseillers) existait déjà : **pas de migration** ;
+  - la visibilité par bureau s'applique aussi ;
+  - test de la base : le conseiller supprime, la lecture seule et une autre agence non.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 319/319.
+* **Non envoyé sur GitHub** (avec les pages « Site web » séparées de la session 94).
+
+### Session 94 — 26 Novembre 2026 (Claude Code) — Site web : deux pages séparées et suppression des messages
+* **Demande de l'utilisateur** :
+  - plus professionnel : dans « Site web », deux pages séparées, comme dans Agent IA, et non plus les messages collés au-dessus du site ;
+  - pouvoir cocher 1, 2, 3 messages et les supprimer d'un coup, ou un par un.
+* **Fait** :
+  - sous-menu « Site web de l'agence » / « Messages reçus par le site » (`src/features/website/WebsiteSubNav.tsx`), avec le nombre de messages à traiter ;
+  - `/site-web` : seulement le site ;
+  - nouvelle page `/site-web/messages` :
+    - filtres « À traiter / Traités / Tous » ;
+    - case à cocher par message, « Tout cocher », « Supprimer la sélection » et « Supprimer » sur chaque message, avec confirmation ;
+    - « Marquer comme traité » conservé ;
+  - l'alerte du tableau de bord mène à la page des messages ;
+  - migration `20261126120000_suppression_messages_site.sql` :
+    - `delete_website_messages(uuid[])` : tous ou aucun, 500 au plus ;
+    - règle commune `private.can_manage_website_message` : propriétaire, administrateurs et conseillers, dans leurs bureaux ;
+    - la fiche prospect et la tâche « Rappeler » restent.
+* **Constaté** : l'utilisateur a poussé la migration 20261126100000 ; la simulation ne montre plus que 20261126120000.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 318/318.
+* **Non envoyé sur GitHub.**
+
+### Session 93 — 26 Novembre 2026 (Claude Code) — Publication : invités et « Messages reçus » du site
+* **Demande de l'utilisateur** : « publier sur GitHub et Vercel ».
+* **Fait** :
+  - construction de l'application réussie (97 pages) ;
+  - commit a5bbc25 envoyé sur main ;
+  - Vercel : « Deployment has completed ».
+* **Vérifié en ligne** :
+  - accueil : 200 ;
+  - inscription depuis un lien : nouveau texte affiché ;
+  - Site web et Bienvenue : demandent la connexion.
+* **Reste à faire par l'utilisateur** : `npx supabase db push` (migration 20261126100000, pas encore en ligne) ; sans elle, la liste « Messages reçus » et l'alerte restent cachées.
+
 ### Session 92 — 26 Novembre 2026 (Claude Code) — Invités sans « créer une agence » et « Messages reçus » du site
 * **Demande de l'utilisateur** : « vas-y », sur les propositions de la session précédente (correction 1 complète, partenaire inclus, et messages A + B ; e-mail C non retenu).
 * **Fait — personnes invitées** :

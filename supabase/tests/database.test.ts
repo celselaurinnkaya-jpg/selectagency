@@ -480,6 +480,17 @@ describe("invitations et rôles", () => {
     expect(await rows(VICTOR, "select id from public.charges")).toEqual([]);
     expect((await rows(VICTOR, "select id from public.cases")).length).toBe(1);
   });
+
+  it("supprime des tâches : le conseiller oui, la lecture seule et une autre agence non", async () => {
+    const alice = await memberId(ALICE);
+    const insert = () =>
+      one<{ id: string }>(ALICE, "insert into public.tasks (organization_id, title, assigned_to, due_at) values ($1, 'Tâche à supprimer', $2, now()) returning id", [orgA, alice]).then((r) => r.id);
+    const ids = [await insert(), await insert()];
+    expect(await rows(VICTOR, "delete from public.tasks where id = any($1::uuid[]) returning id", [ids])).toEqual([]);
+    expect(await rows(BRUNO, "delete from public.tasks where id = any($1::uuid[]) returning id", [ids])).toEqual([]);
+    expect((await rows(CARINE, "delete from public.tasks where id = any($1::uuid[]) returning id", [ids])).length).toBe(2);
+    expect(await rows(ALICE, "select id from public.tasks where id = any($1::uuid[])", [ids])).toEqual([]);
+  });
 });
 
 describe("agence de démonstration", () => {
@@ -3477,6 +3488,23 @@ describe("site web de l'agence", () => {
     expect(await one(UGO, "select handled_at, handled_by from public.website_messages where id = $1", [id])).toEqual({ handled_at: null, handled_by: null });
   });
 
+  it("supprime les messages cochés, tous ou aucun, sans toucher à la fiche ni à la tâche", async () => {
+    const ids = (await rows<{ id: string }>(VERA, "select id from public.website_messages where organization_id = $1 order by received_at", [org])).map((r) => r.id);
+    const remove = (who: User, list: string[]) => one<{ n: number }>(who, "select public.delete_website_messages($1::uuid[]) as n", [list]).then((r) => r.n);
+    await expect(remove(VERA, [])).rejects.toThrow(/Cochez au moins un message/);
+    await expect(remove(ALICE, [ids[0]!])).rejects.toThrow(/introuvable/);
+    // Un message inconnu dans la sélection : rien n'est supprimé.
+    await expect(remove(VERA, [ids[0]!, "00000000-0000-4000-8000-000000000999"])).rejects.toThrow(/introuvable/);
+    expect((await rows(VERA, "select id from public.website_messages where organization_id = $1", [org])).length).toBe(3);
+    expect(await remove(VERA, [ids[0]!, ids[1]!])).toBe(2);
+    expect((await rows<{ id: string }>(UGO, "select id from public.website_messages where organization_id = $1", [org])).map((r) => r.id)).toEqual([ids[2]]);
+    // La fiche prospect et la tâche « Rappeler » restent.
+    expect((await rows(UGO, "select id from public.clients where phone_e164 = '+237690000111'")).length).toBe(1);
+    expect((await rows(UGO, "select id from public.tasks where title like '%(demande du site web)'")).length).toBeGreaterThan(0);
+    // Aucune suppression directe.
+    await expect(rows(UGO, "delete from public.website_messages returning id")).rejects.toThrow(/permission denied/);
+  });
+
   it("limite la rédaction par l'IA à 20 par jour et ferme le site hors formule", async () => {
     for (let i = 0; i < 20; i += 1) await one(UGO, "select public.note_website_generation($1)", [org]);
     await expect(one(UGO, "select public.note_website_generation($1)", [org])).rejects.toThrow(/20 rédactions/);
@@ -3608,6 +3636,7 @@ describe("bureaux de l'agence", () => {
     expect([await seen(YVETTE), await seen(DIDIER), await seen(BELLA)]).toEqual([1, 0, 1]);
     const message = (await one<{ id: string }>(BELLA, "select id from public.website_messages where organization_id = $1", [org])).id;
     await expect(one(DIDIER, "select public.set_website_message_handled($1, true)", [message])).rejects.toThrow(/introuvable/);
+    await expect(one(DIDIER, "select public.delete_website_messages($1::uuid[])", [[message]])).rejects.toThrow(/introuvable/);
     await one(YVETTE, "select public.set_website_message_handled($1, true)", [message]);
     await one(BELLA, "select public.set_bureau_restriction($1, false)", [org]);
   });

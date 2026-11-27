@@ -61,3 +61,27 @@ export async function toggleTaskAction(formData: FormData): Promise<void> {
     .eq("id", id);
   refresh();
 }
+
+/** Supprime les tâches sélectionnées (propriétaire, administrateurs, conseillers : la base le vérifie aussi). */
+export async function deleteTasksAction(taskIds: string[]): Promise<FormState> {
+  const ids = [...new Set(taskIds)];
+  if (ids.length === 0) return { message: "Sélectionnez au moins une tâche." };
+  if (ids.length > 500 || !ids.every((id) => /^[0-9a-f-]{36}$/i.test(id))) return { message: "Tâche introuvable." };
+  const ctx = await getAgencyContext();
+  if (!allowed(ctx, "operations.write")) return { message: forbiddenMessage(ctx, "operations.write") };
+  let count = 0;
+  // Par paquets de 100 : la liste des identifiants voyage dans l'adresse de la requête.
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await ctx.supabase.from("tasks").delete().eq("organization_id", ctx.organizationId).in("id", ids.slice(i, i + 100)).select("id");
+    if (error) {
+      if (count > 0) refresh();
+      return { message: count > 0 ? `${count} tâche(s) supprimée(s), puis : ${dbMessage(error)}` : dbMessage(error) };
+    }
+    count += data?.length ?? 0;
+  }
+  refresh();
+  if (count === 0) return { message: "Aucune tâche supprimée : elle n'existe plus, ou vous n'avez pas le droit de la supprimer." };
+  const missed = ids.length - count;
+  const done = count > 1 ? `${count} tâches supprimées.` : "Tâche supprimée.";
+  return { ok: true, message: missed > 0 ? `${done} ${missed} n'a pas pu l'être (droits insuffisants ou déjà supprimée).` : done };
+}

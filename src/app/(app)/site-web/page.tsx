@@ -4,8 +4,8 @@ import { FeatureLocked } from "@/components/shared/FeatureLocked";
 import { PageSkeleton } from "@/components/shared/PageSkeleton";
 import { Notice, PageHeader } from "@/components/shared/ui";
 import { WebsiteEditor } from "@/features/website/WebsiteEditor";
-import { WebsiteMessages } from "@/features/website/WebsiteMessages";
-import { getWebsiteEditor, getWebsiteMessages } from "@/features/website/queries";
+import { WebsiteSubNav, WebsiteSubNavWithCount } from "@/features/website/WebsiteSubNav";
+import { getWebsiteEditor } from "@/features/website/queries";
 
 export const metadata: Metadata = { title: "Site web" };
 
@@ -13,27 +13,17 @@ export default function WebsitePage() {
   return (
     <>
       <PageHeader
-        title="Site web de l'agence"
-        description="Un site à vos couleurs : choisissez un modèle, décrivez votre agence, l'IA rédige le site, vous le modifiez puis le publiez. Les messages du formulaire « Contact » arrivent dans « Messages reçus », juste en dessous, et dans vos prospects."
+        title="Site web"
+        description="Un site à vos couleurs : choisissez un modèle, décrivez votre agence, l'IA rédige le site, vous le modifiez puis le publiez. Les messages du formulaire « Contact » arrivent dans « Messages reçus par le site »."
       />
-      <div className="space-y-6">
-        <Suspense fallback={null}>
-          <Messages />
-        </Suspense>
-        <Suspense fallback={<PageSkeleton />}>
-          <Editor />
-        </Suspense>
-      </div>
+      <Suspense fallback={<WebsiteSubNav active="site" />}>
+        <WebsiteSubNavWithCount active="site" />
+      </Suspense>
+      <Suspense fallback={<PageSkeleton />}>
+        <Editor />
+      </Suspense>
     </>
   );
-}
-
-/** « Messages reçus » : visibles par toute l'équipe, même sans le droit de modifier le site. */
-async function Messages() {
-  const data = await getWebsiteMessages();
-  // Avant la migration, ou formule sans site web et aucun message : rien à montrer.
-  if (!data || (data.locked && data.messages.length === 0)) return null;
-  return <WebsiteMessages messages={data.messages} canHandle={data.canHandle} timezone={data.timezone} countryCode={data.countryCode} />;
 }
 
 async function Editor() {
