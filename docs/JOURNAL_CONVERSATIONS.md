@@ -15,6 +15,56 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 101 — 27 Novembre 2026 (Claude Code) — Revue de sécurité complète et corrections
+* **Demande de l'utilisateur** : « recommence security-review et s'il y a des corrections, fais-les ».
+* **Revue terminée** sur les 4 parties : base de données, routes et webhooks, actions serveur, secrets et chiffrement.
+* **Failles trouvées et corrigées** :
+  - **redirection après la connexion** :
+    - `safeNext` acceptait « /<tabulation>/autre-site », que le navigateur lit comme un autre site ;
+    - les caractères invisibles et « \\ » sont maintenant refusés, avec une vérification que l'adresse reste sur le site ;
+    - nouveau `src/features/auth/redirects.test.ts` ;
+  - **visibilité par bureau contournable**, migration `20261127100000_cloisonnement_bureaux_complet.sql` :
+    - règles par bureau ajoutées sur les pièces déposées, les réservations, les lignes de factures et de devis, et la répartition des paiements ;
+    - nouveau déclencheur `private.bureau_guard` sur 23 tables : une fonction de la base ne peut plus modifier, au nom d'un membre cloisonné, la fiche d'un autre bureau ;
+    - les écritures directes restent contrôlées par les règles RLS ;
+    - le système (site, webhooks, envois planifiés) n'est pas concerné ;
+    - test de la base reprenant le scénario de la revue.
+* **Renforcements (sous le seuil)** :
+  - lecture de pages par l'IA : les adresses internes déguisées en IPv6 (« ::ffff:a9fe:a9fe », NAT64, 6to4, Teredo) sont refusées (`isPublicIp`, avec tests) ;
+  - message WhatsApp de test : réservé au propriétaire et aux administrateurs, avec l'option Agent IA.
+* **Non modifié, décision de l'utilisateur** : numéro WhatsApp saisi à la main + jeton de secours de SELECT ; messagerie WhatsApp commune à l'équipe.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 325/325 ;
+  - la simulation montre seulement la migration 20261127100000.
+* **Non envoyé sur GitHub** ; migration à pousser par l'utilisateur.
+
+### Session 100 — 27 Novembre 2026 (Claude Code) — Revue de sécurité de tout le code (partielle)
+* **Demande de l'utilisateur** : « sur tous, fais : Security-review », puis « finalise ».
+* **Analyses terminées** :
+  - routes, webhooks (Stripe, WhatsApp, Brevo), tâche planifiée, téléchargements et PDF, middleware, site public ;
+  - secrets, chiffrement (jeton Meta en AES-256-GCM), journaux, e-mails, données envoyées au navigateur ;
+  - **aucune faille confirmée** (seuil : confiance 8/10).
+* **Analyses interrompues** par la limite d'utilisation (reprise possible après la remise à zéro) :
+  - base de données (fonctions et règles RLS) ;
+  - actions serveur.
+* **Points de renforcement relevés** (sous le seuil, non classés comme failles) :
+  - `safeNext` accepte `/<tabulation>/site` : redirection possible vers un autre site après la connexion ;
+  - numéro WhatsApp saisi à la main + jeton système de SELECT en secours.
+* **Aucune modification du code.**
+
+### Session 99 — 27 Novembre 2026 (Claude Code) — Publication des corrections de la revue (points 1 et 2)
+* **Demande de l'utilisateur** : « publier sur GitHub et Vercel ».
+* **Fait** :
+  - construction de l'application réussie (98 pages) ;
+  - commit 993b855 envoyé sur main ;
+  - Vercel : « Deployment has completed ».
+* **Vérifié en ligne** :
+  - accueil : 200 ;
+  - `/site-web/messages` et `/tasks` demandent la connexion.
+* **Pas de migration** pour cette publication.
+
 ### Session 98 — 27 Novembre 2026 (Claude Code) — Corrections de la revue : points 1 et 2
 * **Demande de l'utilisateur** :
   - corriger les points 1 et 2 de la revue (session 97) ;

@@ -3640,4 +3640,34 @@ describe("bureaux de l'agence", () => {
     await one(YVETTE, "select public.set_website_message_handled($1, true)", [message]);
     await one(BELLA, "select public.set_bureau_restriction($1, false)", [org]);
   });
+
+  it("cloisonnement complet : pièces déposées, lignes et fonctions de la base refusent les fiches d'un autre bureau", async () => {
+    const caseY = (await createCase(YVETTE, org, clientY, yvette)).id;
+    const [req] = await rows<{ id: string }>(YVETTE, "select id from public.document_requirements where case_id = $1 order by label limit 1", [caseY]);
+    await asSystem("insert into public.document_files (organization_id, requirement_id, storage_path, file_name) values ($1, $2, $3, 'passeport.pdf')", [
+      org,
+      req!.id,
+      `${org}/${caseY}/${req!.id}/1-passeport.pdf`,
+    ]);
+    await one(BELLA, "select public.set_bureau_restriction($1, true)", [org]);
+    try {
+      // Lecture : la pièce déposée et la répartition des paiements de Yaoundé ne sont visibles que du bureau de Yaoundé.
+      expect(await rows(DIDIER, "select id from public.document_files where requirement_id = $1", [req!.id])).toEqual([]);
+      expect((await rows(YVETTE, "select id from public.document_files where requirement_id = $1", [req!.id])).length).toBe(1);
+      expect(await rows(DIDIER, "select id from public.payment_allocations where organization_id = $1", [org])).toEqual([]);
+      expect((await rows(YVETTE, "select id from public.payment_allocations where organization_id = $1", [org])).length).toBeGreaterThan(0);
+      // Fonctions de la base : rien sur un client ou un dossier d'un autre bureau, même avec son identifiant.
+      await expect(one(DIDIER, "select public.create_client_portal_access($1, 'didier.perso@exemple.test')", [clientY])).rejects.toThrow(/autre bureau/);
+      await expect(one(DIDIER, "select public.delete_requirement($1, 'Pièce retirée.')", [req!.id])).rejects.toThrow(/autre bureau/);
+      expect((await rows(YVETTE, "select id from public.document_requirements where id = $1", [req!.id])).length).toBe(1);
+      // Dans ses propres bureaux, rien ne change ; le propriétaire garde la main partout.
+      await one(DIDIER, "select public.create_client_portal_access($1, 'client.d@exemple.test')", [clientD]);
+      await one(YVETTE, "select public.create_client_portal_access($1, 'client.y@exemple.test')", [clientY]);
+      await one(BELLA, "select public.create_client_portal_access($1, 'client.y2@exemple.test')", [clientY]);
+    } finally {
+      await one(BELLA, "select public.set_bureau_restriction($1, false)", [org]);
+    }
+    // Sans cloisonnement, tout redevient visible de toute l'équipe.
+    expect((await rows(DIDIER, "select id from public.document_files where requirement_id = $1", [req!.id])).length).toBe(1);
+  });
 });

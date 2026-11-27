@@ -141,6 +141,13 @@ export async function sendTestWhatsAppMessageAction(
   toPhone: string
 ): Promise<{ ok: boolean; message: string }> {
   const ctx = await getAgencyContext();
+  // Comme la connexion du numéro : réservé au propriétaire et aux administrateurs, avec l'option Agent IA.
+  if (!["owner", "admin"].includes(ctx.member.role) || !ctx.writable) {
+    return { ok: false, message: "Action réservée aux administrateurs." };
+  }
+  if (ctx.locked.includes("ai_agent")) {
+    return { ok: false, message: "L'option Agent IA est incluse uniquement dans les formules PRO et BUSINESS." };
+  }
 
   const { data: account, error } = await ctx.supabase
     .from("wa_accounts")

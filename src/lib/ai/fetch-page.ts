@@ -33,16 +33,53 @@ function isPublicIpv4(ip: string): boolean {
   return true;
 }
 
-function isPublicIp(ip: string): boolean {
-  if (isIP(ip) === 4) return isPublicIpv4(ip);
-  const v6 = ip.toLowerCase();
-  const mapped = v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPublicIpv4(mapped[1]!);
-  if (v6 === "::" || v6 === "::1") return false;
-  if (/^f[cd]/.test(v6)) return false; // adresses privées uniques
-  if (/^fe[89ab]/.test(v6)) return false; // lien local
-  if (v6.startsWith("ff")) return false; // multidiffusion
+/** Les 8 groupes de 16 bits d'une adresse IPv6 (forme abrégée « :: » et IPv4 en fin d'adresse comprises). */
+function ipv6Groups(ip: string): number[] | undefined {
+  let text = ip.toLowerCase().split("%")[0]!;
+  let tail: number[] = [];
+  const dotted = text.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (dotted) {
+    const [a, b, c, d] = dotted.slice(1).map(Number) as [number, number, number, number];
+    if ([a, b, c, d].some((n) => n > 255)) return undefined;
+    tail = [(a << 8) | b, (c << 8) | d];
+    text = text.slice(0, -dotted[0].length);
+    if (text.endsWith(":") && !text.endsWith("::")) text = text.slice(0, -1);
+  }
+  const parse = (part: string) => (part ? part.split(":").map((x) => (/^[0-9a-f]{1,4}$/.test(x) ? parseInt(x, 16) : NaN)) : []);
+  const halves = text.split("::");
+  if (halves.length > 2) return undefined;
+  const head = parse(halves[0]!);
+  const rest = halves.length === 2 ? parse(halves[1]!) : [];
+  const missing = 8 - head.length - rest.length - tail.length;
+  const groups = halves.length === 2 ? [...head, ...Array<number>(Math.max(missing, 0)).fill(0), ...rest, ...tail] : [...head, ...tail];
+  return groups.length === 8 && groups.every((g) => Number.isInteger(g)) ? groups : undefined;
+}
+
+function isPublicIpv6(ip: string): boolean {
+  const g = ipv6Groups(ip);
+  if (!g) return false;
+  const v4 = (hi: number, lo: number) => `${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`;
+  // Adresse IPv4 cachée dans une IPv6 (« ::ffff:a9fe:a9fe » = 169.254.169.254) : on vérifie l'IPv4.
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0xffff || g[5] === 0)) {
+    if (g[5] === 0 && g[6] === 0) return false; // « :: » et « ::1 »
+    return isPublicIpv4(v4(g[6]!, g[7]!));
+  }
+  if (g[0] === 0x64 && g[1] === 0xff9b) return isPublicIpv4(v4(g[6]!, g[7]!)); // NAT64
+  if (g[0] === 0x2002) return isPublicIpv4(v4(g[1]!, g[2]!)); // 6to4
+  if (g[0] === 0x2001 && g[1] === 0) return false; // Teredo
+  if (g[0] === 0x2001 && g[1] === 0x0db8) return false; // documentation
+  if (g[0] === 0x100 && g[1] === 0 && g[2] === 0 && g[3] === 0) return false; // adresses à jeter
+  if ((g[0]! & 0xfe00) === 0xfc00) return false; // adresses privées uniques
+  if ((g[0]! & 0xffc0) === 0xfe80) return false; // lien local
+  if ((g[0]! & 0xff00) === 0xff00) return false; // multidiffusion
   return true;
+}
+
+/** Adresse IP publique (ni interne, ni locale, ni réservée), en IPv4 comme en IPv6. */
+export function isPublicIp(ip: string): boolean {
+  if (isIP(ip) === 4) return isPublicIpv4(ip);
+  if (isIP(ip) === 6) return isPublicIpv6(ip);
+  return false;
 }
 
 async function checkUrl(raw: string): Promise<URL | string> {
