@@ -9,6 +9,7 @@ import { formValues, type FormState } from "@/lib/form-state";
 import { localDateTimeToIso } from "@/lib/period";
 import { parseAmount } from "@/features/finance/payments";
 import { getStripe } from "@/lib/stripe/server";
+import { accessExpiryNote, checkNumberAccess, saveNumberAccess } from "@/lib/whatsapp/number-access";
 import { CONSOLE_TIMEZONE } from "./display";
 
 // Actions de la console SELECT. Chacune revérifie la session et le rôle (platformAdminForAction),
@@ -271,40 +272,62 @@ export async function setTicketStatusAction(formData: FormData): Promise<void> {
 
 const adminWhatsAppSchema = z.object({
   organizationId: z.string().uuid("Identifiant d'organisation invalide."),
-  displayPhoneNumber: z.string().trim().min(6, "Le numéro de téléphone est requis.").max(60),
-  verifiedName: z.string().trim().max(200).optional().or(z.literal("")),
-  phoneNumberId: z.string().trim().min(5, "Le Phone Number ID de Meta est requis.").max(120),
-  wabaId: z.string().trim().min(5, "Le WABA ID de Meta est requis.").max(120),
+  phoneNumberId: z.string().trim().regex(/^\d{5,30}$/, "Le Phone Number ID de Meta est un identifiant de chiffres."),
+  wabaId: z.string().trim().regex(/^\d{5,30}$/, "Le WABA ID de Meta est un identifiant de chiffres."),
+  accessToken: z
+    .string()
+    .trim()
+    .min(40, "Collez la clé d'accès Meta de ce numéro (elle commence en général par « EAA »).")
+    .max(1000)
+    .regex(/^\S+$/, "La clé d'accès ne doit contenir ni espace ni retour à la ligne."),
   coexistence: z.preprocess((val) => val === "true" || val === "on" || val === true, z.boolean()).default(false),
 });
 
+/**
+ * Console SELECT : relie une ligne WhatsApp à une agence avec SA propre clé d'accès, vérifiée auprès de Meta puis
+ * enregistrée chiffrée. Le numéro et le nom affichés sont ceux que Meta renvoie. Aucune clé de secours.
+ */
 export async function configureAgencyWhatsAppAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
+  // La clé n'est jamais renvoyée au navigateur, même en cas d'erreur.
+  const keep = { organizationId: values.organizationId ?? "", wabaId: values.wabaId ?? "", phoneNumberId: values.phoneNumberId ?? "", coexistence: values.coexistence ?? "" };
   const parsed = adminWhatsAppSchema.safeParse(values);
   if (!parsed.success) {
     return {
       message: "Certains champs sont à corriger.",
       fieldErrors: z.flattenError(parsed.error).fieldErrors,
-      values,
+      values: keep,
     };
   }
 
   const user = await platformAdminForAction();
-  if (!user) return { message: CONSOLE_FORBIDDEN, values };
+  if (!user) return { message: CONSOLE_FORBIDDEN, values: keep };
 
   const input = parsed.data;
-  const { error } = await user.supabase.rpc("platform_configure_agency_whatsapp", {
+  const check = await checkNumberAccess(input.accessToken, input.wabaId, input.phoneNumberId);
+  if (!check.ok) return { message: check.message, values: keep };
+
+  const { data: accountId, error } = await user.supabase.rpc("platform_configure_agency_whatsapp", {
     p_org: input.organizationId,
     p_waba_id: input.wabaId,
-    p_phone_number_id: input.phoneNumberId,
-    p_display_phone_number: input.displayPhoneNumber,
-    p_verified_name: input.verifiedName || null,
+    p_phone_number_id: check.phone.id,
+    p_display_phone_number: check.phone.displayPhoneNumber,
+    p_verified_name: check.phone.verifiedName ?? null,
     p_coexistence: input.coexistence,
   });
 
-  if (error) return { message: dbMessage(error), values };
+  if (error) return { message: dbMessage(error), values: keep };
+
+  if (!(await saveNumberAccess(input.organizationId, check.phone.id, input.accessToken))) {
+    if (typeof accountId === "string") {
+      await user.supabase.rpc("platform_disconnect_agency_whatsapp", { p_org: input.organizationId, p_account_id: accountId });
+    }
+    refresh();
+    return { message: "L'autorisation de ce numéro n'a pas pu être enregistrée : la ligne n'a pas été connectée. Réessayez.", values: keep };
+  }
+
   refresh();
-  return { ok: true, message: "Ligne WhatsApp Cloud API configurée avec succès pour cette agence." };
+  return { ok: true, message: `Ligne ${check.phone.displayPhoneNumber} connectée pour cette agence, avec sa propre autorisation Meta.${accessExpiryNote(check.expiresAt)}` };
 }
 
 export async function disconnectAgencyWhatsAppAction(formData: FormData): Promise<{ ok: boolean; message: string }> {

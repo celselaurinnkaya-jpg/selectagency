@@ -15,6 +15,108 @@ Ce document sert de **mémoire persistante** pour toutes les sessions de travail
 
 ## 📅 Historique Chronologique des Sessions
 
+### Session 106 — 27 Novembre 2026 (Claude Code) — WhatsApp, point 2 : une autorisation propre à chaque numéro, plus de clé de secours
+* **Demande de l'utilisateur** : « vas-y » sur la correction du point 2 (session 105).
+* **Fait** :
+  - `verifyAccessForNumber` (`src/lib/whatsapp/meta-signup.ts`) : la clé saisie est vérifiée auprès de Meta (`debug_token`) :
+    - elle doit être valide ;
+    - elle doit être faite pour l'application de SELECT ;
+    - elle doit porter les autorisations whatsapp_business_messaging et whatsapp_business_management ;
+    - le numéro doit être dans ce compte WhatsApp Business ;
+    - le numéro et le nom enregistrés sont ceux renvoyés par Meta ;
+    - une clé temporaire est signalée ;
+  - nouveau `src/lib/whatsapp/number-access.ts` : vérification et abonnement du webhook, enregistrement chiffré, lecture de la clé côté serveur ;
+  - saisie manuelle de l'agence et console SELECT :
+    - champ « Clé d'accès Meta » obligatoire (masqué, jamais renvoyé au navigateur) ;
+    - les champs « numéro affiché » et « nom vérifié » sont retirés, car Meta les fournit ;
+    - le numéro n'est pas laissé connecté si sa clé n'a pas pu être enregistrée ;
+  - `accountAccessToken` : **plus aucune clé de secours** ; `WHATSAPP_SYSTEM_ACCESS_TOKEN` n'est plus lue nulle part ;
+  - message de test :
+    - il utilise la clé du numéro ;
+    - il vérifie que c'est un vrai numéro de téléphone ;
+    - il est désactivé sans autorisation ;
+  - réponse manuelle : message clair si le numéro n'a pas d'autorisation ;
+  - reconnexion refusée sans autorisation enregistrée ;
+  - QR de Meta : le numéro est déconnecté si sa clé n'a pas pu être enregistrée ;
+  - page Connexion WhatsApp : badge « Autorisation manquante » et explication pour un numéro relié sans clé (cas du numéro de test +1 555…) ;
+  - `.env.example` : variables WhatsApp et Gemini documentées.
+* **Vérifications** :
+  - `tsc` : 0 erreur ;
+  - ESLint : 0 erreur ;
+  - tests : 327/327, dont 3 nouveaux sur la clé (secours ignoré, clé invalide, autre application, autorisations manquantes, numéro hors compte).
+* **Pas de migration.** **Non envoyé sur GitHub.**
+
+### Session 105 — 27 Novembre 2026 (Claude Code) — Test réel WhatsApp : diagnostic du numéro de test (sans code)
+* **Retour de l'utilisateur** (captures) :
+  - numéro +1 555-162-6717 « Test Number » connecté ;
+  - message rouge « Clé d'accès WhatsApp de SELECT non configurée (WHATSAPP_SYSTEM_ACCESS_TOKEN) » au test d'envoi ;
+  - Conversations vide, impossible de commencer une discussion.
+* **Diagnostic** :
+  - +1 555… est le **numéro de test fourni par Meta** ;
+  - il a été relié par la **configuration manuelle** (Phone Number ID + WABA ID), qui n'enregistre **aucun jeton propre** au numéro ;
+  - tous les envois retombent donc sur le jeton de secours, vide comme conseillé ;
+  - le bouton « Envoyer le test » utilise **toujours** le jeton de SELECT, même pour un numéro qui a le sien (défaut, point 2) ;
+  - le champ du test attend un **numéro** (« salut » a été saisi) ;
+  - Conversations vide : normal tant qu'aucun client n'a écrit (règle de WhatsApp : le client écrit en premier, sinon il faut un modèle approuvé par Meta) ;
+  - avec le numéro de test, envoi possible seulement vers 5 numéros déclarés dans Meta.
+* **Proposé** (point 2) : jeton propre obligatoire pour chaque numéro (y compris en saisie manuelle et par la console), vérifié auprès de Meta, chiffré, et suppression du jeton de secours.
+* **Aucune modification du code** : en attente du « vas-y » de l'utilisateur.
+
+### Session 104 — 27 Novembre 2026 (Claude Code) — WhatsApp : procédure du test réel (sans code)
+* **Décisions de l'utilisateur** :
+  - test réel obligatoire avant toute modification ;
+  - revoir le jeton de secours (chaque agence avec sa propre connexion) ;
+  - architecture hybride confirmée : Meta, QR officiel de Meta, et une Gateway pour un futur fournisseur QR autorisé ;
+  - pas de connexion WhatsApp Web non autorisée ;
+  - une étape à la fois, expliquée et testée.
+* **Constaté pour la procédure** :
+  - aujourd'hui, un seul parcours Meta est branché : la coexistence, avec le QR de Meta (`featureType: whatsapp_business_app_onboarding`) ;
+  - le parcours « nouveau numéro » (sans l'application, avec enregistrement du numéro) n'existe pas, et `WhatsAppMetaConnectModal` n'est pas utilisé ;
+  - la liaison au client est manuelle (« Lier à un client » / « Créer un prospect ») ;
+  - seuls les messages texte sont traités.
+* **Exigences Meta vérifiées** (documentation Meta, 27/11) :
+  - champs du webhook : messages, history, smb_app_state_sync, smb_message_echoes ;
+  - WhatsApp Business version 2.24.17 ou plus récente ;
+  - synchronisation possible pendant 24 h ;
+  - statut Tech Provider pour la coexistence ;
+  - en mode Développement : comptes ayant un rôle sur l'application Meta seulement ;
+  - App Review pour l'accès avancé.
+* **Conseil donné** : laisser `WHATSAPP_SYSTEM_ACCESS_TOKEN` vide pendant le test, pour prouver que le jeton propre du numéro fonctionne.
+* **Aucune modification du code.**
+
+### Session 103 — 27 Novembre 2026 (Claude Code) — WhatsApp hybride (Meta + QR) : phase 1, audit (sans code)
+* **Demande de l'utilisateur** : analyser la mission « système WhatsApp hybride » et faire seulement la phase 1 (audit), sans modifier le code.
+* **Existant constaté** :
+  - 15 tables (`wa_*`, `ai_*`, `private.wa_account_tokens`) ;
+  - 6 pages Agent IA ;
+  - webhook Meta signé ;
+  - connexion officielle (Embedded Signup, coexistence avec le QR de Meta, saisie manuelle, ligne configurée par la console) ;
+  - boîte de réception en temps réel avec les modes IA / assistance / conseiller ;
+  - IA Gemini avec base de connaissances et quotas.
+* **Manques principaux** :
+  - pièces jointes, entrantes et sortantes ;
+  - modèles non envoyés à Meta, donc pas de message au-delà de 24 h ;
+  - attribution des conversations ;
+  - file de traitement : `ai_jobs` et `wa_webhook_events` existent mais ne servent pas ;
+  - déconnexion propre (le jeton est gardé, Meta n'est pas prévenu) ;
+  - vue d'ensemble WhatsApp dans la console SELECT ;
+  - variables WhatsApp absentes de `.env.example`.
+* **Risque majeur signalé** : le « mode B » (QR affiché dans SELECT et scanné dans Appareils connectés) passe par le protocole de WhatsApp Web, sans API officielle → contraire à la règle « API officielle uniquement » ; à étudier en phase 4 sans rien activer.
+* **Aucune modification du code** ; en attente de la validation de l'utilisateur avant la phase 2.
+
+### Session 102 — 27 Novembre 2026 (Claude Code) — Publication des corrections de sécurité
+* **Demande de l'utilisateur** : « publier sur GitHub et Vercel ».
+* **Avant la publication** : migration 20261127100000 déjà en ligne (poussée par l'utilisateur), vérifiée avec `migration list --linked`.
+* **Fait** :
+  - construction de l'application réussie (98 pages) ;
+  - commit fef60a1 envoyé sur main ;
+  - Vercel : « Deployment has completed ».
+* **Vérifié en ligne** :
+  - accueil : 200 ;
+  - avec l'adresse piégée `/login?next=%2F%09%2Fexemple.com`, la page de connexion ne garde aucune adresse de retour ;
+  - avec une adresse normale (`next=/tasks`), l'adresse de retour est conservée ;
+  - `/tasks` demande la connexion.
+
 ### Session 101 — 27 Novembre 2026 (Claude Code) — Revue de sécurité complète et corrections
 * **Demande de l'utilisateur** : « recommence security-review et s'il y a des corrections, fais-les ».
 * **Revue terminée** sur les 4 parties : base de données, routes et webhooks, actions serveur, secrets et chiffrement.

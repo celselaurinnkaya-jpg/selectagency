@@ -77,14 +77,21 @@ export async function sendManualWhatsAppReplyAction(
   const serverSecret = cronSecret();
   const phoneNumberId = conv?.account?.phone_number_id;
   const recipient = conv?.contact?.wa_id;
-  // Jeton du numéro enregistré au scan du QR code (sinon jeton système de SELECT).
+  // Uniquement la clé propre au numéro (QR de Meta, ou identifiants vérifiés) : aucune clé de secours.
   const token =
     serverSecret && phoneNumberId
       ? await accountAccessToken((fn, args) => createSystemClient().rpc(fn, args), serverSecret, phoneNumberId)
       : undefined;
-  if (!token || !serverSecret || !phoneNumberId || !recipient) {
+  if (!serverSecret || !phoneNumberId || !recipient) {
     refresh();
     return { ok: false, message: "Message enregistré, mais pas envoyé : la connexion WhatsApp officielle n'est pas encore active." };
+  }
+  if (!token) {
+    refresh();
+    return {
+      ok: false,
+      message: "Message enregistré, mais pas envoyé : ce numéro n'a pas sa propre autorisation Meta. Reconnectez-le dans Agent IA → Connexion WhatsApp.",
+    };
   }
 
   const sent = await sendWhatsAppMessage({ phoneNumberId, to: recipient, text: trimmed, accessToken: token });

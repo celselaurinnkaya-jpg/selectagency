@@ -1,6 +1,7 @@
 import "server-only";
 import { getAgencyContext } from "@/lib/auth/context";
 import { toWaAccount, type WaAccountRecord } from "@/lib/domain/ai";
+import { numberAccessToken } from "@/lib/whatsapp/number-access";
 
 export interface WhatsAppConnectionPageData {
   accounts: WaAccountRecord[];
@@ -35,7 +36,12 @@ export async function loadWhatsAppConnectionData(): Promise<WhatsAppConnectionPa
     console.error("Erreur lors de la lecture des comptes WhatsApp :", error);
   }
 
-  const accounts = (rawAccounts ?? []).map(toWaAccount);
+  // Pour chaque numéro connecté : a-t-il sa propre autorisation Meta ? Seul un oui/non quitte le serveur.
+  const accounts = await Promise.all(
+    (rawAccounts ?? []).map(toWaAccount).map(async (account) =>
+      account.status === "connected" ? { ...account, hasOwnAccess: Boolean(await numberAccessToken(account.phoneNumberId)) } : account,
+    ),
+  );
   const plan = ctx.subscription?.plan;
   const maxWaNumbers = plan?.maxWaNumbers ?? (ctx.subscription?.plan?.tier === "business" ? 1 : 1);
 

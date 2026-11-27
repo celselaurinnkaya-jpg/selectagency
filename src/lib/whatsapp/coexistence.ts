@@ -102,9 +102,12 @@ export function syncedContacts(value: StateValue): { waId: string; name: string 
 
 type Rpc = (fn: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
 
-/** Jeton d'accès du numéro (enregistré chiffré au moment du scan), sinon le jeton système de SELECT s'il existe. */
+/**
+ * Clé d'accès propre au numéro, enregistrée chiffrée à sa connexion (QR de Meta, ou identifiants vérifiés auprès de
+ * Meta). Il n'y a AUCUNE clé de secours : un numéro sans sa propre autorisation n'envoie rien (undefined).
+ */
 export async function accountAccessToken(rpc: Rpc, serverSecret: string, phoneNumberId: string): Promise<string | undefined> {
   const { data } = await rpc("wa_account_token", { p_secret: serverSecret, p_phone_number_id: phoneNumberId });
   const token = typeof data === "string" ? decryptToken(data, serverSecret) : null;
-  return token ?? (process.env.WHATSAPP_SYSTEM_ACCESS_TOKEN?.trim() || undefined);
+  return token ?? undefined;
 }

@@ -179,7 +179,7 @@ export async function POST(request: Request) {
       };
       await Promise.all(
         toAnswer.map(async (item) =>
-          // Jeton du numéro enregistré au scan du QR code (sinon jeton système de SELECT).
+          // Uniquement la clé propre au numéro : sans elle, l'IA ne répond pas (aucune clé de secours).
           autoReply({ ...base, accessToken: await accountAccessToken(rpc, serverSecret, item.phoneNumberId) }, item.conversationId, item.triggerMetaId).catch((err: unknown) =>
             console.error("Agent IA : réponse automatique impossible :", err instanceof Error ? err.message : err),
           ),

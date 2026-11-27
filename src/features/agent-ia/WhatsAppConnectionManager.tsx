@@ -10,6 +10,7 @@ import {
   Send,
   Trash2,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { Card, Section } from "@/components/shared/ui";
 import { Button } from "@/components/ui/button";
@@ -57,41 +58,13 @@ function AgencyCloudApiForm() {
         <div>
           <p className="font-semibold text-emerald-900">Connexion directe Meta Cloud API</p>
           <p className="text-emerald-800/90 mt-0.5">
-            Renseignez votre Phone Number ID et WABA ID depuis votre portail Meta for Developers pour relier votre ligne officielle.
+            Renseignez le Phone Number ID, le WABA ID et la clé d&apos;accès de votre numéro (Meta for Developers). SELECT
+            vérifie la clé auprès de Meta, puis l&apos;enregistre chiffrée : elle n&apos;est jamais réaffichée.
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField
-          id="agency-wa-display-phone"
-          label="Numéro WhatsApp de l'agence"
-          required
-          hint="Avec indicatif (ex : +242 06 400 9999)"
-          error={e.displayPhoneNumber}
-        >
-          <Input
-            id="agency-wa-display-phone"
-            name="displayPhoneNumber"
-            defaultValue={v.displayPhoneNumber}
-            placeholder="+242 06 400 9999"
-          />
-        </FormField>
-
-        <FormField
-          id="agency-wa-verified-name"
-          label="Nom vérifié de l'agence (optionnel)"
-          hint="Nom de l'entreprise sur Meta Business"
-          error={e.verifiedName}
-        >
-          <Input
-            id="agency-wa-verified-name"
-            name="verifiedName"
-            defaultValue={v.verifiedName}
-            placeholder="Ex. : SELECT Agency Brazzaville"
-          />
-        </FormField>
-
         <FormField
           id="agency-wa-phone-id"
           label="Phone Number ID (Meta)"
@@ -120,6 +93,25 @@ function AgencyCloudApiForm() {
             name="wabaId"
             defaultValue={v.wabaId}
             placeholder="Ex. : 194820485910482"
+            className="font-mono text-xs"
+          />
+        </FormField>
+
+        <FormField
+          id="agency-wa-access-token"
+          label="Clé d'accès Meta de ce numéro"
+          required
+          hint="Meta → Paramètres de l'entreprise → Utilisateurs système → générer une clé avec whatsapp_business_messaging et whatsapp_business_management. Le numéro et le nom seront ceux de Meta."
+          error={e.accessToken}
+          className="sm:col-span-2"
+        >
+          <Input
+            id="agency-wa-access-token"
+            name="accessToken"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="EAA…"
             className="font-mono text-xs"
           />
         </FormField>
@@ -184,6 +176,8 @@ export function WhatsAppConnectionManager({
   // Un compte n'est actif que si son statut est explicitement 'connected'
   const activeAccount = accounts.find((a) => a.status === "connected");
   const disconnectedAccounts = accounts.filter((a) => a.status === "disconnected");
+  // Numéro relié sans sa propre autorisation Meta (aucune clé de secours) : il ne peut rien envoyer.
+  const missingAccess = Boolean(activeAccount && activeAccount.hasOwnAccess === false);
 
   const handleSendTestMessage = (e: React.FormEvent) => {
     e.preventDefault();
@@ -375,12 +369,14 @@ export function WhatsAppConnectionManager({
                         </h4>
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
-                            activeAccount.status === "connected"
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-200"
-                              : "bg-slate-100 text-slate-700 border-slate-200"
+                            missingAccess
+                              ? "bg-orange-100 text-orange-900 border-orange-200"
+                              : activeAccount.status === "connected"
+                                ? "bg-emerald-100 text-emerald-800 border-emerald-200"
+                                : "bg-slate-100 text-slate-700 border-slate-200"
                           }`}
                         >
-                          {activeAccount.status === "connected" ? "Connecté" : "Déconnecté"}
+                          {missingAccess ? "Autorisation manquante" : activeAccount.status === "connected" ? "Connecté" : "Déconnecté"}
                         </span>
                       </div>
                       <p className="text-xs text-slate-500 mt-0.5">
@@ -449,7 +445,20 @@ export function WhatsAppConnectionManager({
                   </div>
                 </div>
 
-                {/* Ligne active et coexistence mobile */}
+                {/* Numéro sans sa propre autorisation : rien ne part, il faut le reconnecter. */}
+                {missingAccess ? (
+                <div role="alert" className="rounded-xl border border-orange-200 bg-orange-50 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-orange-950 font-semibold text-xs">
+                    <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0" aria-hidden />
+                    <span>Autorisation Meta manquante pour ce numéro</span>
+                  </div>
+                  <p className="text-xs text-orange-900 leading-relaxed">
+                    Ce numéro a été relié sans sa propre clé d&apos;accès Meta. SELECT n&apos;utilise aucune clé de secours : il ne peut donc
+                    rien envoyer, et l&apos;Agent IA ne répond pas. Déconnectez-le, puis reconnectez-le avec le QR de Meta, ou par la
+                    configuration manuelle avec sa clé d&apos;accès.
+                  </p>
+                </div>
+                ) : (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-4 space-y-2">
                   <div className="flex items-center gap-2 text-emerald-950 font-semibold text-xs">
                     <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
@@ -462,6 +471,7 @@ export function WhatsAppConnectionManager({
                     💡 <strong>Mode Coexistence activé :</strong> Votre équipe continue d&apos;utiliser normalement l&apos;application WhatsApp Business sur smartphone sans aucune interruption.
                   </p>
                 </div>
+                )}
               </Card>
 
               {/* Panneau latéral : Accès WhatsApp Web & Test */}
@@ -498,19 +508,21 @@ export function WhatsAppConnectionManager({
                     </h4>
                   </div>
                   <p className="text-xs text-slate-600">
-                    Saisissez un numéro pour envoyer un message de test :
+                    Numéro de téléphone qui recevra le message de test, avec l&apos;indicatif du pays :
                   </p>
 
                   <form onSubmit={handleSendTestMessage} className="space-y-2">
                     <Input
                       value={testPhoneNumber}
                       onChange={(e) => setTestPhoneNumber(e.target.value)}
-                      placeholder="+237 6..."
+                      placeholder="+237 6 99 11 22 33"
+                      inputMode="tel"
+                      aria-label="Numéro qui recevra le message de test"
                       className="h-8 text-xs"
                     />
                     <Button
                       type="submit"
-                      disabled={isSendingTest || !testPhoneNumber.trim()}
+                      disabled={isSendingTest || !testPhoneNumber.trim() || missingAccess}
                       className="w-full h-8 text-xs bg-navy-800 text-white hover:bg-navy-900 cursor-pointer"
                     >
                       {isSendingTest ? "Envoi..." : "Envoyer le test"}

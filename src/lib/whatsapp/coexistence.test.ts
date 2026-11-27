@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 
 import { accountAccessToken, echoMessages, historyMessages, messageContent, syncedContacts } from "./coexistence";
-import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "./meta-signup";
+import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp, verifyAccessForNumber } from "./meta-signup";
 import { decryptToken, encryptToken } from "./token-crypto";
 
 const SECRET = "secret-serveur-0123456789abcdef-0123456789";
@@ -59,12 +59,38 @@ describe("jeton du numéro", () => {
     expect(decryptToken(sealed, "un-autre-secret-0123456789abcdef-00000")).toBeNull();
   });
 
-  it("est retrouvé pour un numéro, sinon on revient au jeton système", async () => {
+  it("est retrouvé pour un numéro ; sans clé propre, aucune clé de secours, même si l'ancienne variable existe", async () => {
     const sealed = encryptToken("EAAG-jeton-meta", SECRET);
     expect(await accountAccessToken(async () => ({ data: sealed, error: null }), SECRET, "123456")).toBe("EAAG-jeton-meta");
-    vi.stubEnv("WHATSAPP_SYSTEM_ACCESS_TOKEN", "");
+    vi.stubEnv("WHATSAPP_SYSTEM_ACCESS_TOKEN", "EAAG-cle-de-secours-de-select");
     expect(await accountAccessToken(async () => ({ data: null, error: null }), SECRET, "123456")).toBeUndefined();
+    // Une clé chiffrée avec un autre secret ne se relit pas : pas de clé non plus.
+    const foreign = encryptToken("EAAG-autre", "un-autre-secret-0123456789abcdef-00000");
+    expect(await accountAccessToken(async () => ({ data: foreign, error: null }), SECRET, "123456")).toBeUndefined();
     vi.unstubAllEnvs();
+  });
+});
+
+describe("clé d'accès saisie pour un numéro (saisie manuelle ou console SELECT)", () => {
+  const ok = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+  const meta = (debug: Record<string, unknown>, numbers: unknown[] = [{ id: "555000", display_phone_number: "+1 555-162-6717", verified_name: "Test Number" }]) =>
+    (async (url: string | URL | Request) => (String(url).includes("/debug_token") ? ok({ data: debug }) : ok({ data: numbers }))) as typeof fetch;
+  const valid = { is_valid: true, app_id: "APPID", scopes: ["whatsapp_business_management", "whatsapp_business_messaging", "business_management"], expires_at: 0 };
+  const verify = (f: typeof fetch, phoneNumberId = "555000") => verifyAccessForNumber(f, "APPID", "APPSECRET", "EAAG-cle", "777000", phoneNumberId);
+
+  it("accepte une clé valide de l'application SELECT qui donne accès au numéro, avec le numéro et le nom de Meta", async () => {
+    expect(await verify(meta(valid))).toEqual({ phone: { id: "555000", displayPhoneNumber: "+1 555-162-6717", verifiedName: "Test Number" }, expiresAt: undefined });
+    // Clé temporaire : sa date de fin est signalée.
+    const temporary = await verify(meta({ ...valid, expires_at: 1_800_000_000 }));
+    expect(temporary.expiresAt).toBe(new Date(1_800_000_000 * 1000).toISOString());
+  });
+
+  it("refuse une clé invalide, faite pour une autre application, sans les autorisations WhatsApp, ou sans accès au numéro", async () => {
+    await expect(verify(meta({ ...valid, is_valid: false }))).rejects.toThrow(/pas valide/);
+    await expect(verify(meta({ ...valid, app_id: "AUTRE-APP" }))).rejects.toThrow(/autre application Meta/);
+    await expect(verify(meta({ ...valid, scopes: ["whatsapp_business_management"] }))).rejects.toThrow(/whatsapp_business_messaging/);
+    await expect(verify(meta(valid), "999999")).rejects.toThrow(/n'appartient pas à ce compte/);
+    await expect(verify(meta(valid, []))).rejects.toThrow(/n'appartient pas à ce compte/);
   });
 });
 

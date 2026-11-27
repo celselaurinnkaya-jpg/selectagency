@@ -10,25 +10,38 @@ import { cronSecret } from "@/lib/email/system-worker";
 import { createSystemClient } from "@/lib/supabase/system";
 import { exchangeCode, findPhone, findWabaId, HISTORY_DECLINED, MetaError, requestSync, subscribeApp } from "@/lib/whatsapp/meta-signup";
 import { buildSignupSetup, type EmbeddedSignupSetup, type SignupInfo } from "@/lib/whatsapp/signup-prefill";
+import { accessExpiryNote, checkNumberAccess, numberAccessToken, saveNumberAccess } from "@/lib/whatsapp/number-access";
 import { encryptToken } from "@/lib/whatsapp/token-crypto";
 
+/** Message affiché quand un numéro n'a pas sa propre autorisation Meta (il n'y a plus de clé de secours). */
+const NO_OWN_ACCESS =
+  "Ce numéro n'a pas sa propre autorisation Meta : aucun message n'a été envoyé. Reconnectez-le avec le QR de Meta, ou avec sa clé d'accès (configuration manuelle).";
+
+const META_ID_FIELD = /^\d{5,30}$/;
+
 const connectSchema = z.object({
-  wabaId: z.string().trim().min(5, "L'identifiant de compte WhatsApp Business (WABA ID) est requis.").max(120),
-  phoneNumberId: z.string().trim().min(5, "L'identifiant du numéro (Phone Number ID) est requis.").max(120),
-  displayPhoneNumber: z.string().trim().min(6, "Le numéro de téléphone affiché est requis.").max(60),
-  verifiedName: z.string().trim().max(200).optional().or(z.literal("")),
+  wabaId: z.string().trim().regex(META_ID_FIELD, "Le WABA ID est un identifiant de chiffres (Meta → WhatsApp → API Setup)."),
+  phoneNumberId: z.string().trim().regex(META_ID_FIELD, "Le Phone Number ID est un identifiant de chiffres (Meta → WhatsApp → API Setup)."),
+  accessToken: z
+    .string()
+    .trim()
+    .min(40, "Collez la clé d'accès Meta de ce numéro (elle commence en général par « EAA »).")
+    .max(1000)
+    .regex(/^\S+$/, "La clé d'accès ne doit contenir ni espace ni retour à la ligne."),
   coexistence: z.preprocess((val) => val === "true" || val === "on" || val === true, z.boolean()).default(false),
 });
 
 export async function connectWhatsAppAccountAction(_prev: FormState, formData: FormData): Promise<FormState> {
   const values = formValues(formData);
+  // La clé n'est jamais renvoyée au navigateur, même en cas d'erreur.
+  const keep = { wabaId: values.wabaId ?? "", phoneNumberId: values.phoneNumberId ?? "", coexistence: values.coexistence ?? "" };
   const parsed = connectSchema.safeParse(values);
 
   if (!parsed.success) {
     return {
       message: "Certains champs sont à corriger.",
       fieldErrors: z.flattenError(parsed.error).fieldErrors,
-      values,
+      values: keep,
     };
   }
 
@@ -36,32 +49,45 @@ export async function connectWhatsAppAccountAction(_prev: FormState, formData: F
   const ctx = await getAgencyContext();
 
   if (!["owner", "admin"].includes(ctx.member.role)) {
-    return { message: "Action réservée aux administrateurs.", values };
+    return { message: "Action réservée aux administrateurs.", values: keep };
   }
 
   if (ctx.locked.includes("ai_agent")) {
-    return { message: "L'option Agent IA est incluse uniquement dans les formules PRO et BUSINESS.", values };
+    return { message: "L'option Agent IA est incluse uniquement dans les formules PRO et BUSINESS.", values: keep };
   }
 
+  // 1. Meta confirme que la clé est valide, faite pour SELECT, et qu'elle donne accès à ce numéro.
+  const check = await checkNumberAccess(input.accessToken, input.wabaId, input.phoneNumberId);
+  if (!check.ok) {
+    return { message: check.message, values: keep };
+  }
+
+  // 2. Le numéro est enregistré avec le numéro et le nom renvoyés par Meta.
   const { data: accountId, error } = await ctx.supabase.rpc("connect_wa_account", {
     p_org: ctx.organizationId,
     p_waba_id: input.wabaId,
-    p_phone_number_id: input.phoneNumberId,
-    p_display_phone_number: input.displayPhoneNumber,
-    p_verified_name: input.verifiedName || null,
+    p_phone_number_id: check.phone.id,
+    p_display_phone_number: check.phone.displayPhoneNumber,
+    p_verified_name: check.phone.verifiedName ?? null,
     p_coexistence: input.coexistence,
   });
 
   if (error) {
-    return { message: dbMessage(error), values };
+    return { message: dbMessage(error), values: keep };
   }
 
   if (!accountId) {
-    return { message: "Échec de connexion du numéro WhatsApp.", values };
+    return { message: "Échec de connexion du numéro WhatsApp.", values: keep };
+  }
+
+  // 3. Sa clé est enregistrée chiffrée ; sans elle, le numéro n'est pas laissé « connecté ».
+  if (!(await saveNumberAccess(ctx.organizationId, check.phone.id, input.accessToken))) {
+    await ctx.supabase.rpc("disconnect_wa_account", { p_account_id: accountId, p_org: ctx.organizationId });
+    return { message: "L'autorisation de ce numéro n'a pas pu être enregistrée : il n'a pas été connecté. Réessayez.", values: keep };
   }
 
   refresh();
-  return { ok: true, message: "Numéro WhatsApp connecté avec succès !" };
+  return { ok: true, message: `Numéro WhatsApp ${check.phone.displayPhoneNumber} connecté avec sa propre autorisation Meta.${accessExpiryNote(check.expiresAt)}` };
 }
 
 export async function disconnectWhatsAppAccountAction(formData: FormData): Promise<{ ok: boolean; message: string }> {
@@ -130,6 +156,13 @@ export async function reconnectWhatsAppAccountAction(
     return { ok: false, message: dbMessage(connectErr) };
   }
 
+  // Reconnexion seulement si le numéro a toujours sa propre autorisation enregistrée.
+  if (!(await numberAccessToken(account.phone_number_id))) {
+    await ctx.supabase.rpc("disconnect_wa_account", { p_account_id: account.id, p_org: ctx.organizationId });
+    refresh();
+    return { ok: false, message: NO_OWN_ACCESS };
+  }
+
   revalidatePath("/agent-ia/connexion");
   revalidatePath("/agent-ia");
   refresh();
@@ -160,19 +193,23 @@ export async function sendTestWhatsAppMessageAction(
     return { ok: false, message: "Compte WhatsApp introuvable." };
   }
 
-  const token = process.env.WHATSAPP_SYSTEM_ACCESS_TOKEN || process.env.WHATSAPP_API_TOKEN;
+  // Numéro qui reçoit le test : chiffres seulement, avec l'indicatif du pays.
+  const recipient = String(toPhone ?? "").replace(/\D/g, "");
+  if (recipient.length < 8 || recipient.length > 15) {
+    return { ok: false, message: "Indiquez le numéro qui doit recevoir le test, avec l'indicatif du pays (ex. : +237 6 99 11 22 33)." };
+  }
+
+  // Uniquement la clé propre à ce numéro : aucune clé de secours.
+  const token = account.status === "connected" ? await numberAccessToken(account.phone_number_id) : undefined;
   if (!token) {
-    return {
-      ok: false,
-      message: "Clé d'accès WhatsApp de SELECT non configurée (WHATSAPP_SYSTEM_ACCESS_TOKEN) : aucun message n'a été envoyé.",
-    };
+    return { ok: false, message: NO_OWN_ACCESS };
   }
 
   const testText = `Message de test envoyé depuis SELECT Agency pour confirmer la connexion officielle de votre compte WhatsApp Business (${account.display_phone_number}).`;
 
   const result = await sendWhatsAppMessage({
     phoneNumberId: account.phone_number_id,
-    to: toPhone,
+    to: recipient,
     text: testText,
     accessToken: token,
   });
@@ -343,7 +380,12 @@ export async function completeWhatsAppSignupAction(input: {
     p_phone_number_id: phone.id,
     p_token_enc: encryptToken(token, serverSecret),
   });
-  if (tokenErr) return { ok: false, message: "Numéro connecté, mais son accès n'a pas pu être enregistré. Recommencez le scan." };
+  if (tokenErr) {
+    // Pas de numéro « connecté » sans sa propre autorisation : il ne pourrait rien envoyer.
+    const { data: saved } = await ctx.supabase.from("wa_accounts").select("id").eq("organization_id", ctx.organizationId).eq("phone_number_id", phone.id).maybeSingle();
+    if (saved?.id) await ctx.supabase.rpc("disconnect_wa_account", { p_account_id: saved.id, p_org: ctx.organizationId });
+    return { ok: false, message: "L'autorisation de ce numéro n'a pas pu être enregistrée : il n'a pas été connecté. Recommencez le scan." };
+  }
 
   // Contacts puis historique du téléphone (Meta les envoie ensuite au webhook, en quelques minutes).
   let historyShared = true;

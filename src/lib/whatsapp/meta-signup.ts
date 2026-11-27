@@ -74,6 +74,46 @@ export async function findPhone(f: Fetch, token: string, wabaId: string, phoneNu
   return { id: row.id, displayPhoneNumber: row.display_phone_number, verifiedName: row.verified_name };
 }
 
+/** Autorisations WhatsApp qu'une clé d'accès doit porter pour qu'un numéro fonctionne dans SELECT. */
+export const REQUIRED_SCOPES = ["whatsapp_business_management", "whatsapp_business_messaging"] as const;
+
+/**
+ * Connexion par identifiants (saisie manuelle ou console SELECT) : la clé d'accès fournie est vérifiée auprès de Meta
+ * avant d'être acceptée. Elle doit être valide, créée pour l'application Meta de SELECT, porter les deux autorisations
+ * WhatsApp, et donner accès au compte WhatsApp Business indiqué, qui doit contenir le numéro indiqué. Le numéro et le
+ * nom affichés sont ceux que Meta renvoie (jamais ceux saisis à la main).
+ */
+export async function verifyAccessForNumber(
+  f: Fetch,
+  appId: string,
+  appSecret: string,
+  token: string,
+  wabaId: string,
+  phoneNumberId: string,
+): Promise<{ phone: MetaPhone; expiresAt?: string }> {
+  const query = new URLSearchParams({ input_token: token, access_token: `${appId}|${appSecret}` });
+  type Debug = { data?: { is_valid?: boolean; app_id?: string; scopes?: string[]; expires_at?: number } };
+  const info = (await call<Debug>(f, `${GRAPH}/${GRAPH_VERSION}/debug_token?${query}`)).data ?? {};
+  if (!info.is_valid) throw new MetaError("cette clé d'accès n'est pas valide (expirée, révoquée ou mal copiée).");
+  if (String(info.app_id ?? "") !== appId) throw new MetaError("cette clé d'accès a été créée pour une autre application Meta que celle de SELECT.");
+  const missing = REQUIRED_SCOPES.filter((scope) => !(info.scopes ?? []).includes(scope));
+  if (missing.length) throw new MetaError(`autorisations manquantes sur cette clé : ${missing.join(", ")}.`);
+
+  type Row = { id: string; display_phone_number: string; verified_name?: string };
+  const numbers = await call<{ data?: Row[] }>(
+    f,
+    `${GRAPH}/${GRAPH_VERSION}/${encodeURIComponent(wabaId)}/phone_numbers?fields=id,display_phone_number,verified_name&limit=100`,
+    { headers: bearer(token) },
+  );
+  const row = numbers.data?.find((n) => n.id === phoneNumberId);
+  if (!row?.display_phone_number) throw new MetaError("ce numéro n'appartient pas à ce compte WhatsApp Business, ou la clé n'y donne pas accès.");
+  return {
+    phone: { id: row.id, displayPhoneNumber: row.display_phone_number, verifiedName: row.verified_name },
+    // 0 = clé sans date de fin (utilisateur système) ; sinon clé temporaire (par exemple 24 h).
+    expiresAt: info.expires_at && info.expires_at > 0 ? new Date(info.expires_at * 1000).toISOString() : undefined,
+  };
+}
+
 /** 3. Abonne l'application aux messages de ce compte (les messages arrivent alors sur le webhook de SELECT). */
 export async function subscribeApp(f: Fetch, token: string, wabaId: string): Promise<void> {
   await call(f, `${GRAPH}/${GRAPH_VERSION}/${encodeURIComponent(wabaId)}/subscribed_apps`, { method: "POST", headers: bearer(token) });

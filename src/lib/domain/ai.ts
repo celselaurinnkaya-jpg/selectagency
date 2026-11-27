@@ -289,6 +289,8 @@ export interface WaAccountRecord {
   lastError?: string;
   connectedAt: string;
   updatedAt: string;
+  /** Numéro connecté : a-t-il sa propre autorisation Meta ? (calculé sur le serveur ; la clé n'en sort jamais) */
+  hasOwnAccess?: boolean;
 }
 
 export function toWaAccount(row: Record<string, unknown>): WaAccountRecord {

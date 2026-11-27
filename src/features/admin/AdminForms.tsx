@@ -495,35 +495,6 @@ export function AdminAgencyWhatsAppForm({
 
         <div className="grid gap-3 sm:grid-cols-2">
           <FormField
-            id="wa-display-phone"
-            label="Numéro de téléphone affiché"
-            required
-            error={e.displayPhoneNumber}
-          >
-            <Input
-              id="wa-display-phone"
-              name="displayPhoneNumber"
-              defaultValue={v.displayPhoneNumber ?? current?.displayPhoneNumber ?? ""}
-              placeholder="Ex. : +242 06 400 9999"
-              {...describedBy("wa-display-phone", e.displayPhoneNumber)}
-            />
-          </FormField>
-
-          <FormField
-            id="wa-verified-name"
-            label="Nom affiché vérifié (optionnel)"
-            error={e.verifiedName}
-          >
-            <Input
-              id="wa-verified-name"
-              name="verifiedName"
-              defaultValue={v.verifiedName ?? current?.verifiedName ?? ""}
-              placeholder="Ex. : SELECT Agency Brazzaville"
-              {...describedBy("wa-verified-name", e.verifiedName)}
-            />
-          </FormField>
-
-          <FormField
             id="wa-phone-id"
             label="Phone Number ID (Meta)"
             required
@@ -552,6 +523,26 @@ export function AdminAgencyWhatsAppForm({
               placeholder="Ex. : 987654321098765"
               className="font-mono text-xs"
               {...describedBy("wa-waba-id", e.wabaId)}
+            />
+          </FormField>
+
+          <FormField
+            id="wa-access-token"
+            label="Clé d'accès Meta de ce numéro"
+            required
+            error={e.accessToken}
+            hint="Clé d'un utilisateur système Meta, avec whatsapp_business_messaging et whatsapp_business_management. Vérifiée auprès de Meta, enregistrée chiffrée, jamais réaffichée. Le numéro et le nom sont ceux de Meta."
+            className="sm:col-span-2"
+          >
+            <Input
+              id="wa-access-token"
+              name="accessToken"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="EAA…"
+              className="font-mono text-xs"
+              {...describedBy("wa-access-token", e.accessToken, "hint")}
             />
           </FormField>
         </div>
